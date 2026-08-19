@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -9,10 +10,11 @@ from .orchestrator import AssistantOrchestrator, OrchestratorError
 from .pi_client import PIWebAPIClient, PIWebAPIError
 from .settings import get_settings
 from .shift_report import ShiftReportEngine, ShiftReportError
+from .simulator import SimulatedFCCSource
 from .tag_registry import TagRegistry, TagRegistryError
 from .tag_service import TagService, TagServiceError
 
-app = FastAPI(title="FCC Assistant Local API", version="0.2.0", description="Local backend for FCC process analysis and reporting.")
+app = FastAPI(title="FCC Assistant Local API", version="0.3.0", description="Local backend for FCC process analysis and reporting.")
 
 
 class AIAnalysisRequest(BaseModel):
@@ -65,7 +67,7 @@ def capabilities() -> dict[str, object]:
             "local_ai": "configured" if settings.local_ai_model else "not_configured",
             "plant_write_access": False,
             "features": ["pi-read-only", "tag-registry", "named-tag-data", "engineering-analytics",
-                         "period-comparison", "shift-reports", "local-ai-assistant", "assistant-orchestrator"]}
+                         "period-comparison", "shift-reports", "local-ai-assistant", "assistant-orchestrator", "fcc-simulator"]}
 
 
 @app.get("/api/v1/ai/status")
@@ -90,24 +92,45 @@ async def ai_analyze(request: AIAnalysisRequest) -> dict[str, object]:
 @app.post("/api/v1/assistant/shift")
 async def assistant_shift(request: ShiftAssistantRequest) -> dict[str, object]:
     try:
-        answer = await AssistantOrchestrator().analyze_shift(request.question, request.start_time, request.end_time, request.tags)
+        return asdict(await AssistantOrchestrator().analyze_shift(request.question, request.start_time, request.end_time, request.tags))
     except OrchestratorError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return asdict(answer)
 
 
 @app.post("/api/v1/assistant/tag")
 async def assistant_tag(request: TagAssistantRequest) -> dict[str, object]:
     try:
-        answer = await AssistantOrchestrator().analyze_tag_period(request.question, request.tag_key, request.start_time, request.end_time)
+        return asdict(await AssistantOrchestrator().analyze_tag_period(request.question, request.tag_key, request.start_time, request.end_time))
     except OrchestratorError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return asdict(answer)
+
+
+@app.get("/api/v1/simulator/tags")
+def simulator_tags() -> dict[str, object]:
+    items = SimulatedFCCSource().list_tags()
+    return {"mode": "simulated", "count": len(items), "items": items}
+
+
+@app.get("/api/v1/simulator/recorded/{key}")
+def simulator_recorded(key: str, start_time: datetime = Query(..., alias="startTime"), end_time: datetime = Query(..., alias="endTime"), step_minutes: int = Query(15, alias="stepMinutes", ge=1, le=60)) -> dict[str, object]:
+    try:
+        data = SimulatedFCCSource().recorded_values(key, start_time, end_time, step_minutes)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown simulated tag: {key}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"mode": "simulated", "tag": key, "data": data}
+
+
+@app.get("/api/v1/simulator/demo-shift")
+def simulator_demo_shift() -> dict[str, object]:
+    return {"mode": "simulated", "read_only": True, "data": SimulatedFCCSource().demo_shift()}
 
 
 @app.get("/api/v1/tags")
 def list_tags(q: str | None = Query(default=None)) -> dict[str, object]:
-    tags = get_tag_registry().find(q) if q is not None else get_tag_registry().list()
+    registry = get_tag_registry()
+    tags = registry.find(q) if q is not None else registry.list()
     return {"count": len(tags), "items": [asdict(tag) for tag in tags]}
 
 
