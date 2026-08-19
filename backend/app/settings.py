@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     pi_timeout_seconds: float = 15.0
     tag_config_path: str = "config/fcc-tags.local.json"
 
+    local_ai_url: str = "http://127.0.0.1:11434"
+    local_ai_model: str = ""
+    local_ai_timeout_seconds: float = 120.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_prefix="FCC_",
