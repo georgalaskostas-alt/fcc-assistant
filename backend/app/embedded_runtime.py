@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import platform
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -37,6 +36,7 @@ class EmbeddedAIRuntime:
         self.root = Path(__file__).resolve().parents[2]
         self.binary_path = self._resolve_binary_path(self.settings.local_ai_binary_path)
         self.model_path = self._resolve_path(self.settings.local_ai_model_path)
+        self.cache_dir = Path.home() / ".fcc-assistant" / "cache" / "llama.cpp"
         self.endpoint = self.settings.local_ai_url
         parsed = urlparse(self.endpoint)
         if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
@@ -44,7 +44,7 @@ class EmbeddedAIRuntime:
         self.port = parsed.port or 8081
 
     def _resolve_path(self, configured: str) -> Path:
-        path = Path(configured)
+        path = Path(configured).expanduser()
         return path if path.is_absolute() else self.root / path
 
     def _resolve_binary_path(self, configured: str) -> Path:
@@ -86,6 +86,7 @@ class EmbeddedAIRuntime:
         if not self.model_path.exists():
             raise EmbeddedRuntimeError(f"Local GGUF model not found: {self.model_path}")
 
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
         command = [
             str(self.binary_path),
             "-m", str(self.model_path),
@@ -102,11 +103,11 @@ class EmbeddedAIRuntime:
 
         type(self)._process = subprocess.Popen(
             command,
-            cwd=str(self.root),
+            cwd=str(self.binary_path.parent),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            env={**os.environ, "LLAMA_CACHE": str(self.root / "runtime" / "cache")},
+            env={**os.environ, "LLAMA_CACHE": str(self.cache_dir)},
             creationflags=creationflags,
         )
         return self.state()
