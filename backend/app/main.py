@@ -1,25 +1,42 @@
 from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from .analytics import AnalyticsError, compare_summaries, summarize_pi_payload
+from .local_ai import LocalAIClient, LocalAIError
+from .orchestrator import AssistantOrchestrator, OrchestratorError
 from .pi_client import PIWebAPIClient, PIWebAPIError
 from .settings import get_settings
 from .shift_report import ShiftReportEngine, ShiftReportError
 from .tag_registry import TagRegistry, TagRegistryError
 from .tag_service import TagService, TagServiceError
 
-app = FastAPI(
-    title="FCC Assistant Local API",
-    version="0.1.0",
-    description="Local backend for FCC process analysis and reporting.",
-)
+app = FastAPI(title="FCC Assistant Local API", version="0.2.0", description="Local backend for FCC process analysis and reporting.")
+
+
+class AIAnalysisRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    evidence: dict[str, object] = Field(default_factory=dict)
+
+
+class ShiftAssistantRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    start_time: str
+    end_time: str
+    tags: list[str] | None = None
+
+
+class TagAssistantRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    tag_key: str
+    start_time: str
+    end_time: str
 
 
 def get_tag_registry() -> TagRegistry:
-    settings = get_settings()
     try:
-        return TagRegistry(settings.tag_config_path)
+        return TagRegistry(get_settings().tag_config_path)
     except TagRegistryError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -33,8 +50,7 @@ def get_tag_service() -> TagService:
 
 def raise_tag_service_error(exc: TagServiceError) -> None:
     message = str(exc)
-    status = 404 if message.startswith("Unknown tag key") else 502
-    raise HTTPException(status_code=status, detail=message) from exc
+    raise HTTPException(status_code=404 if message.startswith("Unknown tag key") else 502, detail=message) from exc
 
 
 @app.get("/health")
@@ -45,22 +61,53 @@ def health() -> dict[str, str]:
 @app.get("/api/v1/system/capabilities")
 def capabilities() -> dict[str, object]:
     settings = get_settings()
-    return {
-        "pi_web_api": "configured" if settings.pi_web_api_url else "not_configured",
-        "local_ai": "not_configured",
-        "plant_write_access": False,
-        "features": [
-            "pi-read-only", "tag-registry", "named-tag-data",
-            "engineering-analytics", "period-comparison", "shift-reports",
-            "local-ai-assistant",
-        ],
-    }
+    return {"pi_web_api": "configured" if settings.pi_web_api_url else "not_configured",
+            "local_ai": "configured" if settings.local_ai_model else "not_configured",
+            "plant_write_access": False,
+            "features": ["pi-read-only", "tag-registry", "named-tag-data", "engineering-analytics",
+                         "period-comparison", "shift-reports", "local-ai-assistant", "assistant-orchestrator"]}
+
+
+@app.get("/api/v1/ai/status")
+async def ai_status() -> dict[str, object]:
+    try:
+        return await LocalAIClient().status()
+    except LocalAIError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/v1/ai/analyze")
+async def ai_analyze(request: AIAnalysisRequest) -> dict[str, object]:
+    if not request.evidence:
+        raise HTTPException(status_code=422, detail="Local AI analysis requires structured process evidence")
+    try:
+        response = await LocalAIClient().generate(request.question, request.evidence)
+    except LocalAIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"mode": "local", "read_only": True, "model": response.model, "answer": response.text}
+
+
+@app.post("/api/v1/assistant/shift")
+async def assistant_shift(request: ShiftAssistantRequest) -> dict[str, object]:
+    try:
+        answer = await AssistantOrchestrator().analyze_shift(request.question, request.start_time, request.end_time, request.tags)
+    except OrchestratorError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return asdict(answer)
+
+
+@app.post("/api/v1/assistant/tag")
+async def assistant_tag(request: TagAssistantRequest) -> dict[str, object]:
+    try:
+        answer = await AssistantOrchestrator().analyze_tag_period(request.question, request.tag_key, request.start_time, request.end_time)
+    except OrchestratorError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return asdict(answer)
 
 
 @app.get("/api/v1/tags")
 def list_tags(q: str | None = Query(default=None)) -> dict[str, object]:
-    registry = get_tag_registry()
-    tags = registry.find(q) if q is not None else registry.list()
+    tags = get_tag_registry().find(q) if q is not None else get_tag_registry().list()
     return {"count": len(tags), "items": [asdict(tag) for tag in tags]}
 
 
@@ -127,9 +174,8 @@ async def shift_report(start_time: str = Query(..., alias="startTime"), end_time
 
 @app.get("/api/v1/pi/status")
 async def pi_status() -> dict[str, object]:
-    client = PIWebAPIClient()
     try:
-        payload = await client.root()
+        payload = await PIWebAPIClient().root()
     except PIWebAPIError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"connected": True, "read_only": True, "pi_web_api": payload}
