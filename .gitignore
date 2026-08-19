@@ -13,6 +13,9 @@ target/
 # Local runtime data
 data/
 models/
+runtime/bin/
+runtime/cache/
+*.gguf
 *.db
 *.sqlite
 *.sqlite3
