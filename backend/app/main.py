@@ -1,13 +1,24 @@
+from dataclasses import asdict
+
 from fastapi import FastAPI, HTTPException, Query
 
 from .pi_client import PIWebAPIClient, PIWebAPIError
 from .settings import get_settings
+from .tag_registry import TagRegistry, TagRegistryError
 
 app = FastAPI(
     title="FCC Assistant Local API",
     version="0.1.0",
     description="Local backend for FCC process analysis and reporting.",
 )
+
+
+def get_tag_registry() -> TagRegistry:
+    settings = get_settings()
+    try:
+        return TagRegistry(settings.tag_config_path)
+    except TagRegistryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get("/health")
@@ -28,11 +39,31 @@ def capabilities() -> dict[str, object]:
         "plant_write_access": False,
         "features": [
             "pi-read-only",
+            "tag-registry",
             "engineering-analytics",
             "shift-reports",
             "local-ai-assistant",
         ],
     }
+
+
+@app.get("/api/v1/tags")
+def list_tags(q: str | None = Query(default=None)) -> dict[str, object]:
+    registry = get_tag_registry()
+    tags = registry.find(q) if q is not None else registry.list()
+    return {
+        "count": len(tags),
+        "items": [asdict(tag) for tag in tags],
+    }
+
+
+@app.get("/api/v1/tags/{key}")
+def get_tag(key: str) -> dict[str, object]:
+    registry = get_tag_registry()
+    tag = registry.get(key)
+    if tag is None:
+        raise HTTPException(status_code=404, detail=f"Unknown FCC tag key: {key}")
+    return asdict(tag)
 
 
 @app.get("/api/v1/pi/status")
