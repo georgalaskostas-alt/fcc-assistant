@@ -1,0 +1,1 @@
+The desktop icon must be a 512x512 RGBA PNG for Tauri builds.
