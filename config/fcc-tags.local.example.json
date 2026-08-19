@@ -1,0 +1,33 @@
+{
+  "unit": "FCC",
+  "description": "Local example only. Copy this file outside Git tracking and replace placeholders with approved PI mappings.",
+  "tags": [
+    {
+      "key": "feed_flow",
+      "name": "Feed Flow",
+      "group": "feed",
+      "pi_tag": "EXAMPLE.FCC.FEED.FLOW",
+      "web_id": null,
+      "unit": "m3/h",
+      "description": "Main FCC feed flow"
+    },
+    {
+      "key": "reactor_temperature",
+      "name": "Reactor Temperature",
+      "group": "reactor",
+      "pi_tag": "EXAMPLE.FCC.REACTOR.TEMP",
+      "web_id": null,
+      "unit": "degC",
+      "description": "Representative reactor temperature"
+    },
+    {
+      "key": "regenerator_temperature",
+      "name": "Regenerator Temperature",
+      "group": "regenerator",
+      "pi_tag": "EXAMPLE.FCC.REGEN.TEMP",
+      "web_id": null,
+      "unit": "degC",
+      "description": "Representative regenerator temperature"
+    }
+  ]
+}
