@@ -15,9 +15,9 @@ class LocalAIError(RuntimeError):
 
 SYSTEM_PROMPT = """You are FCC Assistant, a local read-only process analysis assistant.
 Use only the process evidence supplied in the prompt. Never invent tag values, causes, alarms,
-limits, or operating events. Clearly separate observed facts from possible engineering hypotheses.
-Do not recommend changing plant setpoints or controls unless an authorized engineering workflow
-is added in a future version. Current mode is analysis and reporting only.
+limits, or operating events. Clearly separate observed facts from calculated results and possible
+engineering hypotheses. Do not recommend changing plant setpoints or controls. Current mode is
+analysis and reporting only.
 """
 
 
@@ -36,12 +36,7 @@ def _is_local_url(url: str) -> bool:
 
 
 class LocalAIClient:
-    """FCC intelligence client. TRAVIS is the preferred local brain.
-
-    FCC never sends process evidence directly to an arbitrary external endpoint.
-    It talks to TRAVIS on localhost. TRAVIS can then use its own local knowledge,
-    learned skills, or its configured model fallback according to TRAVIS policy.
-    """
+    """FCC intelligence client with embedded llama.cpp by default and optional TRAVIS bridge."""
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -50,18 +45,18 @@ class LocalAIClient:
         self.prefer_travis = settings.prefer_travis_ai
 
         self.base_url = settings.local_ai_url.rstrip("/")
-        self.model = settings.local_ai_model.strip()
+        self.model = settings.local_ai_model_name.strip() or "embedded-local-model"
         self.timeout = settings.local_ai_timeout_seconds
 
         if self.travis_url and not _is_local_url(self.travis_url):
             raise LocalAIError("TRAVIS endpoint must be localhost only")
-        if self.base_url and not _is_local_url(self.base_url):
-            raise LocalAIError("External AI endpoints are blocked. FCC Assistant only allows localhost AI runtimes.")
+        if not _is_local_url(self.base_url):
+            raise LocalAIError("External AI endpoints are blocked. Only localhost is allowed.")
 
     async def status(self) -> dict[str, Any]:
         if self.prefer_travis:
             try:
-                async with httpx.AsyncClient(timeout=min(self.travis_timeout, 10.0)) as client:
+                async with httpx.AsyncClient(timeout=min(self.travis_timeout, 5.0)) as client:
                     response = await client.get(f"{self.travis_url}/v1/fcc/status")
                     response.raise_for_status()
                     payload = response.json()
@@ -69,6 +64,7 @@ class LocalAIClient:
                     return {
                         "configured": True,
                         "connected": True,
+                        "runtime": "TRAVIS",
                         "provider": "TRAVIS",
                         "model": payload.get("model"),
                         "local_only_link": True,
@@ -77,32 +73,31 @@ class LocalAIClient:
             except (httpx.HTTPError, ValueError):
                 pass
 
-        if not self.base_url:
-            return {"configured": False, "connected": False, "model": self.model or None, "provider": "none"}
-        self._ensure_local_endpoint()
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{self.base_url}/api/tags")
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{self.base_url}/health")
                 response.raise_for_status()
                 payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
-            raise LocalAIError(f"Neither TRAVIS nor the optional local AI fallback is reachable: {exc}") from exc
-        models = []
-        if isinstance(payload, dict) and isinstance(payload.get("models"), list):
-            models = [item.get("name") for item in payload["models"] if isinstance(item, dict)]
-        return {
-            "configured": bool(self.model),
-            "connected": True,
-            "provider": "local-fallback",
-            "model": self.model or None,
-            "model_available": self.model in models if self.model else False,
-            "available_models": models,
-            "local_only": True,
-        }
+            return {
+                "configured": True,
+                "connected": False,
+                "runtime": "llama.cpp",
+                "provider": "embedded-local",
+                "model": self.model,
+                "local_only": True,
+                "detail": str(exc),
+            }
 
-    def _ensure_local_endpoint(self) -> None:
-        if self.base_url and not _is_local_url(self.base_url):
-            raise LocalAIError("External AI endpoints are blocked")
+        return {
+            "configured": True,
+            "connected": True,
+            "runtime": "llama.cpp",
+            "provider": "embedded-local",
+            "model": self.model,
+            "local_only": True,
+            "health": payload,
+        }
 
     async def generate(self, user_prompt: str, context: dict[str, Any] | None = None) -> LocalAIResponse:
         prompt = user_prompt.strip()
@@ -113,11 +108,9 @@ class LocalAIClient:
             try:
                 return await self._generate_with_travis(prompt, context)
             except LocalAIError:
-                # Fall through only when the optional local fallback is explicitly configured.
-                if not self.model:
-                    raise
+                pass
 
-        return await self._generate_with_local_runtime(prompt, context)
+        return await self._generate_with_embedded(prompt, context)
 
     async def _generate_with_travis(self, prompt: str, context: dict[str, Any] | None) -> LocalAIResponse:
         if not self.travis_url or not _is_local_url(self.travis_url):
@@ -128,6 +121,7 @@ class LocalAIClient:
             "question": prompt,
             "system_prompt": SYSTEM_PROMPT,
             "evidence": context or {},
+            "data_policy": "local_only_no_external_process_data",
         }
         try:
             async with httpx.AsyncClient(timeout=self.travis_timeout) as client:
@@ -143,32 +137,32 @@ class LocalAIClient:
         model = payload.get("provider") if isinstance(payload, dict) else None
         return LocalAIResponse(model=str(model or "TRAVIS"), text=text.strip())
 
-    async def _generate_with_local_runtime(self, prompt: str, context: dict[str, Any] | None) -> LocalAIResponse:
-        if not self.base_url:
-            raise LocalAIError("Local AI URL is not configured")
-        self._ensure_local_endpoint()
-        if not self.model:
-            raise LocalAIError("TRAVIS is unavailable and no local fallback model is configured")
-
+    async def _generate_with_embedded(self, prompt: str, context: dict[str, Any] | None) -> LocalAIResponse:
         evidence = f"\n\nPROCESS EVIDENCE (structured data):\n{context}\n" if context else ""
         body = {
             "model": self.model,
             "stream": False,
+            "temperature": 0.1,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"{prompt}{evidence}"},
             ],
-            "options": {"temperature": 0.1},
         }
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(f"{self.base_url}/api/chat", json=body)
+                response = await client.post(f"{self.base_url}/v1/chat/completions", json=body)
                 response.raise_for_status()
                 payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
-            raise LocalAIError(f"Local AI request failed: {exc}") from exc
-        message = payload.get("message") if isinstance(payload, dict) else None
-        text = message.get("content") if isinstance(message, dict) else None
+            raise LocalAIError(f"Embedded local AI request failed: {exc}") from exc
+
+        try:
+            text = payload["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LocalAIError("Embedded local AI returned an invalid response") from exc
+
         if not isinstance(text, str) or not text.strip():
-            raise LocalAIError("Local AI returned an empty or invalid response")
+            raise LocalAIError("Embedded local AI returned an empty response")
+
         return LocalAIResponse(model=self.model, text=text.strip())
