@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     pi_web_api_url: str = ""
     pi_verify_tls: bool = True
     pi_timeout_seconds: float = 15.0
+    tag_config_path: str = "config/fcc-tags.local.json"
 
     model_config = SettingsConfigDict(
         env_file=".env",
