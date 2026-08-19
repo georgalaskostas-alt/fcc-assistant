@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - agent/**
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - name: Compile backend
+        run: python -m compileall -q backend/app
+      - name: Run backend tests
+        working-directory: backend
+        run: pytest -q
+
+  desktop-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package.json
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm install
+      - name: Typecheck and build desktop UI
+        working-directory: desktop
+        run: npm run build
