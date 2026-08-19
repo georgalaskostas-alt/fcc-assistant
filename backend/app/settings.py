@@ -10,7 +10,14 @@ class Settings(BaseSettings):
     pi_timeout_seconds: float = 15.0
     tag_config_path: str = "config/fcc-tags.local.json"
 
-    # Embedded local AI. Final desktop builds bundle llama.cpp and a GGUF model.
+    # Optional TRAVIS bridge. Standalone FCC Assistant does not depend on it.
+    # When enabled, the bridge must remain loopback-only and TRAVIS must enforce
+    # the FCC data policy (no external transmission of process evidence).
+    travis_ai_url: str = "http://127.0.0.1:8765"
+    travis_ai_timeout_seconds: float = 120.0
+    prefer_travis_ai: bool = False
+
+    # Default standalone intelligence path: bundled llama.cpp + GGUF model.
     local_ai_runtime: str = "llama_cpp"
     local_ai_url: str = "http://127.0.0.1:8081"
     local_ai_model_name: str = "embedded-local-model"
