@@ -1,0 +1,12 @@
+{
+  "unit": "FCC",
+  "description": "Example configuration only. Replace locally with approved PI tag mappings.",
+  "groups": {
+    "feed": [],
+    "reactor": [],
+    "regenerator": [],
+    "main_fractionator": [],
+    "gas_concentration": [],
+    "products": []
+  }
+}
