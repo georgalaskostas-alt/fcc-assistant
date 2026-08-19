@@ -3,7 +3,6 @@ const API_BASE = "http://127.0.0.1:8000";
 export type SystemCapabilities = {
   pi_web_api: string;
   local_ai: string;
-  simulator?: string;
   plant_write_access: boolean;
   features: string[];
 };
@@ -13,21 +12,25 @@ export type SimulatorTag = {
   name: string;
   group: string;
   unit: string;
-  value: number;
-  status?: string;
 };
 
-export type SimulatorSnapshot = {
-  timestamp: string;
-  source: string;
-  tags: SimulatorTag[];
+export type SimulatorTagsResponse = {
+  mode: string;
+  count: number;
+  items: SimulatorTag[];
+};
+
+export type DemoShiftResponse = {
+  mode: string;
+  read_only: boolean;
+  data: Record<string, { Items: Array<{ Timestamp: string; Value: number }> }>;
 };
 
 export type AssistantReply = {
-  answer: string;
-  model: string;
-  evidence_type: string;
+  mode: string;
   read_only: boolean;
+  model: string;
+  answer: string;
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -46,11 +49,11 @@ export const api = {
   health: () => request<{ status: string; mode: string }>("/health"),
   capabilities: () => request<SystemCapabilities>("/api/v1/system/capabilities"),
   aiStatus: () => request<Record<string, unknown>>("/api/v1/ai/status"),
-  simulatorSnapshot: () => request<SimulatorSnapshot>("/api/v1/simulator/snapshot"),
-  demoShift: () => request<Record<string, unknown>>("/api/v1/simulator/demo-shift"),
-  askSimulator: (question: string) =>
-    request<AssistantReply>("/api/v1/assistant/simulator", {
+  simulatorTags: () => request<SimulatorTagsResponse>("/api/v1/simulator/tags"),
+  demoShift: () => request<DemoShiftResponse>("/api/v1/simulator/demo-shift"),
+  analyze: (question: string, evidence: Record<string, unknown>) =>
+    request<AssistantReply>("/api/v1/ai/analyze", {
       method: "POST",
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, evidence }),
     }),
 };
