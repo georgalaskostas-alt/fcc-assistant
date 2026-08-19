@@ -23,13 +23,7 @@ def command_version(command: str, args: list[str]) -> Check:
     if not executable:
         return Check(command, False, "not installed or not on PATH")
     try:
-        result = subprocess.run(
-            [executable, *args],
-            capture_output=True,
-            text=True,
-            timeout=8,
-            check=False,
-        )
+        result = subprocess.run([executable, *args], capture_output=True, text=True, timeout=8, check=False)
     except Exception as exc:
         return Check(command, False, str(exc))
     output = (result.stdout or result.stderr).strip().splitlines()
@@ -49,17 +43,11 @@ def memory_gb() -> float | None:
     try:
         if system == "Windows":
             class MemoryStatusEx(ctypes.Structure):
-                _fields_ = [
-                    ("dwLength", ctypes.c_ulong),
-                    ("dwMemoryLoad", ctypes.c_ulong),
-                    ("ullTotalPhys", ctypes.c_ulonglong),
-                    ("ullAvailPhys", ctypes.c_ulonglong),
-                    ("ullTotalPageFile", ctypes.c_ulonglong),
-                    ("ullAvailPageFile", ctypes.c_ulonglong),
-                    ("ullTotalVirtual", ctypes.c_ulonglong),
-                    ("ullAvailVirtual", ctypes.c_ulonglong),
-                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-                ]
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
             status = MemoryStatusEx()
             status.dwLength = ctypes.sizeof(MemoryStatusEx)
             ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
@@ -67,26 +55,19 @@ def memory_gb() -> float | None:
         if system == "Darwin":
             result = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=5)
             return round(int(result.stdout.strip()) / (1024 ** 3), 1)
-        if hasattr(__import__("os"), "sysconf"):
-            import os
-            pages = os.sysconf("SC_PHYS_PAGES")
-            page_size = os.sysconf("SC_PAGE_SIZE")
-            return round((pages * page_size) / (1024 ** 3), 1)
+        import os
+        pages = os.sysconf("SC_PHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        return round((pages * page_size) / (1024 ** 3), 1)
     except Exception:
         return None
-    return None
 
 
 def gpu_name() -> str:
     system = platform.system()
     try:
         if system == "Darwin":
-            result = subprocess.run(
-                ["system_profiler", "SPDisplaysDataType"],
-                capture_output=True,
-                text=True,
-                timeout=12,
-            )
+            result = subprocess.run(["system_profiler", "SPDisplaysDataType"], capture_output=True, text=True, timeout=12)
             for line in result.stdout.splitlines():
                 stripped = line.strip()
                 if stripped.startswith("Chipset Model:"):
@@ -94,24 +75,15 @@ def gpu_name() -> str:
         elif system == "Windows":
             powershell = shutil.which("powershell") or shutil.which("pwsh")
             if powershell:
-                result = subprocess.run(
-                    [powershell, "-NoProfile", "-Command", "(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join '; '"],
-                    capture_output=True,
-                    text=True,
-                    timeout=12,
-                )
-                value = result.stdout.strip()
-                if value:
-                    return value
+                result = subprocess.run([powershell, "-NoProfile", "-Command",
+                    "(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join '; '"],
+                    capture_output=True, text=True, timeout=12)
+                if result.stdout.strip():
+                    return result.stdout.strip()
         else:
             nvidia = shutil.which("nvidia-smi")
             if nvidia:
-                result = subprocess.run(
-                    [nvidia, "--query-gpu=name", "--format=csv,noheader"],
-                    capture_output=True,
-                    text=True,
-                    timeout=8,
-                )
+                result = subprocess.run([nvidia, "--query-gpu=name", "--format=csv,noheader"], capture_output=True, text=True, timeout=8)
                 if result.stdout.strip():
                     return "; ".join(line.strip() for line in result.stdout.splitlines() if line.strip())
     except Exception:
@@ -119,18 +91,35 @@ def gpu_name() -> str:
     return "not detected"
 
 
+def model_tier(ram_gb: float | None, gpu: str) -> dict[str, str]:
+    ram = ram_gb or 0
+    gpu_lower = gpu.lower()
+    if ram >= 64 or any(token in gpu_lower for token in ["4090", "5090", "a6000", "48gb"]):
+        return {"tier": "ultra", "target": "30B-70B quantized", "note": "maximum local reasoning tier"}
+    if ram >= 32 or any(token in gpu_lower for token in ["3090", "4090", "24gb"]):
+        return {"tier": "high", "target": "14B-32B quantized", "note": "strong local reasoning"}
+    if ram >= 16:
+        return {"tier": "medium", "target": "7B-14B quantized", "note": "balanced quality and speed"}
+    return {"tier": "light", "target": "3B-4B quantized", "note": "optimized for 8 GB class hardware"}
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     backend_running = port_open("127.0.0.1", 8000)
-    ollama_running = port_open("127.0.0.1", 11434)
+    embedded_ai_running = port_open("127.0.0.1", 8081)
+    binary = root / "runtime" / "bin" / ("llama-server.exe" if platform.system() == "Windows" else "llama-server")
+    model = root / "models" / "default.gguf"
 
+    ram = memory_gb()
+    gpu = gpu_name()
     hardware = {
         "os": f"{platform.system()} {platform.release()}",
         "architecture": platform.machine(),
         "cpu": platform.processor() or platform.machine(),
         "logical_cpu_count": __import__("os").cpu_count(),
-        "ram_gb": memory_gb(),
-        "gpu": gpu_name(),
+        "ram_gb": ram,
+        "gpu": gpu,
+        "recommended_local_ai": model_tier(ram, gpu),
     }
 
     checks = [
@@ -139,11 +128,12 @@ def main() -> int:
         command_version("npm", ["--version"]),
         command_version("rustc", ["--version"]),
         command_version("cargo", ["--version"]),
-        command_version("ollama", ["--version"]),
         Check("backend requirements", (root / "backend" / "requirements.txt").exists(), str(root / "backend" / "requirements.txt")),
         Check("desktop package", (root / "desktop" / "package.json").exists(), str(root / "desktop" / "package.json")),
+        Check("bundled llama.cpp binary", binary.exists(), str(binary)),
+        Check("bundled GGUF model", model.exists(), str(model)),
         Check("backend port 8000", backend_running, "open" if backend_running else "not running"),
-        Check("Ollama port 11434", ollama_running, "open" if ollama_running else "not running"),
+        Check("embedded AI port 8081", embedded_ai_running, "open" if embedded_ai_running else "not running"),
     ]
 
     print("FCC Assistant setup doctor\n")
@@ -151,16 +141,15 @@ def main() -> int:
     for key, value in hardware.items():
         print(f"  {key}: {value}")
 
-    print("\nToolchain")
+    print("\nToolchain / embedded runtime")
     for item in checks:
         marker = "OK" if item.ok else "--"
         print(f"[{marker}] {item.name}: {item.detail}")
 
     required = checks[:5]
-    if all(item.ok for item in required):
-        print("\nCore development toolchain is available.")
-    else:
-        print("\nSome required development tools are missing.")
+    print("\nCore development toolchain is available." if all(item.ok for item in required)
+          else "\nSome required development tools are missing.")
+    print("Embedded llama.cpp/model checks may stay missing until packaging assets are added.")
 
     print("\nJSON summary:")
     print(json.dumps({"hardware": hardware, "checks": [asdict(item) for item in checks]}, indent=2))
