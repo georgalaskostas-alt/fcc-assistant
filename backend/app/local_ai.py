@@ -15,9 +15,9 @@ class LocalAIError(RuntimeError):
 
 SYSTEM_PROMPT = """You are FCC Assistant, a local read-only process analysis assistant.
 Use only the process evidence supplied in the prompt. Never invent tag values, causes, alarms,
-limits, or operating events. Clearly separate observed facts from possible engineering hypotheses.
-Do not recommend changing plant setpoints or controls unless an authorized engineering workflow
-is added in a future version. Current mode is analysis and reporting only.
+limits, or operating events. Clearly separate observed facts from calculated results and possible
+engineering hypotheses. Do not recommend changing plant setpoints or controls. Current mode is
+analysis and reporting only.
 """
 
 
@@ -36,65 +36,71 @@ def _is_local_url(url: str) -> bool:
 
 
 class LocalAIClient:
-    """Client for a strictly local Ollama-compatible runtime on the user's laptop."""
+    """Strictly local client for the embedded llama.cpp server."""
 
     def __init__(self) -> None:
         settings = get_settings()
         self.base_url = settings.local_ai_url.rstrip("/")
-        self.model = settings.local_ai_model.strip()
+        self.model = settings.local_ai_model_name.strip() or "embedded-local-model"
         self.timeout = settings.local_ai_timeout_seconds
-        if self.base_url and not _is_local_url(self.base_url):
-            raise LocalAIError("External AI endpoints are blocked. FCC Assistant only allows localhost AI runtimes.")
-
-    def _ensure_configured(self) -> None:
-        if not self.base_url:
-            raise LocalAIError("Local AI URL is not configured")
         if not _is_local_url(self.base_url):
-            raise LocalAIError("External AI endpoints are blocked")
-        if not self.model:
-            raise LocalAIError("Local AI model is not configured")
+            raise LocalAIError("External AI endpoints are blocked. Only localhost is allowed.")
 
     async def status(self) -> dict[str, Any]:
-        if not self.base_url:
-            return {"configured": False, "connected": False, "model": self.model or None}
-        self._ensure_local_endpoint()
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{self.base_url}/api/tags")
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{self.base_url}/health")
                 response.raise_for_status()
                 payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
-            raise LocalAIError(f"Local AI runtime is not reachable: {exc}") from exc
-        models = []
-        if isinstance(payload, dict) and isinstance(payload.get("models"), list):
-            models = [item.get("name") for item in payload["models"] if isinstance(item, dict)]
-        return {"configured": bool(self.model), "connected": True, "model": self.model or None,
-                "model_available": self.model in models if self.model else False, "available_models": models,
-                "local_only": True}
+            return {
+                "configured": True,
+                "connected": False,
+                "runtime": "llama.cpp",
+                "model": self.model,
+                "local_only": True,
+                "detail": str(exc),
+            }
 
-    def _ensure_local_endpoint(self) -> None:
-        if self.base_url and not _is_local_url(self.base_url):
-            raise LocalAIError("External AI endpoints are blocked")
+        return {
+            "configured": True,
+            "connected": True,
+            "runtime": "llama.cpp",
+            "model": self.model,
+            "local_only": True,
+            "health": payload,
+        }
 
     async def generate(self, user_prompt: str, context: dict[str, Any] | None = None) -> LocalAIResponse:
-        self._ensure_configured()
         prompt = user_prompt.strip()
         if not prompt:
             raise LocalAIError("Prompt cannot be empty")
+
         evidence = f"\n\nPROCESS EVIDENCE (structured data):\n{context}\n" if context else ""
-        body = {"model": self.model, "stream": False, "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"{prompt}{evidence}"},
-        ], "options": {"temperature": 0.1}}
+        body = {
+            "model": self.model,
+            "stream": False,
+            "temperature": 0.1,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"{prompt}{evidence}"},
+            ],
+        }
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(f"{self.base_url}/api/chat", json=body)
+                response = await client.post(f"{self.base_url}/v1/chat/completions", json=body)
                 response.raise_for_status()
                 payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
-            raise LocalAIError(f"Local AI request failed: {exc}") from exc
-        message = payload.get("message") if isinstance(payload, dict) else None
-        text = message.get("content") if isinstance(message, dict) else None
+            raise LocalAIError(f"Embedded local AI request failed: {exc}") from exc
+
+        try:
+            text = payload["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LocalAIError("Embedded local AI returned an invalid response") from exc
+
         if not isinstance(text, str) or not text.strip():
-            raise LocalAIError("Local AI returned an empty or invalid response")
+            raise LocalAIError("Embedded local AI returned an empty response")
+
         return LocalAIResponse(model=self.model, text=text.strip())

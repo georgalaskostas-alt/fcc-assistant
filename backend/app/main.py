@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from .analytics import AnalyticsError, compare_summaries, summarize_pi_payload
+from .embedded_runtime import EmbeddedAIRuntime, EmbeddedRuntimeError
 from .local_ai import LocalAIClient, LocalAIError
 from .orchestrator import AssistantOrchestrator, OrchestratorError
 from .pi_client import PIWebAPIClient, PIWebAPIError
@@ -14,7 +15,7 @@ from .simulator import SimulatedFCCSource
 from .tag_registry import TagRegistry, TagRegistryError
 from .tag_service import TagService, TagServiceError
 
-app = FastAPI(title="FCC Assistant Local API", version="0.3.0", description="Local backend for FCC process analysis and reporting.")
+app = FastAPI(title="FCC Assistant Local API", version="0.4.0", description="Local backend for FCC process analysis and reporting.")
 
 
 class AIAnalysisRequest(BaseModel):
@@ -63,19 +64,42 @@ def health() -> dict[str, str]:
 @app.get("/api/v1/system/capabilities")
 def capabilities() -> dict[str, object]:
     settings = get_settings()
-    return {"pi_web_api": "configured" if settings.pi_web_api_url else "not_configured",
-            "local_ai": "configured" if settings.local_ai_model else "not_configured",
-            "plant_write_access": False,
-            "features": ["pi-read-only", "tag-registry", "named-tag-data", "engineering-analytics",
-                         "period-comparison", "shift-reports", "local-ai-assistant", "assistant-orchestrator", "fcc-simulator"]}
+    runtime = EmbeddedAIRuntime().readiness()
+    return {
+        "pi_web_api": "configured" if settings.pi_web_api_url else "not_configured",
+        "local_ai": "ready" if runtime["binary_present"] and runtime["model_present"] else "not_ready",
+        "local_ai_runtime": "llama.cpp",
+        "external_ai": False,
+        "plant_write_access": False,
+        "features": [
+            "pi-read-only", "tag-registry", "named-tag-data", "engineering-analytics",
+            "period-comparison", "shift-reports", "embedded-local-ai", "assistant-orchestrator", "fcc-simulator",
+        ],
+    }
+
+
+@app.get("/api/v1/ai/runtime")
+def ai_runtime() -> dict[str, object]:
+    runtime = EmbeddedAIRuntime()
+    return {"readiness": runtime.readiness(), "state": asdict(runtime.state())}
+
+
+@app.post("/api/v1/ai/runtime/start")
+def ai_runtime_start() -> dict[str, object]:
+    try:
+        return asdict(EmbeddedAIRuntime().start())
+    except EmbeddedRuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/v1/ai/runtime/stop")
+def ai_runtime_stop() -> dict[str, object]:
+    return asdict(EmbeddedAIRuntime().stop())
 
 
 @app.get("/api/v1/ai/status")
 async def ai_status() -> dict[str, object]:
-    try:
-        return await LocalAIClient().status()
-    except LocalAIError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return await LocalAIClient().status()
 
 
 @app.post("/api/v1/ai/analyze")
@@ -86,7 +110,7 @@ async def ai_analyze(request: AIAnalysisRequest) -> dict[str, object]:
         response = await LocalAIClient().generate(request.question, request.evidence)
     except LocalAIError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return {"mode": "local", "read_only": True, "model": response.model, "answer": response.text}
+    return {"mode": "local", "runtime": "llama.cpp", "read_only": True, "model": response.model, "answer": response.text}
 
 
 @app.post("/api/v1/assistant/shift")

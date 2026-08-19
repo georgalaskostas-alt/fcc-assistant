@@ -11,7 +11,7 @@ import {
   Settings,
   ShieldCheck,
 } from "lucide-react";
-import { api, DemoShiftResponse, SimulatorTag, SystemCapabilities } from "./api";
+import { api, DemoShiftResponse, RuntimeInfo, SimulatorTag, SystemCapabilities } from "./api";
 
 type View = "dashboard" | "chat" | "reports" | "settings";
 
@@ -51,10 +51,12 @@ function fmt(value: number | null, digits = 1) {
 export default function App() {
   const [view, setView] = useState<View>("dashboard");
   const [capabilities, setCapabilities] = useState<SystemCapabilities | null>(null);
+  const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
   const [tags, setTags] = useState<SimulatorTag[]>([]);
   const [shift, setShift] = useState<DemoShiftResponse | null>(null);
   const [backendOk, setBackendOk] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [runtimeBusy, setRuntimeBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [question, setQuestion] = useState("Τι σημαντικό συνέβη στη βάρδια;");
   const [answer, setAnswer] = useState<string>("");
@@ -64,14 +66,16 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const [health, caps, tagResponse, demo] = await Promise.all([
+      const [health, caps, runtimeInfo, tagResponse, demo] = await Promise.all([
         api.health(),
         api.capabilities(),
+        api.aiRuntime(),
         api.simulatorTags(),
         api.demoShift(),
       ]);
       setBackendOk(health.status === "ok");
       setCapabilities(caps);
+      setRuntime(runtimeInfo);
       setTags(tagResponse.items);
       setShift(demo);
     } catch (err) {
@@ -94,6 +98,10 @@ export default function App() {
     setAsking(true);
     setAnswer("");
     try {
+      if (!runtime?.state.running) {
+        await api.startAiRuntime();
+        setRuntime(await api.aiRuntime());
+      }
       const response = await api.analyze(question.trim(), {
         analysis_scope: "simulated_shift",
         source: "FCC simulator - development data only",
@@ -104,6 +112,20 @@ export default function App() {
       setAnswer(`Δεν ήταν δυνατή η ανάλυση: ${err instanceof Error ? err.message : "unknown error"}`);
     } finally {
       setAsking(false);
+    }
+  }
+
+  async function setAiRunning(run: boolean) {
+    setRuntimeBusy(true);
+    setError(null);
+    try {
+      if (run) await api.startAiRuntime(); else await api.stopAiRuntime();
+      setRuntime(await api.aiRuntime());
+      setCapabilities(await api.capabilities());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to change local AI state");
+    } finally {
+      setRuntimeBusy(false);
     }
   }
 
@@ -125,8 +147,8 @@ export default function App() {
           })}
         </nav>
         <div className="sidebar-footer">
-          <div className="security-chip"><ShieldCheck size={16} /><span>Local-only AI</span></div>
-          <small>Plant write access: disabled</small>
+          <div className="security-chip"><ShieldCheck size={16} /><span>Embedded local AI</span></div>
+          <small>External AI: disabled · Plant writes: disabled</small>
         </div>
       </aside>
 
@@ -173,7 +195,8 @@ export default function App() {
                 <div className="status-list">
                   <div><span>Backend</span><strong>{backendOk ? "Connected" : "Offline"}</strong></div>
                   <div><span>PI Web API</span><strong>{capabilities?.pi_web_api ?? "unknown"}</strong></div>
-                  <div><span>Local AI</span><strong>{capabilities?.local_ai ?? "unknown"}</strong></div>
+                  <div><span>Local AI</span><strong>{runtime?.state.running ? "Running" : capabilities?.local_ai ?? "unknown"}</strong></div>
+                  <div><span>AI runtime</span><strong>{capabilities?.local_ai_runtime ?? "llama.cpp"}</strong></div>
                   <div><span>Simulator</span><strong>Available</strong></div>
                 </div>
               </article>
@@ -190,14 +213,14 @@ export default function App() {
         {view === "chat" && (
           <section className="content chat-layout">
             <div className="chat-intro">
-              <span className="eyebrow">LOCAL AI</span>
+              <span className="eyebrow">EMBEDDED LOCAL AI</span>
               <h2>Ask about the FCC shift</h2>
-              <p>Η απάντηση βασίζεται μόνο στα simulated process data που στέλνονται στο local model.</p>
+              <p>Το llama.cpp model τρέχει μέσα στο laptop και λαμβάνει μόνο τα structured process data που χρειάζεται.</p>
             </div>
             <div className="chat-card">
               <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ρώτησε κάτι για τη βάρδια…" />
               <div className="chat-actions">
-                <span><ShieldCheck size={15} /> Data stays on this laptop</span>
+                <span><ShieldCheck size={15} /> No external AI · data stays local</span>
                 <button className="primary-button" onClick={() => void askAssistant()} disabled={asking || !shift}>{asking ? "Analyzing…" : "Analyze shift"}</button>
               </div>
               {answer && <div className="assistant-answer"><div className="answer-avatar"><Bot size={20} /></div><div><strong>FCC Assistant</strong><p>{answer}</p></div></div>}
@@ -222,11 +245,18 @@ export default function App() {
 
         {view === "settings" && (
           <section className="content">
-            <div className="hero-row"><div><span className="eyebrow">LOCAL CONFIGURATION</span><h2>System settings</h2><p>Προς το παρόν οι πραγματικές PI ρυθμίσεις μένουν κενές.</p></div></div>
+            <div className="hero-row"><div><span className="eyebrow">LOCAL CONFIGURATION</span><h2>System settings</h2><p>Πραγματικά PI στοιχεία και μοντέλα παραμένουν μόνο τοπικά.</p></div></div>
             <div className="settings-grid">
               <article className="panel"><div className="panel-heading"><div><h3>PI Web API</h3><p>Read-only plant data source</p></div><Database size={20} /></div><div className="setting-line"><span>Status</span><strong>{capabilities?.pi_web_api ?? "not configured"}</strong></div></article>
-              <article className="panel"><div className="panel-heading"><div><h3>Local AI runtime</h3><p>localhost only</p></div><Bot size={20} /></div><div className="setting-line"><span>Status</span><strong>{capabilities?.local_ai ?? "not configured"}</strong></div></article>
-              <article className="panel"><div className="panel-heading"><div><h3>Security</h3><p>Process protection boundary</p></div><ShieldCheck size={20} /></div><div className="setting-line"><span>Plant writes</span><strong>Disabled</strong></div></article>
+              <article className="panel">
+                <div className="panel-heading"><div><h3>Embedded local AI</h3><p>llama.cpp · localhost only · no Ollama</p></div><Bot size={20} /></div>
+                <div className="setting-line"><span>Assets</span><strong>{capabilities?.local_ai ?? "not ready"}</strong></div>
+                <div className="setting-line"><span>Runtime</span><strong>{runtime?.state.running ? `Running (PID ${runtime.state.pid})` : "Stopped"}</strong></div>
+                <button className="primary-button" disabled={runtimeBusy} onClick={() => void setAiRunning(!runtime?.state.running)}>
+                  {runtime?.state.running ? "Stop local AI" : "Start local AI"}
+                </button>
+              </article>
+              <article className="panel"><div className="panel-heading"><div><h3>Security</h3><p>Process protection boundary</p></div><ShieldCheck size={20} /></div><div className="setting-line"><span>External AI</span><strong>Disabled</strong></div><div className="setting-line"><span>Plant writes</span><strong>Disabled</strong></div></article>
             </div>
           </section>
         )}
