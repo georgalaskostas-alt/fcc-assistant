@@ -2,6 +2,7 @@ from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, Query
 
+from .analytics import AnalyticsError, compare_summaries, summarize_pi_payload
 from .pi_client import PIWebAPIClient, PIWebAPIError
 from .settings import get_settings
 from .tag_registry import TagRegistry, TagRegistryError
@@ -29,6 +30,12 @@ def get_tag_service() -> TagService:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+def raise_tag_service_error(exc: TagServiceError) -> None:
+    message = str(exc)
+    status = 404 if message.startswith("Unknown tag key") else 502
+    raise HTTPException(status_code=status, detail=message) from exc
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {
@@ -50,6 +57,7 @@ def capabilities() -> dict[str, object]:
             "tag-registry",
             "named-tag-data",
             "engineering-analytics",
+            "period-comparison",
             "shift-reports",
             "local-ai-assistant",
         ],
@@ -81,9 +89,7 @@ async def tag_current_value(key: str) -> dict[str, object]:
     try:
         return await service.current_value(key)
     except TagServiceError as exc:
-        message = str(exc)
-        status = 404 if message.startswith("Unknown tag key") else 502
-        raise HTTPException(status_code=status, detail=message) from exc
+        raise_tag_service_error(exc)
 
 
 @app.get("/api/v1/tags/{key}/recorded")
@@ -102,9 +108,75 @@ async def tag_recorded_values(
             max_count=max_count,
         )
     except TagServiceError as exc:
-        message = str(exc)
-        status = 404 if message.startswith("Unknown tag key") else 502
-        raise HTTPException(status_code=status, detail=message) from exc
+        raise_tag_service_error(exc)
+
+
+@app.get("/api/v1/tags/{key}/summary")
+async def tag_summary(
+    key: str,
+    start_time: str = Query(..., alias="startTime"),
+    end_time: str = Query(..., alias="endTime"),
+    max_count: int = Query(1000, alias="maxCount", ge=2, le=10000),
+) -> dict[str, object]:
+    service = get_tag_service()
+    try:
+        payload = await service.recorded_values(
+            key=key,
+            start_time=start_time,
+            end_time=end_time,
+            max_count=max_count,
+        )
+        summary = summarize_pi_payload(payload)
+    except TagServiceError as exc:
+        raise_tag_service_error(exc)
+    except AnalyticsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "tag": key,
+        "startTime": start_time,
+        "endTime": end_time,
+        "summary": asdict(summary),
+    }
+
+
+@app.get("/api/v1/tags/{key}/compare")
+async def compare_tag_periods(
+    key: str,
+    current_start: str = Query(..., alias="currentStart"),
+    current_end: str = Query(..., alias="currentEnd"),
+    reference_start: str = Query(..., alias="referenceStart"),
+    reference_end: str = Query(..., alias="referenceEnd"),
+    max_count: int = Query(1000, alias="maxCount", ge=2, le=10000),
+) -> dict[str, object]:
+    service = get_tag_service()
+    try:
+        current_payload = await service.recorded_values(
+            key=key,
+            start_time=current_start,
+            end_time=current_end,
+            max_count=max_count,
+        )
+        reference_payload = await service.recorded_values(
+            key=key,
+            start_time=reference_start,
+            end_time=reference_end,
+            max_count=max_count,
+        )
+        current_summary = summarize_pi_payload(current_payload)
+        reference_summary = summarize_pi_payload(reference_payload)
+        comparison = compare_summaries(current_summary, reference_summary)
+    except TagServiceError as exc:
+        raise_tag_service_error(exc)
+    except AnalyticsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "tag": key,
+        "current": asdict(current_summary),
+        "reference": asdict(reference_summary),
+        "comparison": asdict(comparison),
+    }
 
 
 @app.get("/api/v1/pi/status")
