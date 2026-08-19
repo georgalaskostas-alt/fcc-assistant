@@ -1,0 +1,1 @@
+Temporary note: icon assets are RGBA PNGs required by Tauri.
