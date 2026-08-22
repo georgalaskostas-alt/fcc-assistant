@@ -72,20 +72,37 @@ class DashboardStore:
             layout["order"] = index
         return normalized
 
-    def add_widget(self, workspace: str, widget: dict[str, object]) -> dict[str, object]:
-        current = self.get(workspace)
-        widgets = self._normalized_widgets(current)
+    def _append_widget(self, widgets: list[dict[str, object]], widget: dict[str, object]) -> list[dict[str, object]]:
         widget_id = widget.get("id")
-        widgets = [item for item in widgets if item.get("id") != widget_id]
+        updated = [item for item in widgets if item.get("id") != widget_id]
         candidate = dict(widget)
         layout = candidate.get("layout")
         if not isinstance(layout, dict):
-            layout = {"order": len(widgets), "width": 6, "height": "normal"}
+            layout = {"order": len(updated), "width": 6, "height": "normal"}
         else:
             layout = dict(layout)
-            layout["order"] = len(widgets)
+            layout["order"] = len(updated)
         candidate["layout"] = layout
-        widgets.append(candidate)
+        updated.append(candidate)
+        return updated
+
+    def add_widget(self, workspace: str, widget: dict[str, object]) -> dict[str, object]:
+        current = self.get(workspace)
+        widgets = self._append_widget(self._normalized_widgets(current), widget)
+        current["widgets"] = widgets
+        return self.put(workspace, current)
+
+    def add_widgets(self, workspace: str, new_widgets: list[dict[str, object]]) -> dict[str, object]:
+        current = self.get(workspace)
+        widgets = self._normalized_widgets(current)
+        for widget in new_widgets:
+            widgets = self._append_widget(widgets, widget)
+        for index, widget in enumerate(widgets):
+            layout = widget.get("layout")
+            if not isinstance(layout, dict):
+                layout = {}
+                widget["layout"] = layout
+            layout["order"] = index
         current["widgets"] = widgets
         return self.put(workspace, current)
 
@@ -95,6 +112,14 @@ class DashboardStore:
             widget = plan.get("widget")
             if isinstance(widget, dict):
                 return self.add_widget(workspace, widget)
+            return self.get(workspace)
+
+        if action == "add_widgets":
+            raw_widgets = plan.get("widgets")
+            if isinstance(raw_widgets, list):
+                valid = [widget for widget in raw_widgets if isinstance(widget, dict)]
+                if valid:
+                    return self.add_widgets(workspace, valid)
             return self.get(workspace)
 
         current = self.get(workspace)
