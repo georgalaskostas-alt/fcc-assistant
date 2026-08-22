@@ -23,14 +23,11 @@ import {
 type Props = {
   shift: DemoShiftResponse | null;
   tags: SimulatorTag[];
+  scopeUnit?: string;
 };
 
 type Point = { Timestamp: string; Value: number };
-
-type UnitWidgetGroup = {
-  unitKey: string;
-  widgets: DashboardWidget[];
-};
+type UnitWidgetGroup = { unitKey: string; widgets: DashboardWidget[] };
 
 const WIDTH_STEPS: DashboardWidgetLayout["width"][] = [3, 4, 6, 8, 12];
 const HEIGHT_STEPS: DashboardWidgetLayout["height"][] = ["compact", "normal", "tall"];
@@ -50,26 +47,18 @@ function autoLayoutFor(widget: DashboardWidget, index: number, count: number): D
       height: widget.type === "trend" ? "tall" : widget.type === "summary" ? "normal" : "compact",
     };
   }
-
   if (count === 2) {
-    return {
-      order: index,
-      width: 6,
-      height: widget.type === "trend" ? "tall" : "normal",
-    };
+    return { order: index, width: 6, height: widget.type === "trend" ? "tall" : "normal" };
   }
-
   if (count === 3) {
     if (widget.type === "trend") return { order: index, width: 12, height: "tall" };
     return { order: index, width: 6, height: widget.type === "summary" ? "normal" : "compact" };
   }
-
   if (count <= 6) {
     if (widget.type === "trend") return { order: index, width: 8, height: "tall" };
     if (widget.type === "summary") return { order: index, width: 4, height: "normal" };
     return { order: index, width: 4, height: "compact" };
   }
-
   if (widget.type === "trend") return { order: index, width: 6, height: "normal" };
   if (widget.type === "summary") return { order: index, width: 6, height: "normal" };
   return { order: index, width: 3, height: "compact" };
@@ -141,50 +130,24 @@ function WorkspaceWidgetCard({ widget, shift, tags }: { widget: DashboardWidget;
   const series = useMemo(() => seriesFor(widget, shift), [widget, shift]);
 
   if (widget.type === "trend") {
-    return (
-      <>
-        <div className="workspace-card-head"><div><span>{widget.unit_key.toUpperCase()}</span><h3>{widget.title}</h3></div><small>{widget.period}</small></div>
-        <TrendChart widget={widget} shift={shift} tags={tags} />
-      </>
-    );
+    return <><div className="workspace-card-head"><div><span>{widget.unit_key.toUpperCase()}</span><h3>{widget.title}</h3></div><small>{widget.period}</small></div><TrendChart widget={widget} shift={shift} tags={tags} /></>;
   }
-
   if (widget.type === "average") {
     const value = mean(series[0] ?? []);
     const unit = unitFor(widget.tag_keys[0] ?? "", tags);
-    return (
-      <>
-        <div className="workspace-card-head"><div><span>{widget.unit_key.toUpperCase()}</span><h3>{widget.title}</h3></div><small>{widget.period}</small></div>
-        <div className="workspace-kpi-value">{value == null ? "—" : value.toFixed(2)} <small>{unit}</small></div>
-        <div className="workspace-kpi-caption">Average over selected period</div>
-      </>
-    );
+    return <><div className="workspace-card-head"><div><span>{widget.unit_key.toUpperCase()}</span><h3>{widget.title}</h3></div><small>{widget.period}</small></div><div className="workspace-kpi-value">{value == null ? "—" : value.toFixed(2)} <small>{unit}</small></div><div className="workspace-kpi-caption">Average over selected period</div></>;
   }
-
   if (widget.type === "kpi") {
     const value = latest(series[0] ?? []);
     const unit = unitFor(widget.tag_keys[0] ?? "", tags);
-    return (
-      <>
-        <div className="workspace-card-head"><div><span>{widget.unit_key.toUpperCase()}</span><h3>{widget.title}</h3></div><small>LIVE</small></div>
-        <div className="workspace-kpi-value">{value == null ? "—" : value.toFixed(1)} <small>{unit}</small></div>
-        <div className="workspace-kpi-caption">Latest available value</div>
-      </>
-    );
+    return <><div className="workspace-card-head"><div><span>{widget.unit_key.toUpperCase()}</span><h3>{widget.title}</h3></div><small>LIVE</small></div><div className="workspace-kpi-value">{value == null ? "—" : value.toFixed(1)} <small>{unit}</small></div><div className="workspace-kpi-caption">Latest available value</div></>;
   }
 
   const summaryItems = tags.slice(0, 4).map((tag) => ({ tag, value: latest(shift?.data[tag.key]?.Items ?? []) }));
-  return (
-    <>
-      <div className="workspace-card-head"><div><span>{widget.unit_key.toUpperCase()}</span><h3>{widget.title}</h3></div><small>SUMMARY</small></div>
-      <div className="summary-grid">
-        {summaryItems.map(({ tag, value }) => <div key={tag.key}><span>{tag.name}</span><strong>{value == null ? "—" : value.toFixed(1)} {tag.unit}</strong></div>)}
-      </div>
-    </>
-  );
+  return <><div className="workspace-card-head"><div><span>{widget.unit_key.toUpperCase()}</span><h3>{widget.title}</h3></div><small>SUMMARY</small></div><div className="summary-grid">{summaryItems.map(({ tag, value }) => <div key={tag.key}><span>{tag.name}</span><strong>{value == null ? "—" : value.toFixed(1)} {tag.unit}</strong></div>)}</div></>;
 }
 
-export function DashboardCustomizer({ shift, tags }: Props) {
+export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const [workspace, setWorkspace] = useState<DashboardWorkspace | null>(null);
   const [command, setCommand] = useState("");
   const [busy, setBusy] = useState(false);
@@ -232,6 +195,7 @@ export function DashboardCustomizer({ shift, tags }: Props) {
       const response = await api.dashboardCommand(value, "default");
       setWorkspace(normalizeWorkspace(response.workspace));
       setCommand("");
+      if (response.plan.warnings?.length) setError(response.plan.warnings.join(" · "));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to apply dashboard command");
     } finally {
@@ -248,8 +212,7 @@ export function DashboardCustomizer({ shift, tags }: Props) {
     if (from < 0 || from === to) return;
     const [moved] = widgets.splice(from, 1);
     widgets.splice(to, 0, moved);
-    const next = normalizeWorkspace({ ...workspace, widgets });
-    void persist(next);
+    void persist(normalizeWorkspace({ ...workspace, widgets }));
   }
 
   function resize(widgetId: string, direction: number) {
@@ -269,16 +232,12 @@ export function DashboardCustomizer({ shift, tags }: Props) {
 
   function removeWidget(widgetId: string) {
     if (!workspace) return;
-    const widgets = workspace.widgets.filter((widget) => widget.id !== widgetId);
-    void persist(normalizeWorkspace({ ...workspace, widgets }));
+    void persist(normalizeWorkspace({ ...workspace, widgets: workspace.widgets.filter((widget) => widget.id !== widgetId) }));
   }
 
-  const orderedWidgets = useMemo(
-    () => [...(workspace?.widgets ?? [])].sort((a, b) => (a.layout?.order ?? 0) - (b.layout?.order ?? 0)),
-    [workspace],
-  );
+  const orderedWidgets = useMemo(() => [...(workspace?.widgets ?? [])].sort((a, b) => (a.layout?.order ?? 0) - (b.layout?.order ?? 0)), [workspace]);
 
-  const unitGroups = useMemo<UnitWidgetGroup[]>(() => {
+  const allUnitGroups = useMemo<UnitWidgetGroup[]>(() => {
     const groups = new Map<string, DashboardWidget[]>();
     for (const widget of orderedWidgets) {
       const key = widget.unit_key || "site";
@@ -287,20 +246,23 @@ export function DashboardCustomizer({ shift, tags }: Props) {
     return [...groups.entries()].map(([unitKey, widgets]) => ({ unitKey, widgets }));
   }, [orderedWidgets]);
 
-  const unitContainerWidth = unitGroups.length <= 1 ? "100%" : unitGroups.length === 2 ? "calc(50% - 6px)" : "min(100%, 680px)";
+  const unitGroups = useMemo(
+    () => scopeUnit === "all" ? allUnitGroups : allUnitGroups.filter((group) => group.unitKey === scopeUnit),
+    [allUnitGroups, scopeUnit],
+  );
+
+  const unitContainerWidth = scopeUnit !== "all" || unitGroups.length <= 1
+    ? "100%"
+    : unitGroups.length === 2
+      ? "calc(50% - 6px)"
+      : "min(100%, 680px)";
 
   return (
     <div className="workspace-shell">
       <div className="workspace-toolbar">
-        <button className={commandOpen ? "workspace-tool active" : "workspace-tool"} onClick={() => setCommandOpen((value) => !value)}>
-          <Bot size={15} /> Command
-        </button>
-        <button className={editLayout ? "workspace-tool active" : "workspace-tool"} onClick={() => setEditLayout((value) => !value)}>
-          <SlidersHorizontal size={15} /> Arrange
-        </button>
-        <button className={autoLayout ? "workspace-tool active" : "workspace-tool"} onClick={() => setAutoLayoutPreference(!autoLayout)} title="Automatically resize and reflow widgets">
-          Auto layout {autoLayout ? "ON" : "OFF"}
-        </button>
+        <button className={commandOpen ? "workspace-tool active" : "workspace-tool"} onClick={() => setCommandOpen((value) => !value)}><Bot size={15} /> Command</button>
+        <button className={editLayout ? "workspace-tool active" : "workspace-tool"} onClick={() => setEditLayout((value) => !value)}><SlidersHorizontal size={15} /> Arrange</button>
+        <button className={autoLayout ? "workspace-tool active" : "workspace-tool"} onClick={() => setAutoLayoutPreference(!autoLayout)} title="Automatically resize and reflow widgets">Auto layout {autoLayout ? "ON" : "OFF"}</button>
         <span className="workspace-save-state">{saving ? "Saving…" : "Saved locally"}</span>
       </div>
 
@@ -308,17 +270,9 @@ export function DashboardCustomizer({ shift, tags }: Props) {
         <div className="workspace-command-wrap">
           <div className="workspace-command-bar">
             <Bot size={17} />
-            <input
-              autoFocus
-              value={command}
-              onChange={(event) => setCommand(event.target.value)}
-              onKeyDown={(event) => { if (event.key === "Enter") void applyCommand(); }}
-              placeholder="π.χ. Βάλε τροφοδοσία και reactor temperature για FCC και Hydrocracker"
-            />
+            <input autoFocus value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void applyCommand(); }} placeholder="π.χ. Βάλε τροφοδοσία και αντίδραση για FCC και Hydrocracker" />
             <button className="command-icon-button" title="Local voice input (coming next)" disabled><Mic size={17} /></button>
-            <button className="command-send-button" disabled={busy || !command.trim()} onClick={() => void applyCommand()}>
-              {busy ? "…" : <Send size={16} />}
-            </button>
+            <button className="command-send-button" disabled={busy || !command.trim()} onClick={() => void applyCommand()}>{busy ? "…" : <Send size={16} />}</button>
           </div>
           <div className="workspace-safety"><ShieldCheck size={13} /> Layout only · read-only PI/DCS</div>
         </div>
@@ -326,59 +280,32 @@ export function DashboardCustomizer({ shift, tags }: Props) {
 
       {error && <div className="error-banner workspace-error">{error}</div>}
 
+      {unitGroups.length === 0 && orderedWidgets.length > 0 && scopeUnit !== "all" && (
+        <div className="widget-empty" style={{ marginTop: 16 }}>No widgets configured for {scopeUnit.toUpperCase()} yet.</div>
+      )}
+
       {unitGroups.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start", marginTop: 10 }}>
-          {unitGroups.map((group) => (
-            <section
-              key={group.unitKey}
-              style={{
-                width: unitContainerWidth,
-                flexGrow: 1,
-                minWidth: unitGroups.length > 1 ? 420 : 0,
-                border: unitGroups.length > 1 ? "1px solid #1f2b36" : "none",
-                borderRadius: 14,
-                padding: unitGroups.length > 1 ? 12 : 0,
-                background: unitGroups.length > 1 ? "rgba(15,22,29,.45)" : "transparent",
-              }}
-            >
-              {unitGroups.length > 1 && (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 2px 10px" }}>
-                  <div>
-                    <span className="eyebrow">PROCESS UNIT</span>
-                    <h3 style={{ marginTop: 3 }}>{group.unitKey.toUpperCase()}</h3>
-                  </div>
-                  <small style={{ color: "#607287", fontSize: 9 }}>{group.widgets.length} widgets</small>
+          {unitGroups.map((group) => {
+            const showGroupChrome = scopeUnit === "all" && allUnitGroups.length > 1;
+            return (
+              <section key={group.unitKey} style={{ width: unitContainerWidth, flexGrow: 1, minWidth: showGroupChrome ? 420 : 0, border: showGroupChrome ? "1px solid #1f2b36" : "none", borderRadius: 14, padding: showGroupChrome ? 12 : 0, background: showGroupChrome ? "rgba(15,22,29,.45)" : "transparent" }}>
+                {showGroupChrome && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 2px 10px" }}><div><span className="eyebrow">PROCESS UNIT</span><h3 style={{ marginTop: 3 }}>{group.unitKey.toUpperCase()}</h3></div><small style={{ color: "#607287", fontSize: 9 }}>{group.widgets.length} widgets</small></div>}
+                <div className={editLayout ? "workspace-render-grid editing" : "workspace-render-grid"} style={{ marginTop: showGroupChrome ? 0 : 10 }}>
+                  {group.widgets.map((widget, index) => {
+                    const globalIndex = orderedWidgets.findIndex((item) => item.id === widget.id);
+                    const layout = autoLayout ? autoLayoutFor(widget, index, group.widgets.length) : defaultLayout(widget, globalIndex);
+                    return (
+                      <article className={`workspace-card workspace-card-${widget.type} workspace-height-${layout.height}`} style={{ gridColumn: `span ${layout.width}` }} key={widget.id}>
+                        {editLayout && <div className="workspace-card-controls"><button title="Move left" disabled={globalIndex === 0 || saving} onClick={() => reorder(widget.id, -1)}><ChevronLeft size={14} /></button><button title="Move right" disabled={globalIndex === orderedWidgets.length - 1 || saving} onClick={() => reorder(widget.id, 1)}><ChevronRight size={14} /></button><button title="Make smaller" disabled={saving} onClick={() => resize(widget.id, -1)}><Minimize2 size={14} /></button><button title="Make larger" disabled={saving} onClick={() => resize(widget.id, 1)}><Maximize2 size={14} /></button><button className="danger" title="Remove from workspace" disabled={saving} onClick={() => removeWidget(widget.id)}><X size={14} /></button></div>}
+                        <WorkspaceWidgetCard widget={{ ...widget, layout }} shift={shift} tags={tags} />
+                      </article>
+                    );
+                  })}
                 </div>
-              )}
-
-              <div className={editLayout ? "workspace-render-grid editing" : "workspace-render-grid"} style={{ marginTop: unitGroups.length > 1 ? 0 : 10 }}>
-                {group.widgets.map((widget, index) => {
-                  const layout = autoLayout
-                    ? autoLayoutFor(widget, index, group.widgets.length)
-                    : defaultLayout(widget, orderedWidgets.findIndex((item) => item.id === widget.id));
-                  const globalIndex = orderedWidgets.findIndex((item) => item.id === widget.id);
-                  return (
-                    <article
-                      className={`workspace-card workspace-card-${widget.type} workspace-height-${layout.height}`}
-                      style={{ gridColumn: `span ${layout.width}` }}
-                      key={widget.id}
-                    >
-                      {editLayout && (
-                        <div className="workspace-card-controls">
-                          <button title="Move left" disabled={globalIndex === 0 || saving} onClick={() => reorder(widget.id, -1)}><ChevronLeft size={14} /></button>
-                          <button title="Move right" disabled={globalIndex === orderedWidgets.length - 1 || saving} onClick={() => reorder(widget.id, 1)}><ChevronRight size={14} /></button>
-                          <button title="Make smaller" disabled={saving} onClick={() => resize(widget.id, -1)}><Minimize2 size={14} /></button>
-                          <button title="Make larger" disabled={saving} onClick={() => resize(widget.id, 1)}><Maximize2 size={14} /></button>
-                          <button className="danger" title="Remove from workspace" disabled={saving} onClick={() => removeWidget(widget.id)}><X size={14} /></button>
-                        </div>
-                      )}
-                      <WorkspaceWidgetCard widget={{ ...widget, layout }} shift={shift} tags={tags} />
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+              </section>
+            );
+          })}
         </div>
       )}
     </div>
