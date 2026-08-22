@@ -1,6 +1,9 @@
 from fastapi.middleware.cors import CORSMiddleware
 
+from .dashboard_api import router as dashboard_router
 from .main import app
+
+app.include_router(dashboard_router)
 
 # Desktop-only local origins. This does not expose the backend to the internet;
 # it only allows the local Vite/Tauri webview to call the loopback API.
@@ -14,6 +17,6 @@ app.add_middleware(
         "tauri://localhost",
     ],
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT"],
     allow_headers=["Content-Type"],
 )

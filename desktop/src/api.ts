@@ -50,6 +50,26 @@ export type RuntimeInfo = {
   state: RuntimeState;
 };
 
+export type DashboardWidget = {
+  id: string;
+  type: "kpi" | "trend" | "average" | "summary";
+  title: string;
+  unit_key: string;
+  tag_keys: string[];
+  period: string;
+};
+
+export type DashboardWorkspace = {
+  workspace: string;
+  title: string;
+  widgets: DashboardWidget[];
+};
+
+export type DashboardCommandResponse = {
+  plan: { action: string; widget: DashboardWidget; read_only: boolean };
+  workspace: DashboardWorkspace;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -75,5 +95,12 @@ export const api = {
     request<AssistantReply>("/api/v1/ai/analyze", {
       method: "POST",
       body: JSON.stringify({ question, evidence }),
+    }),
+  dashboardWorkspace: (workspace = "default") =>
+    request<DashboardWorkspace>(`/api/v1/dashboard/workspaces/${encodeURIComponent(workspace)}`),
+  dashboardCommand: (command: string, workspace = "default") =>
+    request<DashboardCommandResponse>("/api/v1/dashboard/command", {
+      method: "POST",
+      body: JSON.stringify({ command, workspace }),
     }),
 };
