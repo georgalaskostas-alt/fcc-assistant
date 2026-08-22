@@ -46,6 +46,7 @@ def main() -> int:
         "--onefile",
         "--name", "fcc-backend",
         "--paths", str(backend),
+        "--collect-submodules", "app",
         "--distpath", str(dist),
         "--workpath", str(work),
         "--specpath", str(spec),
