@@ -153,7 +153,6 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [commandOpen, setCommandOpen] = useState(false);
   const [editLayout, setEditLayout] = useState(false);
   const [autoLayout, setAutoLayout] = useState(() => window.localStorage.getItem("fcc-auto-layout") !== "off");
 
@@ -259,24 +258,37 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
 
   return (
     <div className="workspace-shell">
+      <div
+        className="workspace-command-wrap"
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 30,
+          paddingTop: 8,
+          paddingBottom: 8,
+          background: "linear-gradient(180deg, rgba(10,15,20,.98) 0%, rgba(10,15,20,.94) 82%, rgba(10,15,20,0) 100%)",
+        }}
+      >
+        <div className="workspace-command-bar">
+          <Bot size={17} />
+          <input
+            value={command}
+            onChange={(event) => setCommand(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") void applyCommand(); }}
+            placeholder={scopeUnit === "all" ? "Πες ή γράψε τι θέλεις να δεις σε όλες τις μονάδες…" : `Πες ή γράψε τι θέλεις να δεις στο ${scopeUnit.toUpperCase()}…`}
+            aria-label="Workspace command"
+          />
+          <button className="command-icon-button" title="Local voice input (coming next)" disabled><Mic size={17} /></button>
+          <button className="command-send-button" disabled={busy || !command.trim()} onClick={() => void applyCommand()}>{busy ? "…" : <Send size={16} />}</button>
+        </div>
+        <div className="workspace-safety"><ShieldCheck size={13} /> Current scope: {scopeUnit === "all" ? "All Units" : scopeUnit.toUpperCase()} · Layout only · read-only PI/DCS</div>
+      </div>
+
       <div className="workspace-toolbar">
-        <button className={commandOpen ? "workspace-tool active" : "workspace-tool"} onClick={() => setCommandOpen((value) => !value)}><Bot size={15} /> Command</button>
         <button className={editLayout ? "workspace-tool active" : "workspace-tool"} onClick={() => setEditLayout((value) => !value)}><SlidersHorizontal size={15} /> Arrange</button>
         <button className={autoLayout ? "workspace-tool active" : "workspace-tool"} onClick={() => setAutoLayoutPreference(!autoLayout)} title="Automatically resize and reflow widgets">Auto layout {autoLayout ? "ON" : "OFF"}</button>
         <span className="workspace-save-state">{saving ? "Saving…" : "Saved locally"}</span>
       </div>
-
-      {commandOpen && (
-        <div className="workspace-command-wrap">
-          <div className="workspace-command-bar">
-            <Bot size={17} />
-            <input autoFocus value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void applyCommand(); }} placeholder="π.χ. Βάλε τροφοδοσία και αντίδραση για FCC και Hydrocracker" />
-            <button className="command-icon-button" title="Local voice input (coming next)" disabled><Mic size={17} /></button>
-            <button className="command-send-button" disabled={busy || !command.trim()} onClick={() => void applyCommand()}>{busy ? "…" : <Send size={16} />}</button>
-          </div>
-          <div className="workspace-safety"><ShieldCheck size={13} /> Layout only · read-only PI/DCS</div>
-        </div>
-      )}
 
       {error && <div className="error-banner workspace-error">{error}</div>}
 
