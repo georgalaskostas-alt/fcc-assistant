@@ -11,6 +11,7 @@ def test_greek_trend_command_resolves_fcc_feed():
     assert plan["widget"]["unit_key"] == "fcc"
     assert plan["widget"]["tag_keys"] == ("feed_flow",)
     assert plan["widget"]["period"] == "8h"
+    assert plan["widget"]["layout"] == {"order": 0, "width": 12, "height": "tall"}
     assert plan["read_only"] is True
 
 
@@ -18,12 +19,30 @@ def test_average_command_resolves_alias():
     plan = plan_dashboard_command("βάλε μέσο όρο O2", default_site_model())
     assert plan["widget"]["type"] == "average"
     assert plan["widget"]["tag_keys"] == ("regenerator_o2",)
+    assert plan["widget"]["layout"]["width"] == 4
 
 
 def test_summary_does_not_require_tag():
     plan = plan_dashboard_command("Θέλω σύνοψη της FCC", default_site_model())
     assert plan["widget"]["type"] == "summary"
     assert plan["widget"]["tag_keys"] == ()
+
+
+def test_move_summary_between_feed_kpi_and_reactor_chart():
+    widgets = [
+        {"id": "fcc-kpi-feed_flow", "type": "kpi", "title": "Feed Flow", "tag_keys": ["feed_flow"]},
+        {"id": "fcc-trend-reactor_temp", "type": "trend", "title": "Reactor Temperature", "tag_keys": ["reactor_temp"]},
+        {"id": "fcc-summary-summary", "type": "summary", "title": "FCC Summary", "tag_keys": []},
+    ]
+    plan = plan_dashboard_command(
+        "Χώρεσε τη σύνοψη ανάμεσα στην τιμή της τροφοδοσίας και το γράφημα reactor temperature",
+        default_site_model(),
+        current_widgets=widgets,
+    )
+    assert plan["action"] == "move_between"
+    assert plan["target_id"] == "fcc-summary-summary"
+    assert plan["first_id"] == "fcc-kpi-feed_flow"
+    assert plan["second_id"] == "fcc-trend-reactor_temp"
 
 
 def test_multi_unit_requires_resolved_unit():
