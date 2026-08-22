@@ -2,16 +2,23 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
-from .site_model import default_site_model
+from .site_model import load_site_model
 
 router = APIRouter(prefix="/bridge/v1", tags=["bridge"])
 
 
+def _site_or_http_error():
+    try:
+        return load_site_model()
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=f"Invalid local site configuration: {exc}") from exc
+
+
 @router.get("/capabilities")
 def bridge_capabilities() -> dict[str, object]:
-    site = default_site_model()
+    site = _site_or_http_error()
     return {
         "contract_version": "1.0-draft",
         "service": "fcc-assistant-backend",
@@ -43,7 +50,7 @@ def bridge_capabilities() -> dict[str, object]:
 
 @router.get("/site")
 def bridge_site_catalog() -> dict[str, object]:
-    site = default_site_model()
+    site = _site_or_http_error()
     return {
         "contract_version": "1.0-draft",
         "site": site.name,
