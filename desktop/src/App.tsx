@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Bot,
-  ChartNoAxesCombined,
   Database,
   FileText,
   Gauge,
@@ -111,7 +110,6 @@ export default function App() {
   }, []);
 
   const metrics = useMemo(() => tags.map((tag) => latestMetric(tag, shift)), [tags, shift]);
-  const highlights = metrics.filter((metric) => ["feed_flow", "reactor_temp", "regen_temp", "regen_o2", "naphtha_rate", "lcco_rate"].includes(metric.key));
   const activeUnitName = activeUnit === "all"
     ? "All Units"
     : site?.units.find((unit) => unit.key === activeUnit)?.name ?? activeUnit.toUpperCase();
@@ -209,39 +207,6 @@ export default function App() {
             />
 
             <DashboardCustomizer shift={shift} tags={tags} scopeUnit={activeUnit} />
-
-            {activeUnit === "all" && (
-              <div className="metric-grid default-metrics">
-                {highlights.map((metric) => (
-                  <article className="metric-card" key={metric.key}>
-                    <div className="metric-title"><span>{metric.name}</span><ChartNoAxesCombined size={17} /></div>
-                    <div className="metric-value">{fmt(metric.value)} <small>{metric.unit}</small></div>
-                    <div className={metric.delta != null && metric.delta > 0 ? "delta up" : "delta down"}>
-                      Shift Δ {metric.delta == null ? "—" : `${metric.delta >= 0 ? "+" : ""}${metric.delta.toFixed(2)} ${metric.unit}`}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-
-            <div className="panel-grid">
-              <article className="panel">
-                <div className="panel-heading"><div><span className="eyebrow">DATA SOURCE</span><h3>System status</h3></div><Database size={20} /></div>
-                <div className="status-list">
-                  <div><span>Backend</span><strong>{backendOk ? "Connected" : "Offline"}</strong></div>
-                  <div><span>PI Web API</span><strong>{capabilities?.pi_web_api ?? "unknown"}</strong></div>
-                  <div><span>Local AI</span><strong>{runtime?.state.running ? "Running" : capabilities?.local_ai ?? "unknown"}</strong></div>
-                  <div><span>AI runtime</span><strong>{capabilities?.local_ai_runtime ?? "llama.cpp"}</strong></div>
-                  <div><span>Configured units</span><strong>{site?.units.length ?? 0}</strong></div>
-                </div>
-              </article>
-
-              <article className="panel event-panel">
-                <div className="panel-heading"><div><span className="eyebrow">CURRENT SCOPE</span><h3>{activeUnitName}</h3></div><Activity size={20} /></div>
-                <p>Το workspace προσαρμόζεται δυναμικά στο scope και στα widgets που έχει ζητήσει ο χρήστης.</p>
-                <button className="primary-button" onClick={() => setView("chat")}><Bot size={17} /> Ask the assistant</button>
-              </article>
-            </div>
           </section>
         )}
 
