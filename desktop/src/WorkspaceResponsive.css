@@ -1,0 +1,28 @@
+.workspace-shell > div[style*="flex-wrap"] > section {
+  flex-basis: 360px !important;
+  width: auto !important;
+}
+
+.workspace-shell > div[style*="flex-wrap"] > section:has(.workspace-card-trend) {
+  flex-grow: 1.45 !important;
+  flex-basis: 520px !important;
+}
+
+.workspace-shell > div[style*="flex-wrap"] > section:not(:has(.workspace-card-trend)) {
+  flex-grow: 1 !important;
+  flex-basis: 360px !important;
+}
+
+.workspace-shell > div[style*="flex-wrap"] > section:has(.workspace-card-summary):not(:has(.workspace-card-trend)) {
+  flex-grow: 1.15 !important;
+  flex-basis: 420px !important;
+}
+
+@media (max-width: 1180px) {
+  .workspace-shell > div[style*="flex-wrap"] > section,
+  .workspace-shell > div[style*="flex-wrap"] > section:has(.workspace-card-trend),
+  .workspace-shell > div[style*="flex-wrap"] > section:has(.workspace-card-summary):not(:has(.workspace-card-trend)) {
+    flex-basis: 100% !important;
+    min-width: 0 !important;
+  }
+}
