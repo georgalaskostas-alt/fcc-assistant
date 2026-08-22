@@ -9,6 +9,26 @@ export type SystemCapabilities = {
   features: string[];
 };
 
+export type BridgeUnitTag = {
+  key: string;
+  label: string;
+  unit: string;
+  aliases: string[];
+};
+
+export type BridgeUnit = {
+  key: string;
+  name: string;
+  tags: BridgeUnitTag[];
+};
+
+export type BridgeSite = {
+  contract_version: string;
+  site: string;
+  read_only: boolean;
+  units: BridgeUnit[];
+};
+
 export type SimulatorTag = {
   key: string;
   name: string;
@@ -92,6 +112,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<{ status: string; mode: string }>("/health"),
   capabilities: () => request<SystemCapabilities>("/api/v1/system/capabilities"),
+  bridgeSite: () => request<BridgeSite>("/bridge/v1/site"),
   aiStatus: () => request<Record<string, unknown>>("/api/v1/ai/status"),
   aiRuntime: () => request<RuntimeInfo>("/api/v1/ai/runtime"),
   startAiRuntime: () => request<RuntimeState>("/api/v1/ai/runtime/start", { method: "POST" }),
