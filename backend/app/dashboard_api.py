@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from .dashboard_config import DashboardCommandError, plan_dashboard_command
 from .dashboard_store import DashboardStore
-from .site_model import default_site_model
+from .site_model import load_site_model
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
 
@@ -22,7 +22,7 @@ class DashboardSaveRequest(BaseModel):
 
 @router.get("/site")
 def dashboard_site() -> dict[str, object]:
-    site = default_site_model()
+    site = load_site_model()
     return {"name": site.name, "units": site.list_units(), "read_only": True}
 
 
@@ -45,8 +45,8 @@ def dashboard_command(request: DashboardCommandRequest) -> dict[str, object]:
         current_widgets = []
 
     try:
-        plan = plan_dashboard_command(request.command, default_site_model(), current_widgets=current_widgets)
-    except DashboardCommandError as exc:
+        plan = plan_dashboard_command(request.command, load_site_model(), current_widgets=current_widgets)
+    except (DashboardCommandError, ValueError, OSError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     workspace = store.apply_plan(request.workspace, plan)
