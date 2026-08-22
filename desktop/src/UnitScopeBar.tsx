@@ -1,5 +1,6 @@
 import { Building2, ChevronDown, Factory } from "lucide-react";
 import type { BridgeUnit } from "./api";
+import "./UnitScopeBar.css";
 
 type Props = {
   siteName: string;
