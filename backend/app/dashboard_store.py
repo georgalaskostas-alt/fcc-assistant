@@ -43,13 +43,93 @@ class DashboardStore:
         self._save(payload)
         return stored
 
-    def add_widget(self, workspace: str, widget: dict[str, object]) -> dict[str, object]:
-        current = self.get(workspace)
+    def _normalized_widgets(self, current: dict[str, object]) -> list[dict[str, object]]:
         widgets = current.get("widgets")
         if not isinstance(widgets, list):
-            widgets = []
+            return []
+        normalized: list[dict[str, object]] = []
+        for index, item in enumerate(widgets):
+            if not isinstance(item, dict):
+                continue
+            widget = dict(item)
+            layout = widget.get("layout")
+            if not isinstance(layout, dict):
+                width = 12 if widget.get("type") == "trend" else 6 if widget.get("type") == "summary" else 4
+                height = "tall" if widget.get("type") == "trend" else "normal" if widget.get("type") == "summary" else "compact"
+                layout = {"order": index, "width": width, "height": height}
+            else:
+                layout = {
+                    "order": int(layout.get("order", index)),
+                    "width": int(layout.get("width", 6)),
+                    "height": str(layout.get("height", "normal")),
+                }
+            widget["layout"] = layout
+            normalized.append(widget)
+        normalized.sort(key=lambda item: int(item.get("layout", {}).get("order", 0)) if isinstance(item.get("layout"), dict) else 0)
+        for index, widget in enumerate(normalized):
+            layout = widget["layout"]
+            assert isinstance(layout, dict)
+            layout["order"] = index
+        return normalized
+
+    def add_widget(self, workspace: str, widget: dict[str, object]) -> dict[str, object]:
+        current = self.get(workspace)
+        widgets = self._normalized_widgets(current)
         widget_id = widget.get("id")
-        widgets = [item for item in widgets if not (isinstance(item, dict) and item.get("id") == widget_id)]
-        widgets.append(widget)
+        widgets = [item for item in widgets if item.get("id") != widget_id]
+        candidate = dict(widget)
+        layout = candidate.get("layout")
+        if not isinstance(layout, dict):
+            layout = {"order": len(widgets), "width": 6, "height": "normal"}
+        else:
+            layout = dict(layout)
+            layout["order"] = len(widgets)
+        candidate["layout"] = layout
+        widgets.append(candidate)
+        current["widgets"] = widgets
+        return self.put(workspace, current)
+
+    def apply_plan(self, workspace: str, plan: dict[str, object]) -> dict[str, object]:
+        action = plan.get("action")
+        if action == "add_widget":
+            widget = plan.get("widget")
+            if isinstance(widget, dict):
+                return self.add_widget(workspace, widget)
+            return self.get(workspace)
+
+        current = self.get(workspace)
+        widgets = self._normalized_widgets(current)
+        by_id = {str(widget.get("id")): widget for widget in widgets}
+        target_id = str(plan.get("target_id", ""))
+        target = by_id.get(target_id)
+        if target is None:
+            return current
+
+        if action == "resize_widget":
+            layout = target.get("layout")
+            if not isinstance(layout, dict):
+                layout = {}
+                target["layout"] = layout
+            width = int(plan.get("width", layout.get("width", 6)))
+            layout["width"] = min(12, max(3, width))
+            layout["height"] = str(plan.get("height", layout.get("height", "normal")))
+
+        elif action == "move_between":
+            first_id = str(plan.get("first_id", ""))
+            second_id = str(plan.get("second_id", ""))
+            without_target = [widget for widget in widgets if str(widget.get("id")) != target_id]
+            positions = {str(widget.get("id")): index for index, widget in enumerate(without_target)}
+            if first_id in positions and second_id in positions:
+                insert_at = min(positions[first_id], positions[second_id]) + 1
+                without_target.insert(insert_at, target)
+                widgets = without_target
+
+        for index, widget in enumerate(widgets):
+            layout = widget.get("layout")
+            if not isinstance(layout, dict):
+                layout = {}
+                widget["layout"] = layout
+            layout["order"] = index
+
         current["widgets"] = widgets
         return self.put(workspace, current)
