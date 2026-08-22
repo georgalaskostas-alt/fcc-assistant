@@ -14,6 +14,7 @@ export type BridgeUnitTag = {
   label: string;
   unit: string;
   aliases: string[];
+  semantic_key?: string;
 };
 
 export type BridgeUnit = {
@@ -93,7 +94,13 @@ export type DashboardWorkspace = {
 };
 
 export type DashboardCommandResponse = {
-  plan: { action: string; widget?: DashboardWidget; read_only: boolean };
+  plan: {
+    action: string;
+    widget?: DashboardWidget;
+    widgets?: DashboardWidget[];
+    warnings?: string[];
+    read_only: boolean;
+  };
   workspace: DashboardWorkspace;
 };
 
