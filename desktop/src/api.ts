@@ -50,6 +50,12 @@ export type RuntimeInfo = {
   state: RuntimeState;
 };
 
+export type DashboardWidgetLayout = {
+  order: number;
+  width: 3 | 4 | 6 | 8 | 12;
+  height: "compact" | "normal" | "tall";
+};
+
 export type DashboardWidget = {
   id: string;
   type: "kpi" | "trend" | "average" | "summary";
@@ -57,6 +63,7 @@ export type DashboardWidget = {
   unit_key: string;
   tag_keys: string[];
   period: string;
+  layout?: DashboardWidgetLayout;
 };
 
 export type DashboardWorkspace = {
@@ -66,7 +73,7 @@ export type DashboardWorkspace = {
 };
 
 export type DashboardCommandResponse = {
-  plan: { action: string; widget: DashboardWidget; read_only: boolean };
+  plan: { action: string; widget?: DashboardWidget; read_only: boolean };
   workspace: DashboardWorkspace;
 };
 
@@ -98,6 +105,11 @@ export const api = {
     }),
   dashboardWorkspace: (workspace = "default") =>
     request<DashboardWorkspace>(`/api/v1/dashboard/workspaces/${encodeURIComponent(workspace)}`),
+  saveDashboardWorkspace: (workspace: DashboardWorkspace) =>
+    request<DashboardWorkspace>(`/api/v1/dashboard/workspaces/${encodeURIComponent(workspace.workspace)}`, {
+      method: "PUT",
+      body: JSON.stringify({ title: workspace.title, widgets: workspace.widgets }),
+    }),
   dashboardCommand: (command: string, workspace = "default") =>
     request<DashboardCommandResponse>("/api/v1/dashboard/command", {
       method: "POST",
