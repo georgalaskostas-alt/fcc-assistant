@@ -1,14 +1,9 @@
 import { Building2, ChevronDown, Factory } from "lucide-react";
-
-export type SiteUnit = {
-  key: string;
-  name: string;
-  tags: Array<{ key: string; label: string; unit: string; aliases: string[] }>;
-};
+import type { BridgeUnit } from "./api";
 
 type Props = {
   siteName: string;
-  units: SiteUnit[];
+  units: BridgeUnit[];
   activeUnit: string;
   onChange: (unitKey: string) => void;
 };
