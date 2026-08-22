@@ -12,6 +12,11 @@ class UnitTag:
     label: str
     unit: str
     aliases: tuple[str, ...] = ()
+    semantic_key: str = ""
+
+    @property
+    def semantic(self) -> str:
+        return (self.semantic_key or self.key).strip().casefold()
 
 
 @dataclass(frozen=True)
@@ -19,6 +24,13 @@ class ProcessUnit:
     key: str
     name: str
     tags: tuple[UnitTag, ...] = ()
+
+    def tag_by_semantic(self, semantic_key: str) -> UnitTag | None:
+        needle = semantic_key.strip().casefold()
+        for tag in self.tags:
+            if tag.semantic == needle:
+                return tag
+        return None
 
 
 @dataclass(frozen=True)
@@ -42,7 +54,12 @@ class SiteModel:
             return None
         needle = query.strip().casefold()
         for tag in unit.tags:
-            candidates = {tag.key.casefold(), tag.label.casefold(), *(alias.casefold() for alias in tag.aliases)}
+            candidates = {
+                tag.key.casefold(),
+                tag.label.casefold(),
+                tag.semantic,
+                *(alias.casefold() for alias in tag.aliases),
+            }
             if needle in candidates:
                 return tag
         return None
@@ -57,10 +74,10 @@ def default_site_model() -> SiteModel:
                 key="fcc",
                 name="FCC",
                 tags=(
-                    UnitTag("feed_flow", "Feed Flow", "m3/h", ("feed", "τροφοδοσία", "τροφοδοσια")),
-                    UnitTag("reactor_temp", "Reactor Temperature", "C", ("reactor temperature", "θερμοκρασία reactor", "θερμοκρασια reactor")),
-                    UnitTag("regenerator_temp", "Regenerator Temperature", "C", ("regenerator temperature", "θερμοκρασία regenerator", "θερμοκρασια regenerator")),
-                    UnitTag("regenerator_o2", "Regenerator O2", "%", ("o2", "οξυγόνο regenerator", "οξυγονο regenerator")),
+                    UnitTag("feed_flow", "Feed Flow", "m3/h", ("feed", "τροφοδοσία", "τροφοδοσια"), "feed_flow"),
+                    UnitTag("reactor_temp", "Reactor Temperature", "C", ("reactor temperature", "θερμοκρασία reactor", "θερμοκρασια reactor", "αντίδραση", "αντιδραση"), "reaction_temperature"),
+                    UnitTag("regenerator_temp", "Regenerator Temperature", "C", ("regenerator temperature", "θερμοκρασία regenerator", "θερμοκρασια regenerator"), "regenerator_temperature"),
+                    UnitTag("regenerator_o2", "Regenerator O2", "%", ("o2", "οξυγόνο regenerator", "οξυγονο regenerator"), "regenerator_o2"),
                 ),
             ),
         ),
@@ -96,12 +113,21 @@ def _site_from_payload(payload: dict[str, object]) -> SiteModel:
             label = str(raw_tag.get("label") or tag_key).strip()
             engineering_unit = str(raw_tag.get("unit") or "").strip()
             aliases_value = raw_tag.get("aliases") or []
+            semantic_key = str(raw_tag.get("semantic_key") or tag_key).strip().casefold()
             if not isinstance(aliases_value, list):
                 raise ValueError(f"Aliases for {key}.{tag_key} must be a list")
             if not tag_key or tag_key in seen_tags:
                 raise ValueError(f"Unit {key} requires unique non-empty tag keys")
             seen_tags.add(tag_key)
-            tags.append(UnitTag(tag_key, label, engineering_unit, tuple(str(item) for item in aliases_value)))
+            tags.append(
+                UnitTag(
+                    tag_key,
+                    label,
+                    engineering_unit,
+                    tuple(str(item) for item in aliases_value),
+                    semantic_key,
+                )
+            )
 
         units.append(ProcessUnit(key=key, name=unit_name, tags=tuple(tags)))
 
