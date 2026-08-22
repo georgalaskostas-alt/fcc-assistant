@@ -35,16 +35,20 @@ export type SimulatorTag = {
   name: string;
   group: string;
   unit: string;
+  unit_key?: string;
+  semantic_key?: string;
 };
 
 export type SimulatorTagsResponse = {
   mode: string;
+  scope?: string;
   count: number;
   items: SimulatorTag[];
 };
 
 export type DemoShiftResponse = {
   mode: string;
+  scope?: string;
   read_only: boolean;
   data: Record<string, { Items: Array<{ Timestamp: string; Value: number }> }>;
 };
@@ -124,8 +128,8 @@ export const api = {
   aiRuntime: () => request<RuntimeInfo>("/api/v1/ai/runtime"),
   startAiRuntime: () => request<RuntimeState>("/api/v1/ai/runtime/start", { method: "POST" }),
   stopAiRuntime: () => request<RuntimeState>("/api/v1/ai/runtime/stop", { method: "POST" }),
-  simulatorTags: () => request<SimulatorTagsResponse>("/api/v1/simulator/tags"),
-  demoShift: () => request<DemoShiftResponse>("/api/v1/simulator/demo-shift"),
+  simulatorTags: () => request<SimulatorTagsResponse>("/api/v1/site-simulator/tags"),
+  demoShift: () => request<DemoShiftResponse>("/api/v1/site-simulator/demo-shift"),
   analyze: (question: string, evidence: Record<string, unknown>) =>
     request<AssistantReply>("/api/v1/ai/analyze", {
       method: "POST",
