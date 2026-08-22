@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api, DemoShiftResponse, RuntimeInfo, SimulatorTag, SystemCapabilities } from "./api";
+import { DashboardCustomizer } from "./DashboardCustomizer";
 
 type View = "dashboard" | "chat" | "reports" | "settings";
 
@@ -156,7 +157,7 @@ export default function App() {
         <header className="topbar">
           <div>
             <h1>{NAV.find((item) => item.id === view)?.label}</h1>
-            <p>FCC unit · development simulator</p>
+            <p>Operations workspace · development simulator</p>
           </div>
           <div className="top-actions">
             <span className={backendOk ? "status-dot ok" : "status-dot bad"}>{backendOk ? "Backend online" : "Backend offline"}</span>
@@ -171,11 +172,13 @@ export default function App() {
             <div className="hero-row">
               <div>
                 <span className="eyebrow">OPERATING OVERVIEW</span>
-                <h2>FCC shift snapshot</h2>
-                <p>Τα παρακάτω δεδομένα είναι simulated και υπάρχουν για development/testing.</p>
+                <h2>Operations workspace</h2>
+                <p>Το workspace μπορεί να παραμετροποιείται με φυσική γλώσσα. Τα δεδομένα παρακάτω είναι simulated για development/testing.</p>
               </div>
               <div className="read-only-badge"><ShieldCheck size={17} /> Read-only mode</div>
             </div>
+
+            <DashboardCustomizer />
 
             <div className="metric-grid">
               {highlights.map((metric) => (
@@ -214,8 +217,8 @@ export default function App() {
           <section className="content chat-layout">
             <div className="chat-intro">
               <span className="eyebrow">EMBEDDED LOCAL AI</span>
-              <h2>Ask about the FCC shift</h2>
-              <p>Το llama.cpp model τρέχει μέσα στο laptop και λαμβάνει μόνο τα structured process data που χρειάζεται.</p>
+              <h2>Ask about operations</h2>
+              <p>Το local model θα λαμβάνει μόνο τα structured process data που χρειάζεται.</p>
             </div>
             <div className="chat-card">
               <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ρώτησε κάτι για τη βάρδια…" />
