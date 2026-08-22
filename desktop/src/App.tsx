@@ -87,8 +87,13 @@ export default function App() {
     }
   }
 
+  useEffect(() => { void refresh(); }, []);
+
   useEffect(() => {
-    void refresh();
+    const timer = window.setInterval(() => {
+      void api.health().then(() => setBackendOk(true)).catch(() => setBackendOk(false));
+    }, 4000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const metrics = useMemo(() => tags.map((tag) => latestMetric(tag, shift)), [tags, shift]);
@@ -169,18 +174,18 @@ export default function App() {
 
         {view === "dashboard" && (
           <section className="content">
-            <div className="hero-row">
+            <div className="hero-row compact-hero">
               <div>
                 <span className="eyebrow">OPERATING OVERVIEW</span>
                 <h2>Operations workspace</h2>
-                <p>Το workspace μπορεί να παραμετροποιείται με φυσική γλώσσα. Τα δεδομένα παρακάτω είναι simulated για development/testing.</p>
+                <p>Simulated development data · workspace layout is user-configurable.</p>
               </div>
               <div className="read-only-badge"><ShieldCheck size={17} /> Read-only mode</div>
             </div>
 
-            <DashboardCustomizer />
+            <DashboardCustomizer shift={shift} tags={tags} />
 
-            <div className="metric-grid">
+            <div className="metric-grid default-metrics">
               {highlights.map((metric) => (
                 <article className="metric-card" key={metric.key}>
                   <div className="metric-title"><span>{metric.name}</span><ChartNoAxesCombined size={17} /></div>
