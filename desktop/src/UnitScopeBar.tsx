@@ -19,12 +19,17 @@ export function UnitScopeBar({ siteName, units, activeUnit, onChange }: Props) {
       <div className="unit-scope-divider" />
       <label className="unit-scope-select-wrap">
         <Factory size={15} />
-        <select value={activeUnit} onChange={(event) => onChange(event.target.value)} disabled={units.length <= 1}>
+        <select value={activeUnit} onChange={(event) => onChange(event.target.value)}>
+          <option value="all">All Units</option>
           {units.map((unit) => <option key={unit.key} value={unit.key}>{unit.name}</option>)}
         </select>
         <ChevronDown size={14} className="unit-scope-chevron" />
       </label>
-      <span className="unit-scope-caption">{units.length} configured unit{units.length === 1 ? "" : "s"}</span>
+      <span className="unit-scope-caption">
+        {activeUnit === "all"
+          ? `${units.length} configured unit${units.length === 1 ? "" : "s"}`
+          : units.find((unit) => unit.key === activeUnit)?.name ?? activeUnit}
+      </span>
     </div>
   );
 }
