@@ -1,0 +1,35 @@
+{
+  "name": "Demo Refinery",
+  "units": [
+    {
+      "key": "fcc",
+      "name": "FCC",
+      "tags": [
+        {
+          "key": "feed_flow",
+          "label": "Feed Flow",
+          "unit": "m3/h",
+          "aliases": ["feed", "τροφοδοσία", "τροφοδοσια"]
+        },
+        {
+          "key": "reactor_temp",
+          "label": "Reactor Temperature",
+          "unit": "C",
+          "aliases": ["reactor temperature", "θερμοκρασία reactor"]
+        }
+      ]
+    },
+    {
+      "key": "demo-unit-2",
+      "name": "Second Demo Unit",
+      "tags": [
+        {
+          "key": "feed_flow",
+          "label": "Feed Flow",
+          "unit": "m3/h",
+          "aliases": ["feed"]
+        }
+      ]
+    }
+  ]
+}

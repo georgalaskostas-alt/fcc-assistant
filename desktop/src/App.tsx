@@ -11,8 +11,9 @@ import {
   Settings,
   ShieldCheck,
 } from "lucide-react";
-import { api, DemoShiftResponse, RuntimeInfo, SimulatorTag, SystemCapabilities } from "./api";
+import { api, BridgeSite, DemoShiftResponse, RuntimeInfo, SimulatorTag, SystemCapabilities } from "./api";
 import { DashboardCustomizer } from "./DashboardCustomizer";
+import { UnitScopeBar } from "./UnitScopeBar";
 
 type View = "dashboard" | "chat" | "reports" | "settings";
 
@@ -52,6 +53,8 @@ function fmt(value: number | null, digits = 1) {
 export default function App() {
   const [view, setView] = useState<View>("dashboard");
   const [capabilities, setCapabilities] = useState<SystemCapabilities | null>(null);
+  const [site, setSite] = useState<BridgeSite | null>(null);
+  const [activeUnit, setActiveUnit] = useState(() => window.localStorage.getItem("fcc-active-unit") || "all");
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
   const [tags, setTags] = useState<SimulatorTag[]>([]);
   const [shift, setShift] = useState<DemoShiftResponse | null>(null);
@@ -63,22 +66,33 @@ export default function App() {
   const [answer, setAnswer] = useState<string>("");
   const [asking, setAsking] = useState(false);
 
+  function changeActiveUnit(unitKey: string) {
+    setActiveUnit(unitKey);
+    window.localStorage.setItem("fcc-active-unit", unitKey);
+  }
+
   async function refresh() {
     setLoading(true);
     setError(null);
     try {
-      const [health, caps, runtimeInfo, tagResponse, demo] = await Promise.all([
+      const [health, caps, bridgeSite, runtimeInfo, tagResponse, demo] = await Promise.all([
         api.health(),
         api.capabilities(),
+        api.bridgeSite(),
         api.aiRuntime(),
         api.simulatorTags(),
         api.demoShift(),
       ]);
       setBackendOk(health.status === "ok");
       setCapabilities(caps);
+      setSite(bridgeSite);
       setRuntime(runtimeInfo);
       setTags(tagResponse.items);
       setShift(demo);
+
+      if (activeUnit !== "all" && !bridgeSite.units.some((unit) => unit.key === activeUnit)) {
+        changeActiveUnit("all");
+      }
     } catch (err) {
       setBackendOk(false);
       setError(err instanceof Error ? err.message : "Unable to connect to the local backend");
@@ -98,6 +112,9 @@ export default function App() {
 
   const metrics = useMemo(() => tags.map((tag) => latestMetric(tag, shift)), [tags, shift]);
   const highlights = metrics.filter((metric) => ["feed_flow", "reactor_temp", "regen_temp", "regen_o2", "naphtha_rate", "lcco_rate"].includes(metric.key));
+  const activeUnitName = activeUnit === "all"
+    ? "All Units"
+    : site?.units.find((unit) => unit.key === activeUnit)?.name ?? activeUnit.toUpperCase();
 
   async function askAssistant() {
     if (!question.trim() || !shift) return;
@@ -109,7 +126,8 @@ export default function App() {
         setRuntime(await api.aiRuntime());
       }
       const response = await api.analyze(question.trim(), {
-        analysis_scope: "simulated_shift",
+        analysis_scope: activeUnit === "all" ? "refinery_scope" : "unit_scope",
+        selected_unit: activeUnit,
         source: "FCC simulator - development data only",
         shift: shift.data,
       });
@@ -162,7 +180,7 @@ export default function App() {
         <header className="topbar">
           <div>
             <h1>{NAV.find((item) => item.id === view)?.label}</h1>
-            <p>Operations workspace · development simulator</p>
+            <p>{site?.site ?? "Operations workspace"} · {activeUnitName}</p>
           </div>
           <div className="top-actions">
             <span className={backendOk ? "status-dot ok" : "status-dot bad"}>{backendOk ? "Backend online" : "Backend offline"}</span>
@@ -178,24 +196,33 @@ export default function App() {
               <div>
                 <span className="eyebrow">OPERATING OVERVIEW</span>
                 <h2>Operations workspace</h2>
-                <p>Simulated development data · workspace layout is user-configurable.</p>
+                <p>Dynamic refinery/unit layout · simulated development data.</p>
               </div>
               <div className="read-only-badge"><ShieldCheck size={17} /> Read-only mode</div>
             </div>
 
-            <DashboardCustomizer shift={shift} tags={tags} />
+            <UnitScopeBar
+              siteName={site?.site ?? "Refinery"}
+              units={site?.units ?? []}
+              activeUnit={activeUnit}
+              onChange={changeActiveUnit}
+            />
 
-            <div className="metric-grid default-metrics">
-              {highlights.map((metric) => (
-                <article className="metric-card" key={metric.key}>
-                  <div className="metric-title"><span>{metric.name}</span><ChartNoAxesCombined size={17} /></div>
-                  <div className="metric-value">{fmt(metric.value)} <small>{metric.unit}</small></div>
-                  <div className={metric.delta != null && metric.delta > 0 ? "delta up" : "delta down"}>
-                    Shift Δ {metric.delta == null ? "—" : `${metric.delta >= 0 ? "+" : ""}${metric.delta.toFixed(2)} ${metric.unit}`}
-                  </div>
-                </article>
-              ))}
-            </div>
+            <DashboardCustomizer shift={shift} tags={tags} scopeUnit={activeUnit} />
+
+            {activeUnit === "all" && (
+              <div className="metric-grid default-metrics">
+                {highlights.map((metric) => (
+                  <article className="metric-card" key={metric.key}>
+                    <div className="metric-title"><span>{metric.name}</span><ChartNoAxesCombined size={17} /></div>
+                    <div className="metric-value">{fmt(metric.value)} <small>{metric.unit}</small></div>
+                    <div className={metric.delta != null && metric.delta > 0 ? "delta up" : "delta down"}>
+                      Shift Δ {metric.delta == null ? "—" : `${metric.delta >= 0 ? "+" : ""}${metric.delta.toFixed(2)} ${metric.unit}`}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
 
             <div className="panel-grid">
               <article className="panel">
@@ -205,13 +232,13 @@ export default function App() {
                   <div><span>PI Web API</span><strong>{capabilities?.pi_web_api ?? "unknown"}</strong></div>
                   <div><span>Local AI</span><strong>{runtime?.state.running ? "Running" : capabilities?.local_ai ?? "unknown"}</strong></div>
                   <div><span>AI runtime</span><strong>{capabilities?.local_ai_runtime ?? "llama.cpp"}</strong></div>
-                  <div><span>Simulator</span><strong>Available</strong></div>
+                  <div><span>Configured units</span><strong>{site?.units.length ?? 0}</strong></div>
                 </div>
               </article>
 
               <article className="panel event-panel">
-                <div className="panel-heading"><div><span className="eyebrow">DEMO EVENT</span><h3>Expected pattern</h3></div><Activity size={20} /></div>
-                <p>Μετά την 4η ώρα του simulated shift υπάρχει ελεγχόμενη άνοδος regenerator temperature, πτώση O₂ και πτώση LCCO.</p>
+                <div className="panel-heading"><div><span className="eyebrow">CURRENT SCOPE</span><h3>{activeUnitName}</h3></div><Activity size={20} /></div>
+                <p>Το workspace προσαρμόζεται δυναμικά στο scope και στα widgets που έχει ζητήσει ο χρήστης.</p>
                 <button className="primary-button" onClick={() => setView("chat")}><Bot size={17} /> Ask the assistant</button>
               </article>
             </div>
@@ -223,13 +250,13 @@ export default function App() {
             <div className="chat-intro">
               <span className="eyebrow">EMBEDDED LOCAL AI</span>
               <h2>Ask about operations</h2>
-              <p>Το local model θα λαμβάνει μόνο τα structured process data που χρειάζεται.</p>
+              <p>Scope: {activeUnitName}. Το local model λαμβάνει μόνο τα structured process data που χρειάζεται.</p>
             </div>
             <div className="chat-card">
-              <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ρώτησε κάτι για τη βάρδια…" />
+              <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ρώτησε κάτι για τη λειτουργία…" />
               <div className="chat-actions">
                 <span><ShieldCheck size={15} /> No external AI · data stays local</span>
-                <button className="primary-button" onClick={() => void askAssistant()} disabled={asking || !shift}>{asking ? "Analyzing…" : "Analyze shift"}</button>
+                <button className="primary-button" onClick={() => void askAssistant()} disabled={asking || !shift}>{asking ? "Analyzing…" : "Analyze"}</button>
               </div>
               {answer && <div className="assistant-answer"><div className="answer-avatar"><Bot size={20} /></div><div><strong>FCC Assistant</strong><p>{answer}</p></div></div>}
             </div>
@@ -238,9 +265,9 @@ export default function App() {
 
         {view === "reports" && (
           <section className="content">
-            <div className="hero-row"><div><span className="eyebrow">REPORTING</span><h2>Shift report preview</h2><p>Πρώτη έκδοση του report πριν συνδεθεί το πραγματικό PI.</p></div></div>
+            <div className="hero-row"><div><span className="eyebrow">REPORTING</span><h2>{activeUnitName} report preview</h2><p>Πρώτη έκδοση του report πριν συνδεθεί το πραγματικό PI.</p></div></div>
             <article className="panel report-panel">
-              <div className="report-header"><div><h3>07:00–15:00 Shift</h3><span>Simulated FCC</span></div><FileText size={22} /></div>
+              <div className="report-header"><div><h3>07:00–15:00 Shift</h3><span>{activeUnitName}</span></div><FileText size={22} /></div>
               <div className="report-table">
                 <div className="report-row report-head"><span>Variable</span><span>End value</span><span>Shift change</span></div>
                 {metrics.map((metric) => (

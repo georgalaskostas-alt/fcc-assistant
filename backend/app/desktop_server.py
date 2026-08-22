@@ -1,9 +1,11 @@
 from fastapi.middleware.cors import CORSMiddleware
 
+from .bridge_api import router as bridge_router
 from .dashboard_api import router as dashboard_router
 from .main import app
 
 app.include_router(dashboard_router)
+app.include_router(bridge_router)
 
 # Desktop-only local origins. This does not expose the backend to the internet;
 # it only allows the local Vite/Tauri webview to call the loopback API.
