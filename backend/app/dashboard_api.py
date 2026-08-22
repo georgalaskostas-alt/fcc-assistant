@@ -38,13 +38,16 @@ def dashboard_workspace_save(workspace: str, request: DashboardSaveRequest) -> d
 
 @router.post("/command")
 def dashboard_command(request: DashboardCommandRequest) -> dict[str, object]:
+    store = DashboardStore()
+    current = store.get(request.workspace)
+    current_widgets = current.get("widgets")
+    if not isinstance(current_widgets, list):
+        current_widgets = []
+
     try:
-        plan = plan_dashboard_command(request.command, default_site_model())
+        plan = plan_dashboard_command(request.command, default_site_model(), current_widgets=current_widgets)
     except DashboardCommandError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    widget = plan.get("widget")
-    if not isinstance(widget, dict):
-        raise HTTPException(status_code=500, detail="Dashboard planner returned invalid widget")
-    workspace = DashboardStore().add_widget(request.workspace, widget)
+    workspace = store.apply_plan(request.workspace, plan)
     return {"plan": plan, "workspace": workspace}
