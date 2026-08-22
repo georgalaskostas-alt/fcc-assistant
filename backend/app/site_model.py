@@ -78,6 +78,9 @@ def default_site_model() -> SiteModel:
                     UnitTag("reactor_temp", "Reactor Temperature", "C", ("reactor temperature", "θερμοκρασία reactor", "θερμοκρασια reactor", "αντίδραση", "αντιδραση"), "reaction_temperature"),
                     UnitTag("regenerator_temp", "Regenerator Temperature", "C", ("regenerator temperature", "θερμοκρασία regenerator", "θερμοκρασια regenerator"), "regenerator_temperature"),
                     UnitTag("regenerator_o2", "Regenerator O2", "%", ("o2", "οξυγόνο regenerator", "οξυγονο regenerator"), "regenerator_o2"),
+                    UnitTag("fractionator_dp", "Main Fractionator DP", "bar", ("fractionator dp", "dp fractionator"), "fractionator_dp"),
+                    UnitTag("naphtha_rate", "Naphtha Rate", "m3/h", ("naphtha", "νάφθα", "ναφθα"), "naphtha_rate"),
+                    UnitTag("lcco_rate", "LCCO Rate", "m3/h", ("lcco",), "lcco_rate"),
                 ),
             ),
         ),
@@ -119,15 +122,7 @@ def _site_from_payload(payload: dict[str, object]) -> SiteModel:
             if not tag_key or tag_key in seen_tags:
                 raise ValueError(f"Unit {key} requires unique non-empty tag keys")
             seen_tags.add(tag_key)
-            tags.append(
-                UnitTag(
-                    tag_key,
-                    label,
-                    engineering_unit,
-                    tuple(str(item) for item in aliases_value),
-                    semantic_key,
-                )
-            )
+            tags.append(UnitTag(tag_key, label, engineering_unit, tuple(str(item) for item in aliases_value), semantic_key))
 
         units.append(ProcessUnit(key=key, name=unit_name, tags=tuple(tags)))
 
