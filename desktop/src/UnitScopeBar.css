@@ -1,0 +1,52 @@
+.unit-scope-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid rgba(88, 166, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(7, 18, 36, 0.72);
+  color: rgba(235, 245, 255, 0.92);
+}
+
+.unit-scope-site,
+.unit-scope-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.unit-scope-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.unit-scope-select-wrap {
+  position: relative;
+}
+
+.unit-scope-select-wrap select {
+  appearance: none;
+  min-width: 120px;
+  border: 0;
+  outline: 0;
+  padding: 3px 24px 3px 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.unit-scope-chevron {
+  position: absolute;
+  right: 2px;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.unit-scope-caption {
+  margin-left: auto;
+  font-size: 11px;
+  color: rgba(198, 216, 236, 0.62);
+}
