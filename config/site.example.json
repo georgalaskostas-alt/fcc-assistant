@@ -1,0 +1,59 @@
+{
+  "name": "Example Refinery",
+  "units": [
+    {
+      "key": "fcc",
+      "name": "FCC",
+      "tags": [
+        {
+          "key": "fcc_feed_local_key",
+          "label": "Feed Flow",
+          "unit": "m3/h",
+          "semantic_key": "feed_flow",
+          "aliases": ["feed", "τροφοδοσία", "τροφοδοσια"]
+        },
+        {
+          "key": "fcc_reactor_temp_local_key",
+          "label": "Reactor Temperature",
+          "unit": "C",
+          "semantic_key": "reaction_temperature",
+          "aliases": ["reaction", "reactor temperature", "αντίδραση", "αντιδραση"]
+        },
+        {
+          "key": "fcc_lab_quality_local_key",
+          "label": "Latest Lab Quality",
+          "unit": "",
+          "semantic_key": "lab_quality",
+          "aliases": ["lab", "laboratory", "χημείο", "χημειο", "αναλύσεις", "αναλυσεις"]
+        }
+      ]
+    },
+    {
+      "key": "hcu",
+      "name": "Hydrocracker",
+      "tags": [
+        {
+          "key": "hcu_feed_local_key",
+          "label": "Feed Flow",
+          "unit": "m3/h",
+          "semantic_key": "feed_flow",
+          "aliases": ["feed", "τροφοδοσία", "τροφοδοσια"]
+        },
+        {
+          "key": "hcu_reactor_temp_local_key",
+          "label": "Reactor Temperature",
+          "unit": "C",
+          "semantic_key": "reaction_temperature",
+          "aliases": ["reaction", "reactor temperature", "αντίδραση", "αντιδραση"]
+        },
+        {
+          "key": "hcu_lab_quality_local_key",
+          "label": "Latest Lab Quality",
+          "unit": "",
+          "semantic_key": "lab_quality",
+          "aliases": ["lab", "laboratory", "χημείο", "χημειο", "αναλύσεις", "αναλυσεις"]
+        }
+      ]
+    }
+  ]
+}
