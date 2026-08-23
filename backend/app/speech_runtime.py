@@ -57,6 +57,15 @@ def _candidate_model() -> str:
     return ""
 
 
+def _language() -> str:
+    # Production voice UX is Greek-first. Do not silently fall back to auto
+    # language detection, which can hallucinate English on short Greek clips.
+    configured = os.environ.get("FCC_STT_LANGUAGE", "el").strip().casefold()
+    if configured in {"", "auto"}:
+        return "el"
+    return configured
+
+
 def runtime_status() -> SpeechRuntimeStatus:
     binary = _candidate_binary()
     model = _candidate_model()
@@ -64,7 +73,7 @@ def runtime_status() -> SpeechRuntimeStatus:
         ready=bool(binary and Path(binary).exists() and model and Path(model).exists()),
         binary=binary,
         model=model,
-        language=os.environ.get("FCC_STT_LANGUAGE", "el") or "el",
+        language=_language(),
     )
 
 
