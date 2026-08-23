@@ -5,6 +5,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from .engineering_context import EngineeringContextBuilder
 from .learned_patterns import LearnedPatternStore
 from .operational_episode import OperationalEpisodeStore, outcome_envelope
 from .production_domain import ProductionStore
@@ -160,3 +161,19 @@ def production_summary(scope_kind: str, scope_id: str) -> dict[str, object]:
     if scope_kind not in {"refinery", "complex", "unit"}:
         raise HTTPException(status_code=422, detail="scope_kind must be refinery, complex or unit")
     return {**ProductionStore().summary(scope_kind=scope_kind, scope_id=scope_id), "read_only": True}
+
+
+@router.get("/context/{unit_key}")
+def engineering_context(
+    unit_key: str,
+    at_time: str | None = Query(default=None, alias="atTime"),
+    configuration_version: str | None = Query(default=None, alias="configurationVersion"),
+) -> dict[str, object]:
+    return {
+        **EngineeringContextBuilder().for_unit(
+            unit_key,
+            at_time=at_time,
+            configuration_version=configuration_version,
+        ),
+        "read_only": True,
+    }
