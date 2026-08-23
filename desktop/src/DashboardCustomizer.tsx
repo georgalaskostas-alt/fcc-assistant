@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Bot,
   ChevronLeft,
@@ -42,18 +43,11 @@ function defaultLayout(widget: DashboardWidget, index: number): DashboardWidgetL
 }
 
 function autoLayoutFor(widget: DashboardWidget, index: number, count: number): DashboardWidgetLayout {
-  if (count <= 1) {
-    return {
-      order: index,
-      width: 12,
-      height: widget.type === "trend" ? "tall" : widget.type === "summary" ? "normal" : "compact",
-    };
-  }
+  if (count <= 1) return { order: index, width: 12, height: widget.type === "trend" ? "tall" : widget.type === "summary" ? "normal" : "compact" };
   if (count === 2) return { order: index, width: 6, height: widget.type === "trend" ? "tall" : "normal" };
-  if (count === 3) {
-    if (widget.type === "trend") return { order: index, width: 12, height: "tall" };
-    return { order: index, width: 6, height: widget.type === "summary" ? "normal" : "compact" };
-  }
+  if (count === 3) return widget.type === "trend"
+    ? { order: index, width: 12, height: "tall" }
+    : { order: index, width: 6, height: widget.type === "summary" ? "normal" : "compact" };
   if (count <= 6) {
     if (widget.type === "trend") return { order: index, width: 8, height: "tall" };
     if (widget.type === "summary") return { order: index, width: 4, height: "normal" };
@@ -151,10 +145,12 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [voiceHint, setVoiceHint] = useState<string | null>(null);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
   const recorderRef = useRef<LocalRecorder | null>(null);
   const previewTimerRef = useRef<number | null>(null);
   const previewBusyRef = useRef(false);
   const finalizingVoiceRef = useRef(false);
+  const voiceModeRef = useRef(false);
   const [editLayout, setEditLayout] = useState(false);
   const [autoLayout, setAutoLayout] = useState(() => window.localStorage.getItem("fcc-auto-layout") !== "off");
 
@@ -174,6 +170,14 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     }
   }
 
+  async function speak(text: string) {
+    try {
+      await invoke("speak_text", { text });
+    } catch {
+      // Spoken feedback is optional; command execution must not depend on TTS.
+    }
+  }
+
   async function load() {
     try {
       setWorkspace(normalizeWorkspace(await api.dashboardWorkspace("default")));
@@ -183,8 +187,13 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    setCommand("");
+    void load();
+  }, []);
+
   useEffect(() => () => {
+    voiceModeRef.current = false;
     clearPreviewTimer();
     void recorderRef.current?.cancel();
   }, []);
@@ -202,9 +211,9 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     }
   }
 
-  async function executeCommand(value: string, clearAfter = true) {
+  async function executeCommand(value: string, clearAfter = true): Promise<boolean> {
     const clean = value.trim();
-    if (!clean) return;
+    if (!clean) return false;
     setBusy(true);
     setError(null);
     try {
@@ -212,8 +221,10 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       setWorkspace(normalizeWorkspace(response.workspace));
       if (clearAfter) setCommand("");
       if (response.plan.warnings?.length) setError(response.plan.warnings.join(" · "));
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to apply dashboard command");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -235,10 +246,24 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
         setVoiceHint(`Ακούω… “${result.text}”`);
       }
     } catch {
-      // Partial transcription is best-effort. Final transcription remains authoritative.
+      // Partial transcription is best-effort; final transcription is authoritative.
     } finally {
       previewBusyRef.current = false;
     }
+  }
+
+  async function startVoiceCycle() {
+    if (!voiceModeRef.current || recorderRef.current || finalizingVoiceRef.current) return;
+    setCommand("");
+    setVoiceState("listening");
+    setVoiceHint("Ακούω… μίλα φυσικά.");
+    recorderRef.current = await startLocalPcmRecorder({
+      silenceMs: 1350,
+      maxDurationMs: 25000,
+      onSilence: () => { void finishVoiceCapture(); },
+    });
+    clearPreviewTimer();
+    previewTimerRef.current = window.setInterval(() => { void previewVoiceTranscript(); }, 1500);
   }
 
   async function finishVoiceCapture() {
@@ -247,54 +272,70 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     clearPreviewTimer();
     setVoiceState("transcribing");
     setVoiceHint("Επεξεργασία φωνής τοπικά…");
+
     try {
       const recorder = recorderRef.current;
       recorderRef.current = null;
       const audio = await recorder.stop();
       const result = await api.transcribeSpeech(audio, scopeUnit, voiceTerms());
       setCommand(result.text);
-      if (!result.text.trim()) {
-        setVoiceHint("Δεν αναγνωρίστηκε καθαρή εντολή. Δοκίμασε ξανά.");
+
+      if (!result.text.trim() || result.confidence_level === "low") {
+        setVoiceHint(result.text.trim() ? `Δεν είμαι αρκετά βέβαιος: “${result.text}”` : "Δεν αναγνωρίστηκε καθαρή εντολή.");
+        await speak("Δεν κατάλαβα καθαρά την εντολή.");
         return;
       }
-      if (result.confidence_level === "low") {
-        setVoiceHint(`Χαμηλή βεβαιότητα: “${result.text}” · δεν εκτελέστηκε`);
-        return;
-      }
+
       setVoiceState("executing");
-      setVoiceHint(`Κατάλαβα: “${result.text}” · επεξεργάζομαι την εντολή…`);
-      await executeCommand(result.text, false);
-      setVoiceHint(`Έτοιμο · “${result.text}”`);
+      setVoiceHint(`Κατάλαβα: “${result.text}” · εκτελώ…`);
+      const ok = await executeCommand(result.text, false);
+      if (ok) {
+        setVoiceHint(`Έτοιμο · “${result.text}”`);
+        await speak("Έγινε.");
+      } else {
+        await speak("Δεν μπόρεσα να εκτελέσω την εντολή.");
+      }
+      setCommand("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Voice transcription failed");
+      await speak("Υπήρξε πρόβλημα στην επεξεργασία της φωνής.");
     } finally {
       finalizingVoiceRef.current = false;
       setVoiceState("idle");
+      if (voiceModeRef.current) {
+        window.setTimeout(() => { void startVoiceCycle(); }, 250);
+      }
     }
   }
 
-  async function toggleVoice() {
+  async function toggleVoiceMode() {
     setError(null);
-    if (voiceState === "listening" && recorderRef.current) {
-      await finishVoiceCapture();
+
+    if (voiceModeRef.current) {
+      voiceModeRef.current = false;
+      setVoiceModeEnabled(false);
+      window.localStorage.setItem("fcc-voice-mode", "off");
+      clearPreviewTimer();
+      const recorder = recorderRef.current;
+      recorderRef.current = null;
+      if (recorder) await recorder.cancel();
+      setVoiceState("idle");
+      setVoiceHint("Φωνητική λειτουργία κλειστή.");
+      setCommand("");
       return;
     }
-    if (voiceState !== "idle") return;
+
     try {
       const status = await api.speechStatus();
-      if (!status.ready) {
-        throw new Error("Το local speech model δεν είναι ακόμη εγκατεστημένο. Χρειάζεται whisper.cpp + local Greek model.");
-      }
+      if (!status.ready) throw new Error("Το local speech model δεν είναι ακόμη εγκατεστημένο.");
+      voiceModeRef.current = true;
+      setVoiceModeEnabled(true);
+      window.localStorage.setItem("fcc-voice-mode", "on");
       setCommand("");
-      setVoiceHint("Ακούω… μίλα φυσικά. Θα σταματήσω αυτόματα όταν τελειώσεις.");
-      recorderRef.current = await startLocalPcmRecorder({
-        silenceMs: 1250,
-        maxDurationMs: 20000,
-        onSilence: () => { void finishVoiceCapture(); },
-      });
-      setVoiceState("listening");
-      previewTimerRef.current = window.setInterval(() => { void previewVoiceTranscript(); }, 1800);
+      await startVoiceCycle();
     } catch (err) {
+      voiceModeRef.current = false;
+      setVoiceModeEnabled(false);
       setVoiceState("idle");
       setError(err instanceof Error ? err.message : "Unable to start microphone");
     }
@@ -343,8 +384,8 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }, [orderedWidgets]);
   const unitGroups = useMemo(() => scopeUnit === "all" ? allUnitGroups : allUnitGroups.filter((group) => group.unitKey === scopeUnit), [allUnitGroups, scopeUnit]);
   const unitContainerWidth = scopeUnit !== "all" || unitGroups.length <= 1 ? "100%" : unitGroups.length === 2 ? "calc(50% - 6px)" : "min(100%, 680px)";
-  const microphoneLabel = voiceState === "listening" ? "Listening — auto stop on silence" : voiceState === "transcribing" ? "Processing voice locally" : voiceState === "executing" ? "Executing command" : "Local Greek voice input";
-  const voiceStatusLabel = voiceState === "listening" ? "ΑΚΟΥΩ" : voiceState === "transcribing" ? "ΕΠΕΞΕΡΓΑΣΙΑ" : voiceState === "executing" ? "ΕΚΤΕΛΕΣΗ" : null;
+  const microphoneLabel = voiceModeEnabled ? "Turn off persistent voice mode" : "Turn on persistent local voice mode";
+  const voiceStatusLabel = voiceState === "listening" ? "ΑΚΟΥΩ" : voiceState === "transcribing" ? "ΕΠΕΞΕΡΓΑΣΙΑ" : voiceState === "executing" ? "ΕΚΤΕΛΕΣΗ" : voiceModeEnabled ? "VOICE ON" : null;
 
   return (
     <div className="workspace-shell">
@@ -353,8 +394,8 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
           <Bot size={17} />
           <input value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void applyCommand(); }} placeholder={scopeUnit === "all" ? "Πες ή γράψε τι θέλεις να δεις σε όλες τις μονάδες…" : `Πες ή γράψε τι θέλεις να δεις στο ${scopeUnit.toUpperCase()}…`} aria-label="Workspace command" />
           {voiceStatusLabel && <span className={`voice-status-chip voice-status-${voiceState}`}><span className="voice-status-dot" />{voiceStatusLabel}</span>}
-          <button className={`command-icon-button voice-${voiceState}`} title={microphoneLabel} disabled={busy || voiceState === "transcribing" || voiceState === "executing"} onClick={() => void toggleVoice()}><Mic size={17} /></button>
-          <button className="command-send-button" disabled={busy || !command.trim() || voiceState !== "idle"} onClick={() => void applyCommand()}>{busy ? "…" : <Send size={16} />}</button>
+          <button className={`command-icon-button voice-${voiceState} ${voiceModeEnabled ? "voice-mode-enabled" : ""}`} title={microphoneLabel} onClick={() => void toggleVoiceMode()}><Mic size={17} /></button>
+          <button className="command-send-button" disabled={busy || !command.trim() || voiceState !== "idle" || voiceModeEnabled} onClick={() => void applyCommand()}>{busy ? "…" : <Send size={16} />}</button>
         </div>
         <div className="workspace-safety"><ShieldCheck size={13} /> Current scope: {scopeUnit === "all" ? "All Units" : scopeUnit.toUpperCase()} · Local voice · read-only PI/DCS</div>
         {voiceHint && <div className={`voice-hint voice-hint-${voiceState}`}>{voiceHint}</div>}
