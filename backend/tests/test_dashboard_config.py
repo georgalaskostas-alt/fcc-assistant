@@ -30,9 +30,9 @@ def test_summary_does_not_require_tag():
 
 def test_move_summary_between_feed_kpi_and_reactor_chart():
     widgets = [
-        {"id": "fcc-kpi-feed_flow", "type": "kpi", "title": "Feed Flow", "tag_keys": ["feed_flow"]},
-        {"id": "fcc-trend-reactor_temp", "type": "trend", "title": "Reactor Temperature", "tag_keys": ["reactor_temp"]},
-        {"id": "fcc-summary-summary", "type": "summary", "title": "FCC Summary", "tag_keys": []},
+        {"id": "fcc-kpi-feed_flow", "type": "kpi", "title": "Feed Flow", "unit_key": "fcc", "tag_keys": ["feed_flow"]},
+        {"id": "fcc-trend-reactor_temp", "type": "trend", "title": "Reactor Temperature", "unit_key": "fcc", "tag_keys": ["reactor_temp"]},
+        {"id": "fcc-summary-summary", "type": "summary", "title": "FCC Summary", "unit_key": "fcc", "tag_keys": []},
     ]
     plan = plan_dashboard_command(
         "Χώρεσε τη σύνοψη ανάμεσα στην τιμή της τροφοδοσίας και το γράφημα reactor temperature",
@@ -43,6 +43,20 @@ def test_move_summary_between_feed_kpi_and_reactor_chart():
     assert plan["target_id"] == "fcc-summary-summary"
     assert plan["first_id"] == "fcc-kpi-feed_flow"
     assert plan["second_id"] == "fcc-trend-reactor_temp"
+
+
+def test_remove_fcc_feed_chart_is_unit_aware():
+    widgets = [
+        {"id": "fcc-trend-feed_flow", "type": "trend", "title": "Feed Flow", "unit_key": "fcc", "tag_keys": ["feed_flow"]},
+        {"id": "hcu-trend-feed_flow", "type": "trend", "title": "Feed Flow", "unit_key": "hcu", "tag_keys": ["feed_flow"]},
+    ]
+    plan = plan_dashboard_command(
+        "Αφαίρεσε το γράφημα τροφοδοσίας από το FCC",
+        default_site_model(),
+        current_widgets=widgets,
+    )
+    assert plan["action"] == "remove_widget"
+    assert plan["target_id"] == "fcc-trend-feed_flow"
 
 
 def test_multi_unit_requires_resolved_unit():
