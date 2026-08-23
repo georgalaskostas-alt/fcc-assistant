@@ -224,6 +224,9 @@ export default function App() {
     }
   }
 
+  const siteName = site?.site ?? "Refinery";
+  const siteUnits = site?.units ?? [];
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -245,13 +248,13 @@ export default function App() {
 
       <main className="main-panel">
         <header className="topbar">
-          <div><h2>{view === "chat" ? "Assistant" : view === "knowledge" ? "Knowledge" : view === "reports" ? "Reports" : view === "settings" ? "Settings" : "Dashboard"}</h2><span>{site?.site ?? "Refinery"} · {activeUnitName}</span></div>
+          <div><h2>{view === "chat" ? "Assistant" : view === "knowledge" ? "Knowledge" : view === "reports" ? "Reports" : view === "settings" ? "Settings" : "Dashboard"}</h2><span>{siteName} · {activeUnitName}</span></div>
           <div className="topbar-actions"><span className={backendOk ? "status-pill online" : "status-pill offline"}>Backend {backendOk ? "online" : "offline"}</span><button className="icon-button" onClick={() => void refresh()} disabled={loading} title="Refresh"><RefreshCw size={17} /></button></div>
         </header>
 
         <div className="content">
           {error && <div className="error-banner">{error}</div>}
-          {view !== "reports" && view !== "settings" && <UnitScopeBar site={site} activeUnit={activeUnit} onChange={changeActiveUnit} />}
+          {view !== "reports" && view !== "settings" && <UnitScopeBar siteName={siteName} units={siteUnits} activeUnit={activeUnit} onChange={changeActiveUnit} />}
 
           {view === "dashboard" && <>
             <section className="section-head"><div><span className="eyebrow">OPERATING OVERVIEW</span><h1>Operations workspace</h1><p>Dynamic refinery/unit layout · source quality is shown explicitly.</p></div><span className="readonly-pill"><ShieldCheck size={15} /> Read-only mode</span></section>
@@ -265,7 +268,7 @@ export default function App() {
             {answer && <div className="assistant-answer">{answer}</div>}
           </section>}
 
-          {view === "knowledge" && <UnitKnowledgeView site={site} activeUnit={activeUnit} onUnitChange={changeActiveUnit} />}
+          {view === "knowledge" && <UnitKnowledgeView unitKey={activeUnit} unitName={activeUnitName} />}
 
           {view === "reports" && <section className="placeholder-panel"><FileText size={24} /><h3>Reports</h3><p>Shift and refinery reporting workspace will use the same governed evidence and role scope.</p></section>}
 
