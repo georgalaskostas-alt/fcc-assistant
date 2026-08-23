@@ -1,0 +1,34 @@
+.command-icon-button.voice-listening {
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, .7);
+  background: rgba(14, 116, 144, .22);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, .08), 0 0 18px rgba(56, 189, 248, .15);
+  animation: voice-pulse 1.25s ease-in-out infinite;
+}
+
+.command-icon-button.voice-transcribing,
+.command-icon-button.voice-executing {
+  color: #c4b5fd;
+  border-color: rgba(139, 92, 246, .45);
+  background: rgba(76, 29, 149, .18);
+}
+
+.voice-hint {
+  margin: 6px 4px 0;
+  color: #8fa6bd;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.voice-hint-listening { color: #7dd3fc; }
+.voice-hint-transcribing,
+.voice-hint-executing { color: #c4b5fd; }
+
+@keyframes voice-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.045); opacity: .78; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .command-icon-button.voice-listening { animation: none; }
+}
