@@ -5,6 +5,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from .learned_patterns import LearnedPatternStore
 from .operational_episode import OperationalEpisodeStore, outcome_envelope
 from .production_domain import ProductionStore
 
@@ -44,6 +45,21 @@ class ProductionCreateRequest(BaseModel):
     plan: float
     unit: str = Field(default="", max_length=80)
     source: str = "manual_or_connector"
+
+
+class PatternCreateRequest(BaseModel):
+    unit_key: str = Field(min_length=1, max_length=120)
+    statement: str = Field(min_length=1, max_length=4000)
+    context: dict[str, float | str] = Field(default_factory=dict)
+    outcome: dict[str, float | str] = Field(default_factory=dict)
+    comparable_episodes: int = Field(ge=2)
+    confidence: float = Field(ge=0, le=1)
+
+
+class PatternReviewRequest(BaseModel):
+    status: str
+    reviewed_by: str = Field(min_length=1, max_length=300)
+    engineer_note: str = Field(default="", max_length=5000)
 
 
 @router.post("/episodes")
@@ -92,6 +108,39 @@ def similar_episodes(request: SimilarEpisodesRequest) -> dict[str, object]:
         ],
         "read_only": True,
     }
+
+
+@router.post("/patterns")
+def add_pattern(request: PatternCreateRequest) -> dict[str, object]:
+    try:
+        pattern = LearnedPatternStore().add_candidate(**request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"pattern": asdict(pattern), "read_only": True}
+
+
+@router.get("/patterns/{unit_key}")
+def list_patterns(unit_key: str, status: str | None = None) -> dict[str, object]:
+    if status not in {None, "candidate", "approved", "rejected"}:
+        raise HTTPException(status_code=422, detail="invalid pattern status")
+    items = LearnedPatternStore().list(unit_key=unit_key, status=status)  # type: ignore[arg-type]
+    return {"unit_key": unit_key, "count": len(items), "patterns": [asdict(item) for item in items], "read_only": True}
+
+
+@router.post("/patterns/{pattern_id}/review")
+def review_pattern(pattern_id: str, request: PatternReviewRequest) -> dict[str, object]:
+    if request.status not in {"approved", "rejected"}:
+        raise HTTPException(status_code=422, detail="status must be approved or rejected")
+    try:
+        pattern = LearnedPatternStore().review(
+            pattern_id,
+            status=request.status,  # type: ignore[arg-type]
+            reviewed_by=request.reviewed_by,
+            engineer_note=request.engineer_note,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="pattern not found") from exc
+    return {"pattern": asdict(pattern), "read_only": True}
 
 
 @router.post("/production")
