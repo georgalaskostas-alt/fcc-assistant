@@ -27,3 +27,23 @@ def test_empty_transcript_is_low_confidence_and_never_executes():
 def test_medium_or_low_confidence_does_not_execute_blindly():
     result = normalize_transcript("γράφημα")
     assert result.execute_immediately is False
+
+
+def test_rejects_latin_only_whisper_hallucination_without_domain_context():
+    result = normalize_transcript("The Lona Valo")
+    assert result.raw_text == "The Lona Valo"
+    assert result.normalized_text == ""
+    assert result.level == "low"
+    assert result.execute_immediately is False
+
+
+def test_allows_mixed_or_technical_english_when_it_has_refinery_context():
+    result = normalize_transcript("FCC feed flow")
+    assert "FCC" in result.normalized_text
+    assert "feed flow" in result.normalized_text
+    assert result.normalized_text != ""
+
+
+def test_corrects_scc_to_fcc():
+    result = normalize_transcript("βάλε γράφημα feed flow του SCC")
+    assert "FCC" in result.normalized_text
