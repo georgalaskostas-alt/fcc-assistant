@@ -25,7 +25,7 @@ class SpeechDecision:
 
 
 _BUILTIN_TERMS: dict[str, tuple[str, ...]] = {
-    "FCC": ("fcc", "f c c", "εφ σι σι", "εφσισι", "φσισι"),
+    "FCC": ("fcc", "f c c", "scc", "s c c", "εφ σι σι", "εφσισι", "φσισι", "ες σι σι"),
     "Hydrocracker": (
         "hydrocracker",
         "hydro cracker",
@@ -44,8 +44,8 @@ _BUILTIN_TERMS: dict[str, tuple[str, ...]] = {
     "riser": ("riser", "ραιζερ", "ράιζερ"),
     "stripper": ("stripper", "στριπερ", "στρίπερ"),
     "main fractionator": ("main fractionator", "μειν φρακσιονειτορ", "κεντρικος κλασματωτης", "κεντρικός κλασματωτής"),
-    "feed flow": ("feed flow", "φιντ φλοου", "τροφοδοσια", "τροφοδοσία", "παροχη τροφοδοσιας", "παροχή τροφοδοσίας"),
-    "reactor temperature": ("reactor temperature", "θερμοκρασια αντιδραστηρα", "θερμοκρασία αντιδραστήρα", "θερμοκρασια αντιδρασης", "θερμοκρασία αντίδρασης"),
+    "feed flow": ("feed flow", "feed_flow", "φιντ φλοου", "τροφοδοσια", "τροφοδοσία", "παροχη τροφοδοσιας", "παροχή τροφοδοσίας"),
+    "reactor temperature": ("reactor temperature", "reactor_temperature", "θερμοκρασια αντιδραστηρα", "θερμοκρασία αντιδραστήρα", "θερμοκρασια αντιδρασης", "θερμοκρασία αντίδρασης"),
 }
 
 
@@ -83,7 +83,6 @@ def normalize_transcript(text: str, extra_terms: Iterable[str] = ()) -> SpeechDe
     corrections: list[DomainCorrection] = []
     lexicon = build_lexicon(extra_terms)
 
-    # Exact/near-exact phrase replacement first. Longest variants win.
     candidates: list[tuple[str, str]] = []
     for canonical, variants in lexicon.items():
         for variant in variants:
@@ -100,7 +99,6 @@ def normalize_transcript(text: str, extra_terms: Iterable[str] = ()) -> SpeechDe
             before = normalized
             normalized = pattern.sub(canonical, normalized)
             if normalized == before:
-                # Accent/folding differences: replace matching folded token span conservatively.
                 words = normalized.split()
                 target_words = folded_variant.split()
                 for i in range(0, len(words) - len(target_words) + 1):
@@ -112,14 +110,21 @@ def normalize_transcript(text: str, extra_terms: Iterable[str] = ()) -> SpeechDe
                 corrections.append(DomainCorrection(variant, canonical, 1.0))
                 working_folded = _fold(normalized)
 
-    # Conservative fuzzy correction for short technical tokens only.
     words = normalized.split()
     for i, word in enumerate(words):
         folded_word = _fold(word)
-        if len(folded_word) < 4 or folded_word.isdigit():
+        if len(folded_word) < 3 or folded_word.isdigit():
             continue
         best: tuple[float, str, str] | None = None
         for canonical, variants in lexicon.items():
+            folded_canonical = _fold(canonical)
+            # Acronyms such as FCC are especially prone to one-letter STT errors.
+            if len(folded_word) == 3 and len(folded_canonical) == 3:
+                mismatches = sum(a != b for a, b in zip(folded_word, folded_canonical))
+                if mismatches == 1:
+                    score = 0.93
+                    if best is None or score > best[0]:
+                        best = (score, word, canonical)
             for variant in variants:
                 fv = _fold(variant)
                 if " " in fv or abs(len(fv) - len(folded_word)) > 3:
@@ -132,7 +137,6 @@ def normalize_transcript(text: str, extra_terms: Iterable[str] = ()) -> SpeechDe
             corrections.append(DomainCorrection(word, best[2], round(best[0], 3)))
     normalized = " ".join(words)
 
-    # This is command-confidence, not an acoustic posterior probability.
     length_score = min(1.0, max(0.25, len(normalized.split()) / 7.0))
     domain_hits = len(corrections)
     domain_score = min(1.0, 0.55 + 0.12 * domain_hits)
