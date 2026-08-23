@@ -27,6 +27,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": ["binaries/fcc-backend"]
+    "externalBin": ["binaries/fcc-backend"],
+    "macOS": {
+      "infoPlist": "Info.plist"
+    }
   }
 }
