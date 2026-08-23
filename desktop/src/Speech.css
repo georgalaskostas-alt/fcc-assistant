@@ -1,3 +1,10 @@
+.command-icon-button.voice-mode-enabled {
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, .58);
+  background: rgba(14, 116, 144, .16);
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, .08), 0 0 14px rgba(56, 189, 248, .10);
+}
+
 .command-icon-button.voice-listening {
   color: #7dd3fc;
   border-color: rgba(56, 189, 248, .7);
@@ -38,6 +45,10 @@
 
 .voice-status-listening {
   color: #7dd3fc;
+}
+
+.voice-status-idle {
+  color: #67e8f9;
 }
 
 .voice-status-transcribing,
