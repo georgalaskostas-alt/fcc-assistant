@@ -75,6 +75,31 @@ export type RuntimeInfo = {
   state: RuntimeState;
 };
 
+export type SpeechStatus = {
+  ready: boolean;
+  binary: string;
+  model: string;
+  language: string;
+  local_only: boolean;
+  engine: string;
+  cloud: boolean;
+  audio_leaves_device: boolean;
+};
+
+export type SpeechTranscript = {
+  raw_text: string;
+  text: string;
+  confidence: number;
+  confidence_level: "low" | "medium" | "high";
+  execute_immediately: boolean;
+  corrections: Array<{ source: string; target: string; score: number }>;
+  scope: string;
+  language: string;
+  engine: string;
+  local_only: boolean;
+  audio_retained: boolean;
+};
+
 export type DashboardWidgetLayout = {
   order: number;
   width: 3 | 4 | 6 | 8 | 12;
@@ -185,6 +210,14 @@ export const api = {
   aiRuntime: () => request<RuntimeInfo>("/api/v1/ai/runtime"),
   startAiRuntime: () => request<RuntimeState>("/api/v1/ai/runtime/start", { method: "POST" }),
   stopAiRuntime: () => request<RuntimeState>("/api/v1/ai/runtime/stop", { method: "POST" }),
+  speechStatus: () => request<SpeechStatus>("/api/v1/speech/status"),
+  transcribeSpeech: (audio: Blob, scope: string, terms: string[]) => {
+    const form = new FormData();
+    form.append("audio", audio, "voice-command.wav");
+    form.append("scope", scope);
+    form.append("terms_json", JSON.stringify(terms));
+    return request<SpeechTranscript>("/api/v1/speech/transcribe", { method: "POST", body: form });
+  },
   simulatorTags: () => request<SimulatorTagsResponse>("/api/v1/site-simulator/tags"),
   demoShift: () => request<DemoShiftResponse>("/api/v1/site-simulator/demo-shift"),
   analyze: (question: string, evidence: Record<string, unknown>) =>
