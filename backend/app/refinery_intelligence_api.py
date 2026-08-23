@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from .engineering_context import EngineeringContextBuilder
 from .learned_patterns import LearnedPatternStore
 from .local_ai import LocalAIClient, LocalAIError
+from .management_brief import ManagementBriefBuilder
 from .operational_episode import OperationalEpisodeStore, outcome_envelope
 from .production_domain import ProductionStore
 
@@ -71,6 +72,15 @@ class EngineeringAnalyzeRequest(BaseModel):
     configuration_version: str | None = None
     process_evidence: dict[str, object] = Field(default_factory=dict)
     comparison_context: dict[str, float | str] = Field(default_factory=dict)
+
+
+class ManagementAnalyzeRequest(BaseModel):
+    scope_kind: str
+    scope_id: str = Field(min_length=1, max_length=120)
+    unit_keys: list[str] = Field(min_length=1, max_length=100)
+    question: str = Field(min_length=1, max_length=4000)
+    at_time: str | None = None
+    process_evidence_by_unit: dict[str, dict[str, object]] = Field(default_factory=dict)
 
 
 @router.post("/episodes")
@@ -223,5 +233,31 @@ async def engineering_analyze(request: EngineeringAnalyzeRequest) -> dict[str, o
             "approved_pattern_count": len(context["approved_learned_patterns"]),
             "comparable_episode_count": len(context["comparable_episodes"]),
         },
+        "read_only": True,
+    }
+
+
+@router.post("/management/analyze")
+async def management_analyze(request: ManagementAnalyzeRequest) -> dict[str, object]:
+    try:
+        evidence = ManagementBriefBuilder().build(
+            scope_kind=request.scope_kind,
+            scope_id=request.scope_id,
+            unit_keys=request.unit_keys,
+            at_time=request.at_time,
+            process_evidence_by_unit=request.process_evidence_by_unit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        response = await LocalAIClient().generate(request.question, evidence)
+    except LocalAIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "mode": "local",
+        "scope": evidence["scope"],
+        "model": response.model,
+        "answer": response.text,
+        "unit_count": len(evidence["units"]),
         "read_only": True,
     }
