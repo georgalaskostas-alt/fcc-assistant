@@ -108,10 +108,67 @@ export type DashboardCommandResponse = {
   workspace: DashboardWorkspace;
 };
 
+export type KnowledgeManual = {
+  id: string;
+  title: string;
+  revision: string;
+  source_path: string;
+  summary: string;
+  document_date: string | null;
+  status: string;
+  created_at: string;
+};
+
+export type KnowledgeRevamp = {
+  id: string;
+  title: string;
+  description: string;
+  effective_from: string;
+  effective_to: string | null;
+  approved_by: string;
+  status: string;
+};
+
+export type KnowledgeOverride = {
+  id: string;
+  subject: string;
+  manual_value: string;
+  current_value: string;
+  reason: string;
+  manual_reference: string;
+  effective_from: string;
+  effective_to: string | null;
+  approved_by: string;
+  status: string;
+};
+
+export type UnitKnowledge = {
+  unit_key: string;
+  knowledge_status: string;
+  manuals: KnowledgeManual[];
+  revamps: KnowledgeRevamp[];
+  overrides: KnowledgeOverride[];
+  notes: unknown[];
+  updated_at: string;
+};
+
+export type ManualSearchItem = {
+  storage_id?: string;
+  chunk_id?: string;
+  page?: number | null;
+  text?: string;
+  score?: number;
+  [key: string]: unknown;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const isForm = init?.body instanceof FormData;
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
+    headers: {
+      ...(isForm ? {} : { "Content-Type": "application/json" }),
+      ...(init?.headers ?? {}),
+    },
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
@@ -146,5 +203,53 @@ export const api = {
     request<DashboardCommandResponse>("/api/v1/dashboard/command", {
       method: "POST",
       body: JSON.stringify({ command, workspace }),
+    }),
+  unitKnowledge: (unitKey: string) =>
+    request<UnitKnowledge>(`/api/v1/knowledge/units/${encodeURIComponent(unitKey)}`),
+  effectiveUnitKnowledge: (unitKey: string) =>
+    request<Record<string, unknown>>(`/api/v1/knowledge/units/${encodeURIComponent(unitKey)}/effective`),
+  searchManuals: (unitKey: string, query: string) =>
+    request<{ unit_key: string; query: string; count: number; items: ManualSearchItem[] }>(
+      `/api/v1/knowledge/units/${encodeURIComponent(unitKey)}/manuals/search?q=${encodeURIComponent(query)}`,
+    ),
+  uploadManual: (unitKey: string, file: File, title = "", revision = "") => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("title", title);
+    form.append("revision", revision);
+    form.append("status", "draft");
+    return request<{ manual: KnowledgeManual; ingestion: Record<string, unknown> }>(
+      `/api/v1/knowledge/units/${encodeURIComponent(unitKey)}/manuals/upload`,
+      { method: "POST", body: form },
+    );
+  },
+  setKnowledgeStatus: (unitKey: string, status: string) =>
+    request<UnitKnowledge>(`/api/v1/knowledge/units/${encodeURIComponent(unitKey)}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
+    }),
+  engineeringContext: (unitKey: string) =>
+    request<Record<string, unknown>>(`/api/v1/intelligence/context/${encodeURIComponent(unitKey)}`),
+  engineeringAnalyze: (unitKey: string, question: string, processEvidence: Record<string, unknown>) =>
+    request<AssistantReply>("/api/v1/intelligence/analyze", {
+      method: "POST",
+      body: JSON.stringify({ unit_key: unitKey, question, process_evidence: processEvidence }),
+    }),
+  managementAnalyze: (
+    scopeKind: "complex" | "refinery",
+    scopeId: string,
+    unitKeys: string[],
+    question: string,
+    processEvidenceByUnit: Record<string, Record<string, unknown>>,
+  ) =>
+    request<AssistantReply>("/api/v1/intelligence/management/analyze", {
+      method: "POST",
+      body: JSON.stringify({
+        scope_kind: scopeKind,
+        scope_id: scopeId,
+        unit_keys: unitKeys,
+        question,
+        process_evidence_by_unit: processEvidenceByUnit,
+      }),
     }),
 };
