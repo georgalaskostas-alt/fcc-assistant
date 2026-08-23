@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  BookOpen,
   Bot,
   Database,
   FileText,
@@ -12,9 +13,10 @@ import {
 } from "lucide-react";
 import { api, BridgeSite, DemoShiftResponse, RuntimeInfo, SimulatorTag, SystemCapabilities } from "./api";
 import { DashboardCustomizer } from "./DashboardCustomizer";
+import { UnitKnowledgeView } from "./UnitKnowledgeView";
 import { UnitScopeBar } from "./UnitScopeBar";
 
-type View = "dashboard" | "chat" | "reports" | "settings";
+type View = "dashboard" | "chat" | "knowledge" | "reports" | "settings";
 
 type CardMetric = {
   key: string;
@@ -27,6 +29,7 @@ type CardMetric = {
 const NAV: Array<{ id: View; label: string; icon: typeof Gauge }> = [
   { id: "dashboard", label: "Dashboard", icon: Gauge },
   { id: "chat", label: "Assistant", icon: MessageSquare },
+  { id: "knowledge", label: "Knowledge", icon: BookOpen },
   { id: "reports", label: "Reports", icon: FileText },
   { id: "settings", label: "Settings", icon: Settings },
 ];
@@ -114,6 +117,18 @@ export default function App() {
     ? "All Units"
     : site?.units.find((unit) => unit.key === activeUnit)?.name ?? activeUnit.toUpperCase();
 
+  function processEvidenceForUnit(unitKey: string): Record<string, unknown> {
+    if (!shift) return {};
+    const unitTagKeys = new Set(
+      tags
+        .filter((tag) => (tag.unit_key ?? tag.group) === unitKey)
+        .map((tag) => tag.key),
+    );
+    return Object.fromEntries(
+      Object.entries(shift.data).filter(([key]) => unitTagKeys.has(key)),
+    );
+  }
+
   async function askAssistant() {
     if (!question.trim() || !shift) return;
     setAsking(true);
@@ -123,13 +138,39 @@ export default function App() {
         await api.startAiRuntime();
         setRuntime(await api.aiRuntime());
       }
-      const response = await api.analyze(question.trim(), {
-        analysis_scope: activeUnit === "all" ? "refinery_scope" : "unit_scope",
-        selected_unit: activeUnit,
-        source: "FCC simulator - development data only",
-        shift: shift.data,
-      });
-      setAnswer(response.answer);
+
+      if (activeUnit !== "all") {
+        const response = await api.engineeringAnalyze(
+          activeUnit,
+          question.trim(),
+          {
+            source: "simulated development data",
+            data_quality: "simulated",
+            shift: processEvidenceForUnit(activeUnit),
+          },
+        );
+        setAnswer(response.answer);
+      } else {
+        const unitKeys = site?.units.map((unit) => unit.key) ?? [];
+        const evidenceByUnit = Object.fromEntries(
+          unitKeys.map((unitKey) => [
+            unitKey,
+            {
+              source: "simulated development data",
+              data_quality: "simulated",
+              shift: processEvidenceForUnit(unitKey),
+            },
+          ]),
+        );
+        const response = await api.managementAnalyze(
+          "refinery",
+          "refinery",
+          unitKeys,
+          question.trim(),
+          evidenceByUnit,
+        );
+        setAnswer(response.answer);
+      }
     } catch (err) {
       setAnswer(`Δεν ήταν δυνατή η ανάλυση: ${err instanceof Error ? err.message : "unknown error"}`);
     } finally {
@@ -194,7 +235,7 @@ export default function App() {
               <div>
                 <span className="eyebrow">OPERATING OVERVIEW</span>
                 <h2>Operations workspace</h2>
-                <p>Dynamic refinery/unit layout · simulated development data.</p>
+                <p>Dynamic refinery/unit layout · source quality is shown explicitly.</p>
               </div>
               <div className="read-only-badge"><ShieldCheck size={17} /> Read-only mode</div>
             </div>
@@ -212,15 +253,25 @@ export default function App() {
 
         {view === "chat" && (
           <section className="content chat-layout">
+            <UnitScopeBar
+              siteName={site?.site ?? "Refinery"}
+              units={site?.units ?? []}
+              activeUnit={activeUnit}
+              onChange={changeActiveUnit}
+            />
             <div className="chat-intro">
-              <span className="eyebrow">EMBEDDED LOCAL AI</span>
-              <h2>Ask about operations</h2>
-              <p>Scope: {activeUnitName}. Το local model λαμβάνει μόνο τα structured process data που χρειάζεται.</p>
+              <span className="eyebrow">ENGINEERING INTELLIGENCE</span>
+              <h2>{activeUnit === "all" ? "Ask across all configured units" : `Ask about ${activeUnitName}`}</h2>
+              <p>
+                {activeUnit === "all"
+                  ? "The local model keeps unit evidence separated and builds a management-level brief."
+                  : "The local model combines process evidence, approved unit knowledge, revamp state, historical episodes and approved learned patterns."}
+              </p>
             </div>
             <div className="chat-card">
               <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ρώτησε κάτι για τη λειτουργία…" />
               <div className="chat-actions">
-                <span><ShieldCheck size={15} /> No external AI · data stays local</span>
+                <span><ShieldCheck size={15} /> Local only · read-only · evidence-backed</span>
                 <button className="primary-button" onClick={() => void askAssistant()} disabled={asking || !shift}>{asking ? "Analyzing…" : "Analyze"}</button>
               </div>
               {answer && <div className="assistant-answer"><div className="answer-avatar"><Bot size={20} /></div><div><strong>FCC Assistant</strong><p>{answer}</p></div></div>}
@@ -228,9 +279,21 @@ export default function App() {
           </section>
         )}
 
+        {view === "knowledge" && (
+          <section className="content">
+            <UnitScopeBar
+              siteName={site?.site ?? "Refinery"}
+              units={site?.units ?? []}
+              activeUnit={activeUnit}
+              onChange={changeActiveUnit}
+            />
+            <UnitKnowledgeView unitKey={activeUnit} unitName={activeUnitName} />
+          </section>
+        )}
+
         {view === "reports" && (
           <section className="content">
-            <div className="hero-row"><div><span className="eyebrow">REPORTING</span><h2>{activeUnitName} report preview</h2><p>Πρώτη έκδοση του report πριν συνδεθεί το πραγματικό PI.</p></div></div>
+            <div className="hero-row"><div><span className="eyebrow">REPORTING</span><h2>{activeUnitName} report preview</h2><p>Reporting foundation; live plant reports activate when governed sources are connected.</p></div></div>
             <article className="panel report-panel">
               <div className="report-header"><div><h3>07:00–15:00 Shift</h3><span>{activeUnitName}</span></div><FileText size={22} /></div>
               <div className="report-table">
@@ -245,7 +308,7 @@ export default function App() {
 
         {view === "settings" && (
           <section className="content">
-            <div className="hero-row"><div><span className="eyebrow">LOCAL CONFIGURATION</span><h2>System settings</h2><p>Πραγματικά PI στοιχεία και μοντέλα παραμένουν μόνο τοπικά.</p></div></div>
+            <div className="hero-row"><div><span className="eyebrow">LOCAL CONFIGURATION</span><h2>System settings</h2><p>Plant data, knowledge and AI assets remain under local/on-premise control.</p></div></div>
             <div className="settings-grid">
               <article className="panel"><div className="panel-heading"><div><h3>PI Web API</h3><p>Read-only plant data source</p></div><Database size={20} /></div><div className="setting-line"><span>Status</span><strong>{capabilities?.pi_web_api ?? "not configured"}</strong></div></article>
               <article className="panel">
