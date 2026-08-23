@@ -59,6 +59,26 @@ def test_remove_fcc_feed_chart_is_unit_aware():
     assert plan["target_id"] == "fcc-trend-feed_flow"
 
 
+def test_remove_the_fcc_chart_without_tag_when_only_one_exists():
+    widgets = [
+        {"id": "fcc-trend-feed_flow", "type": "trend", "title": "Feed Flow", "unit_key": "fcc", "tag_keys": ["feed_flow"]},
+        {"id": "fcc-kpi-feed_flow", "type": "kpi", "title": "Feed Flow", "unit_key": "fcc", "tag_keys": ["feed_flow"]},
+        {"id": "hcu-trend-feed_flow", "type": "trend", "title": "Feed Flow", "unit_key": "hcu", "tag_keys": ["feed_flow"]},
+    ]
+    plan = plan_dashboard_command("Αφαίρεσε το γράφημα του FCC", default_site_model(), current_widgets=widgets)
+    assert plan["action"] == "remove_widget"
+    assert plan["target_id"] == "fcc-trend-feed_flow"
+
+
+def test_generic_fcc_chart_removal_asks_for_clarification_when_ambiguous():
+    widgets = [
+        {"id": "fcc-trend-feed_flow", "type": "trend", "title": "Feed Flow", "unit_key": "fcc", "tag_keys": ["feed_flow"]},
+        {"id": "fcc-trend-reactor_temp", "type": "trend", "title": "Reactor Temperature", "unit_key": "fcc", "tag_keys": ["reactor_temp"]},
+    ]
+    with pytest.raises(DashboardCommandError, match="Πες μου ποιο"):
+        plan_dashboard_command("Αφαίρεσε το γράφημα του FCC", default_site_model(), current_widgets=widgets)
+
+
 def test_multi_unit_requires_resolved_unit():
     site = SiteModel(
         "Refinery",
