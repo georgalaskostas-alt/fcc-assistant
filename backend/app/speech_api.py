@@ -35,10 +35,16 @@ async def speech_transcribe(
     except json.JSONDecodeError:
         extra_terms = []
 
-    # Keep prompt bounded. It biases recognition toward local refinery vocabulary,
-    # while normalization below remains the final deterministic correction layer.
+    # Greek-first prompt: operational commands are spoken primarily in Greek,
+    # with English refinery acronyms/tag names mixed into the sentence. Keeping
+    # the instruction itself Greek avoids biasing short clips toward English.
     prompt_terms = list(dict.fromkeys([scope, *extra_terms]))[:80]
-    prompt = "Refinery operations terminology: " + ", ".join(prompt_terms)
+    prompt = (
+        "Η ομιλία είναι στα Ελληνικά. Μετέγραψε στα Ελληνικά και κράτησε μόνο τους "
+        "τεχνικούς όρους, ακρωνύμια και tags στην καθιερωμένη αγγλική γραφή τους. "
+        "Πρόκειται για εντολή λειτουργίας διυλιστηρίου. Όροι αναφοράς: "
+        + ", ".join(prompt_terms)
+    )
 
     try:
         data = await audio.read()
