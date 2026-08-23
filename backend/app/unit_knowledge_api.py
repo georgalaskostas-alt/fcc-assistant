@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
+from .manual_ingestion import ManualIngestionError, ingest_manual, search_manual_index
 from .unit_knowledge import UnitKnowledgeError, UnitKnowledgeStore
 
 router = APIRouter(prefix="/api/v1/knowledge", tags=["unit-knowledge"])
@@ -46,7 +47,7 @@ def _store() -> UnitKnowledgeStore:
     return UnitKnowledgeStore()
 
 
-def _bad_request(exc: (UnitKnowledgeError | ValueError)) -> HTTPException:
+def _bad_request(exc: UnitKnowledgeError | ManualIngestionError | ValueError) -> HTTPException:
     return HTTPException(status_code=422, detail=str(exc))
 
 
@@ -66,12 +67,62 @@ def effective_unit_knowledge(unit_key: str, at_time: str | None = Query(default=
         raise _bad_request(exc) from exc
 
 
+@router.get("/units/{unit_key}/manuals/search")
+def search_manuals(unit_key: str, q: str = Query(min_length=2, max_length=500), limit: int = Query(default=8, ge=1, le=25)) -> dict[str, object]:
+    try:
+        items = search_manual_index(unit_key, q, limit=limit)
+    except ManualIngestionError as exc:
+        raise _bad_request(exc) from exc
+    return {"unit_key": unit_key.casefold(), "query": q, "count": len(items), "items": items, "local_only": True}
+
+
 @router.post("/units/{unit_key}/manuals")
 def add_manual(unit_key: str, request: ManualCreateRequest) -> dict[str, object]:
     try:
         return _store().add_manual(unit_key, **request.model_dump())
     except UnitKnowledgeError as exc:
         raise _bad_request(exc) from exc
+
+
+@router.post("/units/{unit_key}/manuals/upload")
+async def upload_manual(
+    unit_key: str,
+    file: UploadFile = File(...),
+    title: str = Form(default=""),
+    revision: str = Form(default=""),
+    document_date: str | None = Form(default=None),
+    status: str = Form(default="draft"),
+) -> dict[str, object]:
+    filename = file.filename or "manual.pdf"
+    try:
+        data = await file.read()
+        ingestion = ingest_manual(unit_key, filename, data)
+        manual = _store().add_manual(
+            unit_key,
+            title=(title.strip() or filename),
+            revision=revision,
+            source_path=ingestion.stored_path,
+            summary="",
+            document_date=document_date,
+            status=status,
+        )
+    except (ManualIngestionError, UnitKnowledgeError, ValueError) as exc:
+        raise _bad_request(exc) from exc
+    finally:
+        await file.close()
+
+    return {
+        "manual": manual,
+        "ingestion": {
+            "storage_id": ingestion.storage_id,
+            "original_name": ingestion.original_name,
+            "character_count": ingestion.character_count,
+            "chunk_count": ingestion.chunk_count,
+            "pages": ingestion.pages,
+            "local_only": True,
+            "summary_status": "pending",
+        },
+    }
 
 
 @router.post("/units/{unit_key}/revamps")
