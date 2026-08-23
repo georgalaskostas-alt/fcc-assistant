@@ -90,7 +90,7 @@ fn speak_text(text: String) -> Result<(), String> {
             "-Command",
             &format!(
                 "Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Speak('{}')",
-                trimmed.replace('’', "'").replace(''', "''")
+                trimmed.replace('’', "'").replace('\'', "''")
             ),
         ])
         .status()
