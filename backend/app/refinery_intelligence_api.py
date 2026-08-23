@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from .engineering_context import EngineeringContextBuilder
 from .learned_patterns import LearnedPatternStore
+from .local_ai import LocalAIClient, LocalAIError
 from .operational_episode import OperationalEpisodeStore, outcome_envelope
 from .production_domain import ProductionStore
 
@@ -61,6 +62,15 @@ class PatternReviewRequest(BaseModel):
     status: str
     reviewed_by: str = Field(min_length=1, max_length=300)
     engineer_note: str = Field(default="", max_length=5000)
+
+
+class EngineeringAnalyzeRequest(BaseModel):
+    unit_key: str = Field(min_length=1, max_length=120)
+    question: str = Field(min_length=1, max_length=4000)
+    at_time: str | None = None
+    configuration_version: str | None = None
+    process_evidence: dict[str, object] = Field(default_factory=dict)
+    comparison_context: dict[str, float | str] = Field(default_factory=dict)
 
 
 @router.post("/episodes")
@@ -175,5 +185,43 @@ def engineering_context(
             at_time=at_time,
             configuration_version=configuration_version,
         ),
+        "read_only": True,
+    }
+
+
+@router.post("/analyze")
+async def engineering_analyze(request: EngineeringAnalyzeRequest) -> dict[str, object]:
+    context = EngineeringContextBuilder().for_unit(
+        request.unit_key,
+        at_time=request.at_time,
+        configuration_version=request.configuration_version,
+        comparison_context=request.comparison_context or None,
+    )
+    evidence = {
+        "scope": {"kind": "unit", "unit_key": request.unit_key.casefold()},
+        "process_evidence": request.process_evidence,
+        "engineering_context": context,
+        "policy": {
+            "read_only": True,
+            "external_process_ai": False,
+            "do_not_invent_missing_values": True,
+            "association_is_not_causation": True,
+        },
+    }
+    try:
+        response = await LocalAIClient().generate(request.question, evidence)
+    except LocalAIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "mode": "local",
+        "scope": request.unit_key.casefold(),
+        "model": response.model,
+        "answer": response.text,
+        "evidence_summary": {
+            "knowledge_status": context["knowledge"].get("knowledge_status"),
+            "historical_episode_count": context["historical_episode_count"],
+            "approved_pattern_count": len(context["approved_learned_patterns"]),
+            "comparable_episode_count": len(context["comparable_episodes"]),
+        },
         "read_only": True,
     }
