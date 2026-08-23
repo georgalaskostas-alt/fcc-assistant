@@ -34,6 +34,21 @@ const NAV: Array<{ id: View; label: string; icon: typeof Gauge }> = [
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+async function waitForBackend(attempts = 24, delayMs = 250) {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await api.health();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) await sleep(delayMs);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Local backend did not become ready");
+}
+
 function latestMetric(tag: SimulatorTag, shift: DemoShiftResponse | null): CardMetric {
   const items = shift?.data[tag.key]?.Items ?? [];
   if (!items.length) return { key: tag.key, name: tag.name, unit: tag.unit, value: null, delta: null };
@@ -77,8 +92,8 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const [health, caps, bridgeSite, runtimeInfo, tagResponse, demo] = await Promise.all([
-        api.health(),
+      const health = await waitForBackend();
+      const [caps, bridgeSite, runtimeInfo, tagResponse, demo] = await Promise.all([
         api.capabilities(),
         api.bridgeSite(),
         api.aiRuntime(),
@@ -97,7 +112,19 @@ export default function App() {
       }
     } catch (err) {
       setBackendOk(false);
-      setError(err instanceof Error ? err.message : "Unable to connect to the local backend");
+      let detail = err instanceof Error ? err.message : "Unable to connect to the local backend";
+      try {
+        const diagnostic = await api.backendRuntimeStatus();
+        if (diagnostic.last_error) detail = `Backend startup failed: ${diagnostic.last_error}`;
+        else if (diagnostic.terminated) detail = "Backend process terminated before becoming ready.";
+        else if (!diagnostic.listening) detail = `Backend did not start listening on local port ${diagnostic.port}.`;
+        if (diagnostic.recent_output.length) {
+          detail += ` · ${diagnostic.recent_output.at(-1)}`;
+        }
+      } catch {
+        // Browser-only development does not expose Tauri invoke; keep network error.
+      }
+      setError(detail);
     } finally {
       setLoading(false);
     }
@@ -107,10 +134,15 @@ export default function App() {
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      void api.health().then(() => setBackendOk(true)).catch(() => setBackendOk(false));
+      void api.health()
+        .then(() => {
+          if (!backendOk) void refresh();
+          else setBackendOk(true);
+        })
+        .catch(() => setBackendOk(false));
     }, 4000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [backendOk]);
 
   const metrics = useMemo(() => tags.map((tag) => latestMetric(tag, shift)), [tags, shift]);
   const activeUnitName = activeUnit === "all"
@@ -178,15 +210,15 @@ export default function App() {
     }
   }
 
-  async function setAiRunning(run: boolean) {
+  async function toggleRuntime() {
+    if (!runtime) return;
     setRuntimeBusy(true);
-    setError(null);
     try {
-      if (run) await api.startAiRuntime(); else await api.stopAiRuntime();
+      if (runtime.state.running) await api.stopAiRuntime();
+      else await api.startAiRuntime();
       setRuntime(await api.aiRuntime());
-      setCapabilities(await api.capabilities());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to change local AI state");
+      setError(err instanceof Error ? err.message : "Unable to change local AI runtime state");
     } finally {
       setRuntimeBusy(false);
     }
@@ -196,133 +228,54 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark"><Activity size={22} /></div>
-          <div><strong>FCC Assistant</strong><span>Local Process Intelligence</span></div>
+          <div className="brand-mark"><Activity size={25} /></div>
+          <div><strong>FCC Assistant</strong><span>LOCAL PROCESS<br />INTELLIGENCE</span></div>
         </div>
         <nav>
           {NAV.map((item) => {
             const Icon = item.icon;
-            return (
-              <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => setView(item.id)}>
-                <Icon size={18} /> <span>{item.label}</span>
-              </button>
-            );
+            return <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => setView(item.id)}><Icon size={18} />{item.label}</button>;
           })}
         </nav>
         <div className="sidebar-footer">
-          <div className="security-chip"><ShieldCheck size={16} /><span>Embedded local AI</span></div>
+          <div><ShieldCheck size={15} /> Embedded local AI</div>
           <small>External AI: disabled · Plant writes: disabled</small>
         </div>
       </aside>
 
-      <main className="main-area">
+      <main className="main-panel">
         <header className="topbar">
-          <div>
-            <h1>{NAV.find((item) => item.id === view)?.label}</h1>
-            <p>{site?.site ?? "Operations workspace"} · {activeUnitName}</p>
-          </div>
-          <div className="top-actions">
-            <span className={backendOk ? "status-dot ok" : "status-dot bad"}>{backendOk ? "Backend online" : "Backend offline"}</span>
-            <button className="icon-button" onClick={() => void refresh()} disabled={loading}><RefreshCw size={17} /></button>
-          </div>
+          <div><h2>{view === "chat" ? "Assistant" : view === "knowledge" ? "Knowledge" : view === "reports" ? "Reports" : view === "settings" ? "Settings" : "Dashboard"}</h2><span>{site?.site ?? "Refinery"} · {activeUnitName}</span></div>
+          <div className="topbar-actions"><span className={backendOk ? "status-pill online" : "status-pill offline"}>Backend {backendOk ? "online" : "offline"}</span><button className="icon-button" onClick={() => void refresh()} disabled={loading} title="Refresh"><RefreshCw size={17} /></button></div>
         </header>
 
-        {error && <div className="error-banner">{error}</div>}
+        <div className="content">
+          {error && <div className="error-banner">{error}</div>}
+          {view !== "reports" && view !== "settings" && <UnitScopeBar site={site} activeUnit={activeUnit} onChange={changeActiveUnit} />}
 
-        {view === "dashboard" && (
-          <section className="content">
-            <div className="hero-row compact-hero">
-              <div>
-                <span className="eyebrow">OPERATING OVERVIEW</span>
-                <h2>Operations workspace</h2>
-                <p>Dynamic refinery/unit layout · source quality is shown explicitly.</p>
-              </div>
-              <div className="read-only-badge"><ShieldCheck size={17} /> Read-only mode</div>
-            </div>
-
-            <UnitScopeBar
-              siteName={site?.site ?? "Refinery"}
-              units={site?.units ?? []}
-              activeUnit={activeUnit}
-              onChange={changeActiveUnit}
-            />
-
+          {view === "dashboard" && <>
+            <section className="section-head"><div><span className="eyebrow">OPERATING OVERVIEW</span><h1>Operations workspace</h1><p>Dynamic refinery/unit layout · source quality is shown explicitly.</p></div><span className="readonly-pill"><ShieldCheck size={15} /> Read-only mode</span></section>
             <DashboardCustomizer shift={shift} tags={tags} scopeUnit={activeUnit} />
-          </section>
-        )}
+          </>}
 
-        {view === "chat" && (
-          <section className="content chat-layout">
-            <UnitScopeBar
-              siteName={site?.site ?? "Refinery"}
-              units={site?.units ?? []}
-              activeUnit={activeUnit}
-              onChange={changeActiveUnit}
-            />
-            <div className="chat-intro">
-              <span className="eyebrow">ENGINEERING INTELLIGENCE</span>
-              <h2>{activeUnit === "all" ? "Ask across all configured units" : `Ask about ${activeUnitName}`}</h2>
-              <p>
-                {activeUnit === "all"
-                  ? "The local model keeps unit evidence separated and builds a management-level brief."
-                  : "The local model combines process evidence, approved unit knowledge, revamp state, historical episodes and approved learned patterns."}
-              </p>
-            </div>
-            <div className="chat-card">
-              <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ρώτησε κάτι για τη λειτουργία…" />
-              <div className="chat-actions">
-                <span><ShieldCheck size={15} /> Local only · read-only · evidence-backed</span>
-                <button className="primary-button" onClick={() => void askAssistant()} disabled={asking || !shift}>{asking ? "Analyzing…" : "Analyze"}</button>
-              </div>
-              {answer && <div className="assistant-answer"><div className="answer-avatar"><Bot size={20} /></div><div><strong>FCC Assistant</strong><p>{answer}</p></div></div>}
-            </div>
-          </section>
-        )}
+          {view === "chat" && <section className="assistant-panel">
+            <div className="assistant-heading"><Bot size={22} /><div><h3>Local engineering assistant</h3><p>{activeUnit === "all" ? "Cross-unit management intelligence" : `Unit intelligence · ${activeUnitName}`}</p></div></div>
+            <textarea value={question} onChange={(event) => setQuestion(event.target.value)} />
+            <button className="primary-button" disabled={asking || !backendOk} onClick={() => void askAssistant()}>{asking ? "Analyzing…" : "Ask the assistant"}</button>
+            {answer && <div className="assistant-answer">{answer}</div>}
+          </section>}
 
-        {view === "knowledge" && (
-          <section className="content">
-            <UnitScopeBar
-              siteName={site?.site ?? "Refinery"}
-              units={site?.units ?? []}
-              activeUnit={activeUnit}
-              onChange={changeActiveUnit}
-            />
-            <UnitKnowledgeView unitKey={activeUnit} unitName={activeUnitName} />
-          </section>
-        )}
+          {view === "knowledge" && <UnitKnowledgeView site={site} activeUnit={activeUnit} onUnitChange={changeActiveUnit} />}
 
-        {view === "reports" && (
-          <section className="content">
-            <div className="hero-row"><div><span className="eyebrow">REPORTING</span><h2>{activeUnitName} report preview</h2><p>Reporting foundation; live plant reports activate when governed sources are connected.</p></div></div>
-            <article className="panel report-panel">
-              <div className="report-header"><div><h3>07:00–15:00 Shift</h3><span>{activeUnitName}</span></div><FileText size={22} /></div>
-              <div className="report-table">
-                <div className="report-row report-head"><span>Variable</span><span>End value</span><span>Shift change</span></div>
-                {metrics.map((metric) => (
-                  <div className="report-row" key={metric.key}><span>{metric.name}</span><span>{fmt(metric.value)} {metric.unit}</span><span>{metric.delta == null ? "—" : `${metric.delta >= 0 ? "+" : ""}${metric.delta.toFixed(2)} ${metric.unit}`}</span></div>
-                ))}
-              </div>
-            </article>
-          </section>
-        )}
+          {view === "reports" && <section className="placeholder-panel"><FileText size={24} /><h3>Reports</h3><p>Shift and refinery reporting workspace will use the same governed evidence and role scope.</p></section>}
 
-        {view === "settings" && (
-          <section className="content">
-            <div className="hero-row"><div><span className="eyebrow">LOCAL CONFIGURATION</span><h2>System settings</h2><p>Plant data, knowledge and AI assets remain under local/on-premise control.</p></div></div>
-            <div className="settings-grid">
-              <article className="panel"><div className="panel-heading"><div><h3>PI Web API</h3><p>Read-only plant data source</p></div><Database size={20} /></div><div className="setting-line"><span>Status</span><strong>{capabilities?.pi_web_api ?? "not configured"}</strong></div></article>
-              <article className="panel">
-                <div className="panel-heading"><div><h3>Embedded local AI</h3><p>llama.cpp · localhost only · no Ollama</p></div><Bot size={20} /></div>
-                <div className="setting-line"><span>Assets</span><strong>{capabilities?.local_ai ?? "not ready"}</strong></div>
-                <div className="setting-line"><span>Runtime</span><strong>{runtime?.state.running ? `Running (PID ${runtime.state.pid})` : "Stopped"}</strong></div>
-                <button className="primary-button" disabled={runtimeBusy} onClick={() => void setAiRunning(!runtime?.state.running)}>
-                  {runtime?.state.running ? "Stop local AI" : "Start local AI"}
-                </button>
-              </article>
-              <article className="panel"><div className="panel-heading"><div><h3>Security</h3><p>Process protection boundary</p></div><ShieldCheck size={20} /></div><div className="setting-line"><span>External AI</span><strong>Disabled</strong></div><div className="setting-line"><span>Plant writes</span><strong>Disabled</strong></div></article>
-            </div>
-          </section>
-        )}
+          {view === "settings" && <section className="settings-grid">
+            <article className="settings-card"><Database size={20} /><h3>Data sources</h3><div className="settings-row"><span>PI Web API</span><strong>{capabilities?.pi_web_api ?? "unknown"}</strong></div><div className="settings-row"><span>Plant write access</span><strong>{capabilities?.plant_write_access ? "enabled" : "disabled"}</strong></div></article>
+            <article className="settings-card"><Bot size={20} /><h3>Local AI</h3><div className="settings-row"><span>Runtime</span><strong>{runtime?.state.runtime ?? "unknown"}</strong></div><div className="settings-row"><span>Status</span><strong>{runtime?.state.running ? "running" : "stopped"}</strong></div><button className="secondary-button" onClick={() => void toggleRuntime()} disabled={runtimeBusy || !backendOk}>{runtimeBusy ? "Working…" : runtime?.state.running ? "Stop local AI" : "Start local AI"}</button></article>
+          </section>}
+
+          {view === "dashboard" && metrics.length > 0 && <div className="sr-only" aria-hidden="true">{metrics.map((metric) => `${metric.name} ${fmt(metric.value)}`).join(" · ")}</div>}
+        </div>
       </main>
     </div>
   );
