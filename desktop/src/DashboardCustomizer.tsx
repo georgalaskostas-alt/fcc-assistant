@@ -254,6 +254,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
 
   async function startVoiceCycle() {
     if (!voiceModeRef.current || recorderRef.current || finalizingVoiceRef.current) return;
+    setError(null);
     setCommand("");
     setVoiceState("listening");
     setVoiceHint("Ακούω… μίλα φυσικά.");
@@ -270,8 +271,9 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     if (finalizingVoiceRef.current || !recorderRef.current) return;
     finalizingVoiceRef.current = true;
     clearPreviewTimer();
+    setError(null);
     setVoiceState("transcribing");
-    setVoiceHint("Επεξεργασία φωνής τοπικά…");
+    setVoiceHint("Επεξεργάζομαι τη φωνητική εντολή τοπικά…");
 
     try {
       const recorder = recorderRef.current;
@@ -281,13 +283,13 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       setCommand(result.text);
 
       if (!result.text.trim() || result.confidence_level === "low") {
-        setVoiceHint(result.text.trim() ? `Δεν είμαι αρκετά βέβαιος: “${result.text}”` : "Δεν αναγνωρίστηκε καθαρή εντολή.");
+        setVoiceHint(result.text.trim() ? `Χρειάζομαι διευκρίνιση · “${result.text}”` : "Δεν αναγνωρίστηκε καθαρή εντολή.");
         await speak("Δεν κατάλαβα καθαρά την εντολή.");
         return;
       }
 
       setVoiceState("executing");
-      setVoiceHint(`Κατάλαβα: “${result.text}” · εκτελώ…`);
+      setVoiceHint(`Εκτελώ · “${result.text}”`);
       const ok = await executeCommand(result.text, false);
       if (ok) {
         setVoiceHint(`Έτοιμο · “${result.text}”`);
@@ -303,7 +305,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       finalizingVoiceRef.current = false;
       setVoiceState("idle");
       if (voiceModeRef.current) {
-        window.setTimeout(() => { void startVoiceCycle(); }, 250);
+        window.setTimeout(() => { void startVoiceCycle(); }, 450);
       }
     }
   }
@@ -386,6 +388,16 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const unitContainerWidth = scopeUnit !== "all" || unitGroups.length <= 1 ? "100%" : unitGroups.length === 2 ? "calc(50% - 6px)" : "min(100%, 680px)";
   const microphoneLabel = voiceModeEnabled ? "Turn off persistent voice mode" : "Turn on persistent local voice mode";
   const voiceStatusLabel = voiceState === "listening" ? "ΑΚΟΥΩ" : voiceState === "transcribing" ? "ΕΠΕΞΕΡΓΑΣΙΑ" : voiceState === "executing" ? "ΕΚΤΕΛΕΣΗ" : voiceModeEnabled ? "VOICE ON" : null;
+  const feedbackText = error ?? voiceHint;
+  const feedbackKind = error
+    ? "error"
+    : voiceState === "transcribing" || voiceState === "executing"
+      ? "processing"
+      : voiceState === "listening"
+        ? "listening"
+        : voiceHint?.startsWith("Έτοιμο")
+          ? "success"
+          : "info";
 
   return (
     <div className="workspace-shell">
@@ -397,8 +409,13 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
           <button className={`command-icon-button voice-${voiceState} ${voiceModeEnabled ? "voice-mode-enabled" : ""}`} title={microphoneLabel} onClick={() => void toggleVoiceMode()}><Mic size={17} /></button>
           <button className="command-send-button" disabled={busy || !command.trim() || voiceState !== "idle" || voiceModeEnabled} onClick={() => void applyCommand()}>{busy ? "…" : <Send size={16} />}</button>
         </div>
+        {feedbackText && (
+          <div className={`command-feedback command-feedback-${feedbackKind}`} role={error ? "alert" : "status"}>
+            <span className="command-feedback-indicator" />
+            <span className="command-feedback-text">{feedbackText}</span>
+          </div>
+        )}
         <div className="workspace-safety"><ShieldCheck size={13} /> Current scope: {scopeUnit === "all" ? "All Units" : scopeUnit.toUpperCase()} · Local voice · read-only PI/DCS</div>
-        {voiceHint && <div className={`voice-hint voice-hint-${voiceState}`}>{voiceHint}</div>}
       </div>
 
       <div className="workspace-toolbar">
@@ -407,7 +424,6 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
         <span className="workspace-save-state">{saving ? "Saving…" : "Saved locally"}</span>
       </div>
 
-      {error && <div className="error-banner workspace-error">{error}</div>}
       {unitGroups.length === 0 && orderedWidgets.length > 0 && scopeUnit !== "all" && <div className="widget-empty" style={{ marginTop: 16 }}>No widgets configured for {scopeUnit.toUpperCase()} yet.</div>}
       {unitGroups.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start", marginTop: 10 }}>
