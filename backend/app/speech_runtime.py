@@ -25,6 +25,9 @@ def _candidate_binary() -> str:
     configured = os.environ.get("FCC_STT_BINARY", "").strip()
     if configured:
         return configured
+    managed = Path.home() / ".fcc-assistant" / "bin" / "whisper-cli"
+    if managed.exists():
+        return str(managed)
     for name in ("whisper-cli", "main"):
         path = shutil.which(name)
         if path:
@@ -42,8 +45,8 @@ def _candidate_model() -> str:
         Path.cwd() / "assets" / "models",
     ]
     names = (
-        "ggml-large-v3-turbo-q5_0.bin",
         "ggml-large-v3-turbo.bin",
+        "ggml-large-v3-turbo-q5_0.bin",
         "ggml-large-v3.bin",
     )
     for root in roots:
@@ -69,7 +72,7 @@ def transcribe_wav(data: bytes, *, prompt: str = "") -> str:
     status = runtime_status()
     if not status.ready:
         raise SpeechRuntimeError(
-            "Local speech runtime is not ready. Configure FCC_STT_BINARY and FCC_STT_MODEL."
+            "Local speech runtime is not ready. Install whisper.cpp and a local model or configure FCC_STT_BINARY/FCC_STT_MODEL."
         )
     if len(data) < 44 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
         raise SpeechRuntimeError("Speech input must be PCM WAV audio")
