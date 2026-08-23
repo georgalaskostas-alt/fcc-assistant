@@ -209,13 +209,35 @@ def plan_dashboard_command(command: str, site: SiteModel, current_widgets: list[
     widgets = current_widgets or []
     mentioned_units = _mentioned_units(text, site)
 
-    remove_requested = _contains_any(text, ("αφαίρεσε", "αφαιρεσε", "βγάλε", "βγαλε", "διέγραψε", "διεγραψε", "remove", "delete"))
+    remove_requested = _contains_any(text, (
+        "αφαίρεσε", "αφαιρεσε", "αφαιρέσεις", "αφαιρεσεις", "αφαιρέσει", "αφαιρεσει",
+        "αφαιρεί", "αφαιρει", "αφέρει", "αφερει", "βγάλε", "βγαλε", "διέγραψε", "διεγραψε",
+        "remove", "delete",
+    ))
     if remove_requested:
         if not widgets:
-            raise DashboardCommandError("There are no widgets to remove")
+            raise DashboardCommandError("Δεν υπάρχουν στοιχεία για αφαίρεση.")
+
+        graph_requested = _contains_any(text, ("γράφημα", "γραφημα", "διάγραμμα", "διαγραμμα", "trend", "chart"))
+        resolved_tags = [tag for unit in mentioned_units for tag in _resolve_tags(unit, text)]
+
+        # Natural command: “αφαίρεσε το γράφημα του FCC”. If the unit has only
+        # one trend, the intent is unambiguous even without naming the variable.
+        if graph_requested and len(mentioned_units) == 1 and not resolved_tags:
+            unit_key = mentioned_units[0].key.casefold()
+            candidates = [
+                widget for widget in widgets
+                if str(widget.get("unit_key", "")).casefold() == unit_key
+                and str(widget.get("type", "")).casefold() == "trend"
+            ]
+            if len(candidates) == 1:
+                return {"action": "remove_widget", "target_id": candidates[0].get("id"), "requires_confirmation": False, "read_only": True}
+            if len(candidates) > 1:
+                raise DashboardCommandError(f"Υπάρχουν {len(candidates)} γραφήματα στο {mentioned_units[0].name}. Πες μου ποιο θέλεις να αφαιρέσω, π.χ. «της τροφοδοσίας».")
+
         target = _match_widget(text, widgets, site)
         if target is None:
-            raise DashboardCommandError("Could not resolve which widget to remove")
+            raise DashboardCommandError("Δεν κατάλαβα ποιο στοιχείο θέλεις να αφαιρέσω.")
         return {"action": "remove_widget", "target_id": target.get("id"), "requires_confirmation": False, "read_only": True}
 
     clone_requested = _contains_any(text, ("τα ίδια", "τα ιδια", "το ίδιο", "το ιδιο", "ίδιο με", "ιδιο με", "same as", "same for", "copy"))
