@@ -1,5 +1,13 @@
+export type RecorderOptions = {
+  silenceMs?: number;
+  maxDurationMs?: number;
+  onSilence?: () => void;
+  onLevel?: (level: number, speaking: boolean) => void;
+};
+
 export type LocalRecorder = {
   stop: () => Promise<Blob>;
+  snapshot: () => Promise<Blob>;
   cancel: () => Promise<void>;
 };
 
@@ -50,7 +58,25 @@ function encodeWav(samples: Float32Array, sampleRate = 16000): Blob {
   return new Blob([bytes], { type: "audio/wav" });
 }
 
-export async function startLocalPcmRecorder(): Promise<LocalRecorder> {
+function mergeChunks(chunks: Float32Array[]): Float32Array {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const merged = new Float32Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return merged;
+}
+
+function rms(samples: Float32Array): number {
+  if (!samples.length) return 0;
+  let sum = 0;
+  for (const sample of samples) sum += sample * sample;
+  return Math.sqrt(sum / samples.length);
+}
+
+export async function startLocalPcmRecorder(options: RecorderOptions = {}): Promise<LocalRecorder> {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone capture is not available");
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
@@ -67,14 +93,43 @@ export async function startLocalPcmRecorder(): Promise<LocalRecorder> {
   silentGain.gain.value = 0;
   const chunks: Float32Array[] = [];
 
+  const silenceMs = options.silenceMs ?? 1250;
+  const maxDurationMs = options.maxDurationMs ?? 20000;
+  const startedAt = performance.now();
+  let lastSpeechAt = startedAt;
+  let speechStarted = false;
+  let silenceSignalled = false;
+  let noiseFloor = 0.004;
+  let closed = false;
+
   processor.onaudioprocess = (event) => {
-    chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+    const chunk = new Float32Array(event.inputBuffer.getChannelData(0));
+    chunks.push(chunk);
+
+    const level = rms(chunk);
+    const now = performance.now();
+    if (!speechStarted) noiseFloor = noiseFloor * 0.94 + level * 0.06;
+    const threshold = Math.max(0.009, noiseFloor * 2.8);
+    const speaking = level >= threshold;
+    options.onLevel?.(level, speaking);
+
+    if (speaking) {
+      speechStarted = true;
+      lastSpeechAt = now;
+      silenceSignalled = false;
+    }
+
+    const silentLongEnough = speechStarted && now - lastSpeechAt >= silenceMs;
+    const timedOut = now - startedAt >= maxDurationMs;
+    if (!silenceSignalled && (silentLongEnough || timedOut)) {
+      silenceSignalled = true;
+      queueMicrotask(() => options.onSilence?.());
+    }
   };
   source.connect(processor);
   processor.connect(silentGain);
   silentGain.connect(context.destination);
 
-  let closed = false;
   async function cleanup() {
     if (closed) return;
     closed = true;
@@ -85,19 +140,18 @@ export async function startLocalPcmRecorder(): Promise<LocalRecorder> {
     await context.close();
   }
 
+  async function renderSnapshot(requireMinimum: boolean): Promise<Blob> {
+    const merged = mergeChunks(chunks);
+    if (requireMinimum && merged.length < context.sampleRate * 0.25) throw new Error("Δεν καταγράφηκε αρκετή ομιλία");
+    return encodeWav(downsample(merged, context.sampleRate));
+  }
+
   return {
+    snapshot: async () => renderSnapshot(false),
     stop: async () => {
-      const inputRate = context.sampleRate;
+      const snapshot = await renderSnapshot(true);
       await cleanup();
-      const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-      const merged = new Float32Array(total);
-      let offset = 0;
-      for (const chunk of chunks) {
-        merged.set(chunk, offset);
-        offset += chunk.length;
-      }
-      if (merged.length < inputRate * 0.25) throw new Error("Δεν καταγράφηκε αρκετή ομιλία");
-      return encodeWav(downsample(merged, inputRate));
+      return snapshot;
     },
     cancel: cleanup,
   };
