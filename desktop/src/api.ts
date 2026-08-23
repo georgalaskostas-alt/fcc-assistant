@@ -1,4 +1,14 @@
+import { invoke } from "@tauri-apps/api/core";
+
 const API_BASE = "http://127.0.0.1:8765";
+
+export type BackendRuntimeStatus = {
+  listening: boolean;
+  terminated: boolean;
+  last_error: string | null;
+  recent_output: string[];
+  port: number;
+};
 
 export type SystemCapabilities = {
   pi_web_api: string;
@@ -204,6 +214,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<{ status: string; mode: string }>("/health"),
+  backendRuntimeStatus: () => invoke<BackendRuntimeStatus>("backend_runtime_status"),
   capabilities: () => request<SystemCapabilities>("/api/v1/system/capabilities"),
   bridgeSite: () => request<BridgeSite>("/bridge/v1/site"),
   aiStatus: () => request<Record<string, unknown>>("/api/v1/ai/status"),
