@@ -255,7 +255,7 @@ export default function App() {
 
           {view === "dashboard" && <>
             <section className="section-head"><div><span className="eyebrow">OPERATING OVERVIEW</span><h1>Operations workspace</h1><p>Dynamic refinery/unit layout · source quality is shown explicitly.</p></div><span className="readonly-pill"><ShieldCheck size={15} /> Read-only mode</span></section>
-            <DashboardCustomizer shift={shift} tags={tags} scopeUnit={activeUnit} />
+            {backendOk ? <DashboardCustomizer shift={shift} tags={tags} scopeUnit={activeUnit} /> : <div className="placeholder-panel"><Database size={22} /><h3>Starting local backend…</h3><p>The workspace will load automatically when the packaged local service is ready.</p></div>}
           </>}
 
           {view === "chat" && <section className="assistant-panel">
