@@ -58,11 +58,7 @@ class DashboardStore:
                 height = "tall" if widget.get("type") == "trend" else "normal" if widget.get("type") == "summary" else "compact"
                 layout = {"order": index, "width": width, "height": height}
             else:
-                layout = {
-                    "order": int(layout.get("order", index)),
-                    "width": int(layout.get("width", 6)),
-                    "height": str(layout.get("height", "normal")),
-                }
+                layout = {"order": int(layout.get("order", index)), "width": int(layout.get("width", 6)), "height": str(layout.get("height", "normal"))}
             widget["layout"] = layout
             normalized.append(widget)
         normalized.sort(key=lambda item: int(item.get("layout", {}).get("order", 0)) if isinstance(item.get("layout"), dict) else 0)
@@ -124,8 +120,20 @@ class DashboardStore:
 
         current = self.get(workspace)
         widgets = self._normalized_widgets(current)
-        by_id = {str(widget.get("id")): widget for widget in widgets}
         target_id = str(plan.get("target_id", ""))
+
+        if action == "remove_widget":
+            widgets = [widget for widget in widgets if str(widget.get("id")) != target_id]
+            for index, widget in enumerate(widgets):
+                layout = widget.get("layout")
+                if not isinstance(layout, dict):
+                    layout = {}
+                    widget["layout"] = layout
+                layout["order"] = index
+            current["widgets"] = widgets
+            return self.put(workspace, current)
+
+        by_id = {str(widget.get("id")): widget for widget in widgets}
         target = by_id.get(target_id)
         if target is None:
             return current
