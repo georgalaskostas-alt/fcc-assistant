@@ -57,6 +57,11 @@ def _fold(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+def _contains_greek(value: str) -> bool:
+    folded = _fold(value)
+    return any("α" <= ch <= "ω" for ch in folded)
+
+
 def build_lexicon(extra_terms: Iterable[str] = ()) -> dict[str, tuple[str, ...]]:
     lexicon = dict(_BUILTIN_TERMS)
     for term in extra_terms:
@@ -67,6 +72,18 @@ def build_lexicon(extra_terms: Iterable[str] = ()) -> dict[str, tuple[str, ...]]
         current.extend((clean, clean.replace("-", " "), clean.replace("_", " ")))
         lexicon[clean] = tuple(dict.fromkeys(current))
     return lexicon
+
+
+def _domain_evidence_count(value: str, lexicon: dict[str, tuple[str, ...]]) -> int:
+    folded = _fold(value)
+    matched: set[str] = set()
+    for canonical, variants in lexicon.items():
+        for candidate in (canonical, *variants):
+            token = _fold(candidate)
+            if len(token) >= 3 and token in folded:
+                matched.add(canonical)
+                break
+    return len(matched)
 
 
 def _phrase_score(a: str, b: str) -> float:
@@ -82,6 +99,13 @@ def normalize_transcript(text: str, extra_terms: Iterable[str] = ()) -> SpeechDe
     folded_text = _fold(raw)
     corrections: list[DomainCorrection] = []
     lexicon = build_lexicon(extra_terms)
+    pre_normalization_domain_evidence = _domain_evidence_count(raw, lexicon)
+
+    # Greek-first safety gate. Whisper can hallucinate short English phrases from
+    # silence/noise even when -l el is set. Reject a Latin-only transcript unless
+    # it contains actual refinery vocabulary (e.g. FCC, feed flow, HCU).
+    if not _contains_greek(raw) and pre_normalization_domain_evidence == 0:
+        return SpeechDecision(raw, "", 0.05, "low", False, ())
 
     candidates: list[tuple[str, str]] = []
     for canonical, variants in lexicon.items():
@@ -118,7 +142,6 @@ def normalize_transcript(text: str, extra_terms: Iterable[str] = ()) -> SpeechDe
         best: tuple[float, str, str] | None = None
         for canonical, variants in lexicon.items():
             folded_canonical = _fold(canonical)
-            # Acronyms such as FCC are especially prone to one-letter STT errors.
             if len(folded_word) == 3 and len(folded_canonical) == 3:
                 mismatches = sum(a != b for a, b in zip(folded_word, folded_canonical))
                 if mismatches == 1:
@@ -138,7 +161,7 @@ def normalize_transcript(text: str, extra_terms: Iterable[str] = ()) -> SpeechDe
     normalized = " ".join(words)
 
     length_score = min(1.0, max(0.25, len(normalized.split()) / 7.0))
-    domain_hits = len(corrections)
+    domain_hits = max(len(corrections), pre_normalization_domain_evidence)
     domain_score = min(1.0, 0.55 + 0.12 * domain_hits)
     punctuation_penalty = 0.08 if raw.count("?") + raw.count("!") > 4 else 0.0
     confidence = max(0.0, min(0.99, 0.52 * length_score + 0.48 * domain_score - punctuation_penalty))
