@@ -19,6 +19,7 @@ import {
   DashboardWorkspace,
   DemoShiftResponse,
   SimulatorTag,
+  SpeechTranscript,
 } from "./api";
 import { LocalRecorder, startLocalPcmRecorder } from "./speech";
 
@@ -31,6 +32,7 @@ type Props = {
 type Point = { Timestamp: string; Value: number };
 type UnitWidgetGroup = { unitKey: string; widgets: DashboardWidget[] };
 type VoiceState = "idle" | "listening" | "transcribing" | "executing";
+type CachedPreview = { result: SpeechTranscript; audioSize: number; at: number };
 
 const WIDTH_STEPS: DashboardWidgetLayout["width"][] = [3, 4, 6, 8, 12];
 const HEIGHT_STEPS: DashboardWidgetLayout["height"][] = ["compact", "normal", "tall"];
@@ -151,6 +153,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const previewBusyRef = useRef(false);
   const finalizingVoiceRef = useRef(false);
   const voiceModeRef = useRef(false);
+  const lastPreviewRef = useRef<CachedPreview | null>(null);
   const [editLayout, setEditLayout] = useState(false);
   const [autoLayout, setAutoLayout] = useState(() => window.localStorage.getItem("fcc-auto-layout") !== "off");
 
@@ -241,9 +244,10 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       const audio = await recorderRef.current.snapshot();
       if (audio.size < 14000) return;
       const result = await api.transcribeSpeech(audio, scopeUnit, voiceTerms());
+      lastPreviewRef.current = { result, audioSize: audio.size, at: Date.now() };
       if (result.text.trim()) {
         setCommand(result.text);
-        setVoiceHint(`Ακούω… “${result.text}”`);
+        setVoiceHint(result.text);
       }
     } catch {
       // Partial transcription is best-effort; final transcription is authoritative.
@@ -257,14 +261,15 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     setError(null);
     setCommand("");
     setVoiceState("listening");
-    setVoiceHint("Ακούω… μίλα φυσικά.");
+    setVoiceHint("Ακούω");
+    lastPreviewRef.current = null;
     recorderRef.current = await startLocalPcmRecorder({
-      silenceMs: 1350,
+      silenceMs: 950,
       maxDurationMs: 25000,
       onSilence: () => { void finishVoiceCapture(); },
     });
     clearPreviewTimer();
-    previewTimerRef.current = window.setInterval(() => { void previewVoiceTranscript(); }, 1500);
+    previewTimerRef.current = window.setInterval(() => { void previewVoiceTranscript(); }, 900);
   }
 
   async function finishVoiceCapture() {
@@ -273,28 +278,38 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     clearPreviewTimer();
     setError(null);
     setVoiceState("transcribing");
-    setVoiceHint("Επεξεργάζομαι τη φωνητική εντολή τοπικά…");
+    setVoiceHint("Επεξεργάζομαι…");
 
     try {
       const recorder = recorderRef.current;
       recorderRef.current = null;
       const audio = await recorder.stop();
-      const result = await api.transcribeSpeech(audio, scopeUnit, voiceTerms());
+      const cached = lastPreviewRef.current;
+      const cacheIsFresh = Boolean(
+        cached
+        && Date.now() - cached.at <= 1300
+        && audio.size >= cached.audioSize
+        && audio.size - cached.audioSize <= 36000
+        && cached.result.text.trim()
+        && cached.result.confidence_level !== "low"
+      );
+      const result = cacheIsFresh && cached ? cached.result : await api.transcribeSpeech(audio, scopeUnit, voiceTerms());
       setCommand(result.text);
 
       if (!result.text.trim() || result.confidence_level === "low") {
-        setVoiceHint(result.text.trim() ? `Χρειάζομαι διευκρίνιση · “${result.text}”` : "Δεν αναγνωρίστηκε καθαρή εντολή.");
+        setVoiceHint(result.text.trim() ? "Χρειάζομαι διευκρίνιση" : "Δεν άκουσα καθαρά");
         await speak("Δεν κατάλαβα καθαρά την εντολή.");
         return;
       }
 
       setVoiceState("executing");
-      setVoiceHint(`Εκτελώ · “${result.text}”`);
+      setVoiceHint("Εκτελώ…");
       const ok = await executeCommand(result.text, false);
       if (ok) {
-        setVoiceHint(`Έτοιμο · “${result.text}”`);
+        setVoiceHint("Έτοιμο");
         await speak("Έγινε.");
       } else {
+        setVoiceHint("Δεν μπόρεσα να την εκτελέσω");
         await speak("Δεν μπόρεσα να εκτελέσω την εντολή.");
       }
       setCommand("");
@@ -305,7 +320,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       finalizingVoiceRef.current = false;
       setVoiceState("idle");
       if (voiceModeRef.current) {
-        window.setTimeout(() => { void startVoiceCycle(); }, 450);
+        window.setTimeout(() => { void startVoiceCycle(); }, 180);
       }
     }
   }
@@ -322,7 +337,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       recorderRef.current = null;
       if (recorder) await recorder.cancel();
       setVoiceState("idle");
-      setVoiceHint("Φωνητική λειτουργία κλειστή.");
+      setVoiceHint(null);
       setCommand("");
       return;
     }
@@ -387,34 +402,44 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const unitGroups = useMemo(() => scopeUnit === "all" ? allUnitGroups : allUnitGroups.filter((group) => group.unitKey === scopeUnit), [allUnitGroups, scopeUnit]);
   const unitContainerWidth = scopeUnit !== "all" || unitGroups.length <= 1 ? "100%" : unitGroups.length === 2 ? "calc(50% - 6px)" : "min(100%, 680px)";
   const microphoneLabel = voiceModeEnabled ? "Turn off persistent voice mode" : "Turn on persistent local voice mode";
-  const voiceStatusLabel = voiceState === "listening" ? "ΑΚΟΥΩ" : voiceState === "transcribing" ? "ΕΠΕΞΕΡΓΑΣΙΑ" : voiceState === "executing" ? "ΕΚΤΕΛΕΣΗ" : voiceModeEnabled ? "VOICE ON" : null;
-  const feedbackText = error ?? voiceHint;
-  const feedbackKind = error
+  const inlineKind = error
     ? "error"
     : voiceState === "transcribing" || voiceState === "executing"
       ? "processing"
       : voiceState === "listening"
         ? "listening"
-        : voiceHint?.startsWith("Έτοιμο")
+        : voiceHint === "Έτοιμο"
           ? "success"
-          : "info";
+          : voiceModeEnabled
+            ? "ready"
+            : "idle";
+  const inlineText = error
+    ?? (voiceState === "transcribing" ? "Επεξεργάζομαι" : null)
+    ?? (voiceState === "executing" ? "Εκτελώ" : null)
+    ?? (voiceState === "listening" ? (command.trim() ? "Ακούω" : "Μίλα") : null)
+    ?? (voiceHint === "Έτοιμο" ? "Έτοιμο" : null);
 
   return (
     <div className="workspace-shell">
       <div className="workspace-command-wrap" style={{ position: "sticky", top: 0, zIndex: 30, paddingTop: 8, paddingBottom: 8, background: "linear-gradient(180deg, rgba(6,14,27,.98) 0%, rgba(6,14,27,.94) 82%, rgba(6,14,27,0) 100%)" }}>
-        <div className="workspace-command-bar">
+        <div className={`workspace-command-bar voice-command-bar voice-command-${inlineKind}`}>
           <Bot size={17} />
           <input value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void applyCommand(); }} placeholder={scopeUnit === "all" ? "Πες ή γράψε τι θέλεις να δεις σε όλες τις μονάδες…" : `Πες ή γράψε τι θέλεις να δεις στο ${scopeUnit.toUpperCase()}…`} aria-label="Workspace command" />
-          {voiceStatusLabel && <span className={`voice-status-chip voice-status-${voiceState}`}><span className="voice-status-dot" />{voiceStatusLabel}</span>}
+          {inlineText && (
+            <div className={`voice-inline-state voice-inline-${inlineKind}`} role={error ? "alert" : "status"}>
+              {voiceState === "listening" ? (
+                <span className="voice-waveform" aria-hidden="true"><i /><i /><i /><i /></span>
+              ) : voiceState === "transcribing" || voiceState === "executing" ? (
+                <span className="voice-orbit" aria-hidden="true" />
+              ) : (
+                <span className="voice-inline-dot" aria-hidden="true" />
+              )}
+              <span>{inlineText}</span>
+            </div>
+          )}
           <button className={`command-icon-button voice-${voiceState} ${voiceModeEnabled ? "voice-mode-enabled" : ""}`} title={microphoneLabel} onClick={() => void toggleVoiceMode()}><Mic size={17} /></button>
           <button className="command-send-button" disabled={busy || !command.trim() || voiceState !== "idle" || voiceModeEnabled} onClick={() => void applyCommand()}>{busy ? "…" : <Send size={16} />}</button>
         </div>
-        {feedbackText && (
-          <div className={`command-feedback command-feedback-${feedbackKind}`} role={error ? "alert" : "status"}>
-            <span className="command-feedback-indicator" />
-            <span className="command-feedback-text">{feedbackText}</span>
-          </div>
-        )}
         <div className="workspace-safety"><ShieldCheck size={13} /> Current scope: {scopeUnit === "all" ? "All Units" : scopeUnit.toUpperCase()} · Local voice · read-only PI/DCS</div>
       </div>
 
