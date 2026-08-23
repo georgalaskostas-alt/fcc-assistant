@@ -67,6 +67,45 @@ fn backend_runtime_status(state: tauri::State<'_, BackendProcess>) -> BackendRun
     }
 }
 
+#[cfg(target_os = "macos")]
+fn preferred_greek_voice() -> Option<String> {
+    let output = Command::new("/usr/bin/say")
+        .args(["-v", "?"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let listing = String::from_utf8_lossy(&output.stdout);
+    let mut voices: Vec<String> = listing
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            let language_index = parts
+                .iter()
+                .position(|part| part.eq_ignore_ascii_case("el_GR") || part.starts_with("el_"))?;
+            if language_index == 0 {
+                return None;
+            }
+            Some(parts[..language_index].join(" "))
+        })
+        .filter(|name| !name.trim().is_empty())
+        .collect();
+
+    voices.sort_by_key(|name| {
+        let lower = name.to_lowercase();
+        if lower.contains("melina") {
+            0
+        } else if lower.contains("nikos") {
+            1
+        } else {
+            2
+        }
+    });
+    voices.into_iter().next()
+}
+
 #[tauri::command]
 fn speak_text(text: String) -> Result<(), String> {
     let trimmed = text.trim();
@@ -78,10 +117,17 @@ fn speak_text(text: String) -> Result<(), String> {
     }
 
     #[cfg(target_os = "macos")]
-    let status = Command::new("/usr/bin/say")
-        .arg(trimmed)
-        .status()
-        .map_err(|error| format!("Local speech failed: {error}"))?;
+    let status = {
+        let mut command = Command::new("/usr/bin/say");
+        if let Some(voice) = preferred_greek_voice() {
+            command.args(["-v", &voice]);
+        }
+        command
+            .args(["-r", "195"])
+            .arg(trimmed)
+            .status()
+            .map_err(|error| format!("Local speech failed: {error}"))?
+    };
 
     #[cfg(target_os = "windows")]
     let status = Command::new("powershell")
@@ -89,7 +135,7 @@ fn speak_text(text: String) -> Result<(), String> {
             "-NoProfile",
             "-Command",
             &format!(
-                "Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Speak('{}')",
+                "Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Rate=1; $s.Speak('{}')",
                 trimmed.replace('’', "'").replace('\'', "''")
             ),
         ])
@@ -98,6 +144,7 @@ fn speak_text(text: String) -> Result<(), String> {
 
     #[cfg(target_os = "linux")]
     let status = Command::new("spd-say")
+        .args(["-r", "8"])
         .arg(trimmed)
         .status()
         .map_err(|error| format!("Local speech failed: {error}"))?;
