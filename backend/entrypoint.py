@@ -4,12 +4,15 @@ import uvicorn
 
 from app.desktop_server import app
 
+BACKEND_HOST = "127.0.0.1"
+BACKEND_PORT = 8765
+
 
 def main() -> None:
     uvicorn.run(
         app,
-        host="127.0.0.1",
-        port=8000,
+        host=BACKEND_HOST,
+        port=BACKEND_PORT,
         log_level="warning",
         access_log=False,
     )
