@@ -3,6 +3,7 @@
 use serde::Serialize;
 use std::{
     net::{SocketAddr, TcpStream},
+    process::Command,
     str::FromStr,
     sync::{Arc, Mutex},
     time::Duration,
@@ -66,10 +67,52 @@ fn backend_runtime_status(state: tauri::State<'_, BackendProcess>) -> BackendRun
     }
 }
 
+#[tauri::command]
+fn speak_text(text: String) -> Result<(), String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    if trimmed.chars().count() > 3000 {
+        return Err("Speech text is too long".into());
+    }
+
+    #[cfg(target_os = "macos")]
+    let status = Command::new("/usr/bin/say")
+        .arg(trimmed)
+        .status()
+        .map_err(|error| format!("Local speech failed: {error}"))?;
+
+    #[cfg(target_os = "windows")]
+    let status = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Speak('{}')",
+                trimmed.replace('’', "'").replace(''', "''")
+            ),
+        ])
+        .status()
+        .map_err(|error| format!("Local speech failed: {error}"))?;
+
+    #[cfg(target_os = "linux")]
+    let status = Command::new("spd-say")
+        .arg(trimmed)
+        .status()
+        .map_err(|error| format!("Local speech failed: {error}"))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("Local speech exited with status {status}"))
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![backend_runtime_status])
+        .invoke_handler(tauri::generate_handler![backend_runtime_status, speak_text])
         .setup(|app| {
             let command = app.shell().sidecar("fcc-backend")?;
             let (mut rx, child) = command.spawn()?;
