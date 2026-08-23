@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   ChevronLeft,
@@ -19,6 +19,7 @@ import {
   DemoShiftResponse,
   SimulatorTag,
 } from "./api";
+import { LocalRecorder, startLocalPcmRecorder } from "./speech";
 
 type Props = {
   shift: DemoShiftResponse | null;
@@ -28,6 +29,7 @@ type Props = {
 
 type Point = { Timestamp: string; Value: number };
 type UnitWidgetGroup = { unitKey: string; widgets: DashboardWidget[] };
+type VoiceState = "idle" | "listening" | "transcribing" | "executing";
 
 const WIDTH_STEPS: DashboardWidgetLayout["width"][] = [3, 4, 6, 8, 12];
 const HEIGHT_STEPS: DashboardWidgetLayout["height"][] = ["compact", "normal", "tall"];
@@ -47,9 +49,7 @@ function autoLayoutFor(widget: DashboardWidget, index: number, count: number): D
       height: widget.type === "trend" ? "tall" : widget.type === "summary" ? "normal" : "compact",
     };
   }
-  if (count === 2) {
-    return { order: index, width: 6, height: widget.type === "trend" ? "tall" : "normal" };
-  }
+  if (count === 2) return { order: index, width: 6, height: widget.type === "trend" ? "tall" : "normal" };
   if (count === 3) {
     if (widget.type === "trend") return { order: index, width: 12, height: "tall" };
     return { order: index, width: 6, height: widget.type === "summary" ? "normal" : "compact" };
@@ -128,10 +128,7 @@ function TrendChart({ widget, shift, tags }: { widget: DashboardWidget; shift: D
 
 function WorkspaceWidgetCard({ widget, shift, tags }: { widget: DashboardWidget; shift: DemoShiftResponse | null; tags: SimulatorTag[] }) {
   const series = useMemo(() => seriesFor(widget, shift), [widget, shift]);
-
-  if (widget.type === "trend") {
-    return <><div className="workspace-card-head"><div><span>{widget.unit_key.toUpperCase()}</span><h3>{widget.title}</h3></div><small>{widget.period}</small></div><TrendChart widget={widget} shift={shift} tags={tags} /></>;
-  }
+  if (widget.type === "trend") return <><div className="workspace-card-head"><div><span>{widget.unit_key.toUpperCase()}</span><h3>{widget.title}</h3></div><small>{widget.period}</small></div><TrendChart widget={widget} shift={shift} tags={tags} /></>;
   if (widget.type === "average") {
     const value = mean(series[0] ?? []);
     const unit = unitFor(widget.tag_keys[0] ?? "", tags);
@@ -142,7 +139,6 @@ function WorkspaceWidgetCard({ widget, shift, tags }: { widget: DashboardWidget;
     const unit = unitFor(widget.tag_keys[0] ?? "", tags);
     return <><div className="workspace-card-head"><div><span>{widget.unit_key.toUpperCase()}</span><h3>{widget.title}</h3></div><small>LIVE</small></div><div className="workspace-kpi-value">{value == null ? "—" : value.toFixed(1)} <small>{unit}</small></div><div className="workspace-kpi-caption">Latest available value</div></>;
   }
-
   const summaryItems = tags.slice(0, 4).map((tag) => ({ tag, value: latest(shift?.data[tag.key]?.Items ?? []) }));
   return <><div className="workspace-card-head"><div><span>{widget.unit_key.toUpperCase()}</span><h3>{widget.title}</h3></div><small>SUMMARY</small></div><div className="summary-grid">{summaryItems.map(({ tag, value }) => <div key={tag.key}><span>{tag.name}</span><strong>{value == null ? "—" : value.toFixed(1)} {tag.unit}</strong></div>)}</div></>;
 }
@@ -153,6 +149,9 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [voiceHint, setVoiceHint] = useState<string | null>(null);
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const recorderRef = useRef<LocalRecorder | null>(null);
   const [editLayout, setEditLayout] = useState(false);
   const [autoLayout, setAutoLayout] = useState(() => window.localStorage.getItem("fcc-auto-layout") !== "off");
 
@@ -171,6 +170,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }
 
   useEffect(() => { void load(); }, []);
+  useEffect(() => () => { void recorderRef.current?.cancel(); }, []);
 
   async function persist(next: DashboardWorkspace) {
     setWorkspace(next);
@@ -185,13 +185,13 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     }
   }
 
-  async function applyCommand() {
-    const value = command.trim();
-    if (!value) return;
+  async function executeCommand(value: string) {
+    const clean = value.trim();
+    if (!clean) return;
     setBusy(true);
     setError(null);
     try {
-      const response = await api.dashboardCommand(value, "default");
+      const response = await api.dashboardCommand(clean, "default");
       setWorkspace(normalizeWorkspace(response.workspace));
       setCommand("");
       if (response.plan.warnings?.length) setError(response.plan.warnings.join(" · "));
@@ -199,6 +199,53 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       setError(err instanceof Error ? err.message : "Unable to apply dashboard command");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function applyCommand() {
+    await executeCommand(command);
+  }
+
+  async function toggleVoice() {
+    setError(null);
+    setVoiceHint(null);
+    if (voiceState === "listening" && recorderRef.current) {
+      setVoiceState("transcribing");
+      try {
+        const audio = await recorderRef.current.stop();
+        recorderRef.current = null;
+        const terms = Array.from(new Set(tags.flatMap((tag) => [tag.key, tag.name, tag.group, tag.unit_key ?? "", tag.semantic_key ?? ""]).filter(Boolean)));
+        const result = await api.transcribeSpeech(audio, scopeUnit, terms);
+        setCommand(result.text);
+        if (result.confidence_level === "high" && result.execute_immediately) {
+          setVoiceHint(`Κατάλαβα: “${result.text}” · εκτέλεση`);
+          setVoiceState("executing");
+          await executeCommand(result.text);
+        } else if (result.confidence_level === "medium") {
+          setVoiceHint(`Κατάλαβα: “${result.text}” · έλεγξέ το και πάτησε Enter`);
+        } else {
+          setVoiceHint(`Χαμηλή βεβαιότητα: “${result.text}” · δεν εκτελέστηκε`);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Voice transcription failed");
+      } finally {
+        setVoiceState("idle");
+      }
+      return;
+    }
+
+    if (voiceState !== "idle") return;
+    try {
+      const status = await api.speechStatus();
+      if (!status.ready) {
+        throw new Error("Το local speech model δεν είναι ακόμη εγκατεστημένο. Χρειάζεται whisper.cpp + local Greek model.");
+      }
+      recorderRef.current = await startLocalPcmRecorder();
+      setVoiceState("listening");
+      setVoiceHint("Ακούω… πάτησε ξανά το μικρόφωνο όταν τελειώσεις");
+    } catch (err) {
+      setVoiceState("idle");
+      setError(err instanceof Error ? err.message : "Unable to start microphone");
     }
   }
 
@@ -235,7 +282,6 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }
 
   const orderedWidgets = useMemo(() => [...(workspace?.widgets ?? [])].sort((a, b) => (a.layout?.order ?? 0) - (b.layout?.order ?? 0)), [workspace]);
-
   const allUnitGroups = useMemo<UnitWidgetGroup[]>(() => {
     const groups = new Map<string, DashboardWidget[]>();
     for (const widget of orderedWidgets) {
@@ -244,44 +290,21 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     }
     return [...groups.entries()].map(([unitKey, widgets]) => ({ unitKey, widgets }));
   }, [orderedWidgets]);
-
-  const unitGroups = useMemo(
-    () => scopeUnit === "all" ? allUnitGroups : allUnitGroups.filter((group) => group.unitKey === scopeUnit),
-    [allUnitGroups, scopeUnit],
-  );
-
-  const unitContainerWidth = scopeUnit !== "all" || unitGroups.length <= 1
-    ? "100%"
-    : unitGroups.length === 2
-      ? "calc(50% - 6px)"
-      : "min(100%, 680px)";
+  const unitGroups = useMemo(() => scopeUnit === "all" ? allUnitGroups : allUnitGroups.filter((group) => group.unitKey === scopeUnit), [allUnitGroups, scopeUnit]);
+  const unitContainerWidth = scopeUnit !== "all" || unitGroups.length <= 1 ? "100%" : unitGroups.length === 2 ? "calc(50% - 6px)" : "min(100%, 680px)";
+  const microphoneLabel = voiceState === "listening" ? "Stop recording" : voiceState === "transcribing" ? "Transcribing locally" : voiceState === "executing" ? "Executing command" : "Local Greek voice input";
 
   return (
     <div className="workspace-shell">
-      <div
-        className="workspace-command-wrap"
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 30,
-          paddingTop: 8,
-          paddingBottom: 8,
-          background: "linear-gradient(180deg, rgba(10,15,20,.98) 0%, rgba(10,15,20,.94) 82%, rgba(10,15,20,0) 100%)",
-        }}
-      >
+      <div className="workspace-command-wrap" style={{ position: "sticky", top: 0, zIndex: 30, paddingTop: 8, paddingBottom: 8, background: "linear-gradient(180deg, rgba(6,14,27,.98) 0%, rgba(6,14,27,.94) 82%, rgba(6,14,27,0) 100%)" }}>
         <div className="workspace-command-bar">
           <Bot size={17} />
-          <input
-            value={command}
-            onChange={(event) => setCommand(event.target.value)}
-            onKeyDown={(event) => { if (event.key === "Enter") void applyCommand(); }}
-            placeholder={scopeUnit === "all" ? "Πες ή γράψε τι θέλεις να δεις σε όλες τις μονάδες…" : `Πες ή γράψε τι θέλεις να δεις στο ${scopeUnit.toUpperCase()}…`}
-            aria-label="Workspace command"
-          />
-          <button className="command-icon-button" title="Local voice input (coming next)" disabled><Mic size={17} /></button>
-          <button className="command-send-button" disabled={busy || !command.trim()} onClick={() => void applyCommand()}>{busy ? "…" : <Send size={16} />}</button>
+          <input value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void applyCommand(); }} placeholder={scopeUnit === "all" ? "Πες ή γράψε τι θέλεις να δεις σε όλες τις μονάδες…" : `Πες ή γράψε τι θέλεις να δεις στο ${scopeUnit.toUpperCase()}…`} aria-label="Workspace command" />
+          <button className={`command-icon-button voice-${voiceState}`} title={microphoneLabel} disabled={busy || voiceState === "transcribing" || voiceState === "executing"} onClick={() => void toggleVoice()}><Mic size={17} /></button>
+          <button className="command-send-button" disabled={busy || !command.trim() || voiceState !== "idle"} onClick={() => void applyCommand()}>{busy ? "…" : <Send size={16} />}</button>
         </div>
-        <div className="workspace-safety"><ShieldCheck size={13} /> Current scope: {scopeUnit === "all" ? "All Units" : scopeUnit.toUpperCase()} · Layout only · read-only PI/DCS</div>
+        <div className="workspace-safety"><ShieldCheck size={13} /> Current scope: {scopeUnit === "all" ? "All Units" : scopeUnit.toUpperCase()} · Local voice · read-only PI/DCS</div>
+        {voiceHint && <div className={`voice-hint voice-hint-${voiceState}`}>{voiceHint}</div>}
       </div>
 
       <div className="workspace-toolbar">
@@ -291,11 +314,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       </div>
 
       {error && <div className="error-banner workspace-error">{error}</div>}
-
-      {unitGroups.length === 0 && orderedWidgets.length > 0 && scopeUnit !== "all" && (
-        <div className="widget-empty" style={{ marginTop: 16 }}>No widgets configured for {scopeUnit.toUpperCase()} yet.</div>
-      )}
-
+      {unitGroups.length === 0 && orderedWidgets.length > 0 && scopeUnit !== "all" && <div className="widget-empty" style={{ marginTop: 16 }}>No widgets configured for {scopeUnit.toUpperCase()} yet.</div>}
       {unitGroups.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start", marginTop: 10 }}>
           {unitGroups.map((group) => {
