@@ -159,7 +159,6 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const previewTimerRef = useRef<number | null>(null);
   const previewBusyRef = useRef(false);
   const finalizingVoiceRef = useRef(false);
-  const voiceModeRef = useRef(false);
   const lastPreviewRef = useRef<CachedPreview | null>(null);
   const lastReplyRef = useRef<string | null>(null);
   const [editLayout, setEditLayout] = useState(false);
@@ -171,7 +170,21 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }
 
   function voiceTerms() {
-    return Array.from(new Set(tags.flatMap((tag) => [tag.key, tag.name, tag.group, tag.unit_key ?? "", tag.semantic_key ?? ""]).filter(Boolean)));
+    const processTerms = [
+      "FCC",
+      "HCU",
+      "Hydrocracker",
+      "Hydro cracker",
+      "VDU",
+      "Vacuum Distillation",
+      "reaction temperature",
+      "reactor temperature",
+      "feed flow",
+    ];
+    return Array.from(new Set([
+      ...processTerms,
+      ...tags.flatMap((tag) => [tag.key, tag.name, tag.group, tag.unit_key ?? "", tag.semantic_key ?? ""]).filter(Boolean),
+    ]));
   }
 
   function clearPreviewTimer() {
@@ -204,7 +217,6 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }, []);
 
   useEffect(() => () => {
-    voiceModeRef.current = false;
     clearPreviewTimer();
     void recorderRef.current?.cancel();
   }, []);
@@ -254,7 +266,9 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     try {
       const audio = await recorderRef.current.snapshot();
       if (audio.size < 14000) return;
-      const result = await api.transcribeSpeech(audio, scopeUnit, voiceTerms(), "partial");
+      // The current dashboard tab is visual context only. It must never bias STT
+      // toward FCC/HCU/VDU; an explicitly spoken unit is authoritative.
+      const result = await api.transcribeSpeech(audio, "all", voiceTerms(), "partial");
       const cleanedText = cleanVoiceTranscript(result.text);
       lastPreviewRef.current = { result: { ...result, text: cleanedText }, audioSize: audio.size, at: Date.now() };
       if (cleanedText) {
@@ -269,9 +283,10 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }
 
   async function startVoiceCycle() {
-    if (!voiceModeRef.current || recorderRef.current || finalizingVoiceRef.current) return;
+    if (recorderRef.current || finalizingVoiceRef.current || voiceState !== "idle") return;
     setError(null);
     setCommand("");
+    setVoiceModeEnabled(true);
     setVoiceState("listening");
     setVoiceHint("Ακούω");
     lastPreviewRef.current = null;
@@ -296,7 +311,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       const recorder = recorderRef.current;
       recorderRef.current = null;
       const audio = await recorder.stop();
-      const result = await api.transcribeSpeech(audio, scopeUnit, voiceTerms(), "final");
+      const result = await api.transcribeSpeech(audio, "all", voiceTerms(), "final");
       const finalText = cleanVoiceTranscript(result.text);
       setCommand(finalText);
 
@@ -322,25 +337,24 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       setError(err instanceof Error ? err.message : "Voice transcription failed");
       await speak("Υπήρξε πρόβλημα στην επεξεργασία της φωνής.");
     } finally {
+      // One click = one command. Never reopen the microphone automatically.
+      // Dialogue memory stays in the backend, so the next click can still say
+      // “πού το έβαλες;” or “βάλ' το στο FCC” with conversational continuity.
       finalizingVoiceRef.current = false;
+      setVoiceModeEnabled(false);
       setVoiceState("idle");
-      if (voiceModeRef.current) {
-        window.setTimeout(() => { void startVoiceCycle(); }, 180);
-      }
     }
   }
 
   async function toggleVoiceMode() {
     setError(null);
 
-    if (voiceModeRef.current) {
-      voiceModeRef.current = false;
-      setVoiceModeEnabled(false);
-      window.localStorage.setItem("fcc-voice-mode", "off");
+    if (voiceModeEnabled || recorderRef.current) {
       clearPreviewTimer();
       const recorder = recorderRef.current;
       recorderRef.current = null;
       if (recorder) await recorder.cancel();
+      setVoiceModeEnabled(false);
       setVoiceState("idle");
       setVoiceHint(null);
       setCommand("");
@@ -350,13 +364,9 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     try {
       const status = await api.speechStatus();
       if (!status.ready) throw new Error("Το local speech model δεν είναι ακόμη εγκατεστημένο.");
-      voiceModeRef.current = true;
-      setVoiceModeEnabled(true);
-      window.localStorage.setItem("fcc-voice-mode", "on");
       setCommand("");
       await startVoiceCycle();
     } catch (err) {
-      voiceModeRef.current = false;
       setVoiceModeEnabled(false);
       setVoiceState("idle");
       setError(err instanceof Error ? err.message : "Unable to start microphone");
@@ -406,7 +416,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }, [orderedWidgets]);
   const unitGroups = useMemo(() => scopeUnit === "all" ? allUnitGroups : allUnitGroups.filter((group) => group.unitKey === scopeUnit), [allUnitGroups, scopeUnit]);
   const unitContainerWidth = scopeUnit !== "all" || unitGroups.length <= 1 ? "100%" : unitGroups.length === 2 ? "calc(50% - 6px)" : "min(100%, 680px)";
-  const microphoneLabel = voiceModeEnabled ? "Turn off persistent voice mode" : "Turn on persistent local voice mode";
+  const microphoneLabel = voiceModeEnabled ? "Stop current voice command" : "Speak one command";
   const idleReply = voiceState === "idle" && voiceHint && !["Ακούω", "Επεξεργάζομαι…", "Εκτελώ…"].includes(voiceHint) ? voiceHint : null;
   const inlineKind = error
     ? "error"
@@ -416,9 +426,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
         ? "listening"
         : idleReply
           ? "success"
-          : voiceModeEnabled
-            ? "ready"
-            : "idle";
+          : "idle";
   const inlineText = error
     ?? (voiceState === "transcribing" ? "Επεξεργάζομαι" : null)
     ?? (voiceState === "executing" ? "Εκτελώ" : null)
