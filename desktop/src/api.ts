@@ -31,6 +31,7 @@ export type BridgeUnit = {
   key: string;
   name: string;
   tags: BridgeUnitTag[];
+  aliases?: string[];
 };
 
 export type BridgeSite = {
@@ -142,6 +143,7 @@ export type DashboardCommandResponse = {
     read_only: boolean;
   };
   workspace: DashboardWorkspace;
+  message?: string | null;
 };
 
 export type KnowledgeManual = {
@@ -260,7 +262,7 @@ export const api = {
     ),
   uploadManual: (unitKey: string, file: File, title = "", revision = "") => {
     const form = new FormData();
-    form.append("file", file);
+    form.append("file", file, file.name);
     form.append("title", title);
     form.append("revision", revision);
     form.append("status", "draft");
