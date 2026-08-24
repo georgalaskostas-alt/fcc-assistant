@@ -264,12 +264,12 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     setVoiceHint("Ακούω");
     lastPreviewRef.current = null;
     recorderRef.current = await startLocalPcmRecorder({
-      silenceMs: 950,
+      silenceMs: 1150,
       maxDurationMs: 25000,
       onSilence: () => { void finishVoiceCapture(); },
     });
     clearPreviewTimer();
-    previewTimerRef.current = window.setInterval(() => { void previewVoiceTranscript(); }, 900);
+    previewTimerRef.current = window.setInterval(() => { void previewVoiceTranscript(); }, 1000);
   }
 
   async function finishVoiceCapture() {
@@ -284,16 +284,10 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       const recorder = recorderRef.current;
       recorderRef.current = null;
       const audio = await recorder.stop();
-      const cached = lastPreviewRef.current;
-      const cacheIsFresh = Boolean(
-        cached
-        && Date.now() - cached.at <= 1300
-        && audio.size >= cached.audioSize
-        && audio.size - cached.audioSize <= 36000
-        && cached.result.text.trim()
-        && cached.result.confidence_level !== "low"
-      );
-      const result = cacheIsFresh && cached ? cached.result : await api.transcribeSpeech(audio, scopeUnit, voiceTerms());
+      // Live/partial transcription is display-only. Always perform one authoritative
+      // final pass over the complete utterance before executing a command. This is
+      // deliberately accuracy-first for Greek and refinery terminology.
+      const result = await api.transcribeSpeech(audio, scopeUnit, voiceTerms());
       setCommand(result.text);
 
       if (!result.text.trim() || result.confidence_level === "low") {
