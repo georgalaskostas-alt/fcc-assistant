@@ -131,22 +131,31 @@ async def plan_with_local_agent(command:str,site:SiteModel,state:dict[str,object
         append_trace("agent.raw", {"command": command, "model_text": response.text})
         payload=_extract_json(response.text)
     except (LocalAIError,ValueError,json.JSONDecodeError) as exc:
-        append_trace("agent.error", {"command": command, "error": str(exc)})
+        append_trace("agent.error", {"command": command, "error": str(exc), "fallback": True})
         return None
     raw=payload.get("actions"); intents=[x for x in raw if isinstance(x,dict)] if isinstance(raw,list) else []
     if not intents and isinstance(payload.get("action"),str):intents=[payload]
     if not intents:
-        append_trace("agent.compiled", {"command": command, "payload": payload, "result": "clarify:no-intents"})
-        return AgentResult({"action":"clarify","read_only":True,"needs_clarification":True},"Δεν κατάλαβα αρκετά καθαρά την εντολή.")
+        append_trace("agent.compiled", {"command": command, "payload": payload, "result": "fallback:no-intents", "fallback": True})
+        return None
     plans=[]; working=[dict(w) for w in widgets]
     for intent in intents:
         plan,error=_compile(intent,site,state,working)
         if error:
-            append_trace("agent.compiled", {"command": command, "payload": payload, "error": error, "compiled_plans": plans})
-            return AgentResult({"action":"clarify","read_only":True,"needs_clarification":True},error)
+            append_trace("agent.compiled", {"command": command, "payload": payload, "error": error, "compiled_plans": plans, "fallback": True})
+            return None
         if plan and str(plan.get("action")) not in {"answer","clarify"}:
             plans.append(plan);working=_simulate(working,plan)
     message=str(payload.get("answer") or "").strip() or ("Έγινε." if plans else "Εντάξει.")
-    final_plan = {"action":"answer","read_only":True,"requires_confirmation":False} if not plans else plans[0] if len(plans)==1 else {"action":"transaction","steps":plans,"read_only":True,"requires_confirmation":False}
+    if not plans:
+        # If the model intentionally answered/clarified conversationally, preserve that response.
+        first_action=str(intents[0].get("action") or "").casefold() if intents else ""
+        if first_action in {"answer","clarify"}:
+            final_plan={"action":first_action,"read_only":True,"requires_confirmation":False,"needs_clarification":first_action=="clarify"}
+            append_trace("agent.compiled", {"command": command, "payload": payload, "compiled_plan": final_plan, "message": message})
+            return AgentResult(final_plan,message)
+        append_trace("agent.compiled", {"command": command, "payload": payload, "result": "fallback:no-executable-plans", "fallback": True})
+        return None
+    final_plan = plans[0] if len(plans)==1 else {"action":"transaction","steps":plans,"read_only":True,"requires_confirmation":False}
     append_trace("agent.compiled", {"command": command, "payload": payload, "compiled_plan": final_plan, "message": message})
     return AgentResult(final_plan,message)
