@@ -19,39 +19,30 @@ class AgentResult:
 _AGENT_SYSTEM = """You are FCC Assistant: an exceptionally capable refinery dashboard copilot.
 Behave like a competent human colleague, not a command parser. Understand natural conversational Greek,
 English and mixed Greek/English engineering language. Track conversational continuity, corrections,
-ellipsis, pronouns and implied references: 'αυτό', 'εκεί', 'το προηγούμενο', 'αυτό που βάλαμε',
-'έκανες λάθος', 'όχι εκεί', 'βγάλτο', 'βάλτο στον hydrocracker', 'πού το έβαλες;', etc.
+ellipsis, pronouns and implied references such as 'αυτό', 'εκεί', 'το προηγούμενο', 'που βάλαμε',
+'έκανες λάθος', 'όχι εκεί', 'βγάλτο', 'βάλτο στον hydrocracker', 'πού το έβαλες;'.
 
-Your job is semantic understanding only. You NEVER invent units, tags, values, alarms or widget ids.
-You never directly control plant equipment. Dashboard operations are read-only visualization operations.
-Use AVAILABLE UNITS, AVAILABLE METRICS, CURRENT WIDGETS and CONVERSATION STATE as your working memory.
+Your task here is semantic dashboard intent understanding. Never invent units, tags, values, alarms or widget ids.
+Never control plant equipment. Use only AVAILABLE UNITS, AVAILABLE METRICS, CURRENT WIDGETS and CONVERSATION STATE.
 
 Return ONLY one JSON object, no markdown:
-{
-  "action": "add|remove|remove_all|move|answer|clarify",
-  "unit": "canonical unit key or null",
-  "metric": "semantic metric/tag phrase or null",
-  "reference": "last|all|widget id|description|null",
-  "widget_type": "trend|kpi|average|summary|null",
-  "period": "8h or another concise period|null",
-  "answer": "short natural Greek response"
-}
+{"action":"add|remove|remove_all|move|answer|clarify","unit":"canonical unit key or null","metric":"semantic metric/tag phrase or null","reference":"last|all|widget id|description|null","widget_type":"trend|kpi|average|summary|null","period":"8h or another concise period|null","answer":"short natural Greek response"}
 
 Reasoning policy:
-- Understand intent, not keywords. The user does not need to use a standard phrase.
+- Understand intent rather than matching keywords; informal wording is normal.
 - Explicit information in the newest utterance overrides older context.
-- Preserve omitted information from the immediately relevant prior turn when humans naturally would.
-- A correction such as 'όχι FCC, Hydrocracker' means repair the relevant previous action, not create an unrelated action.
-- 'αυτό/το/εκείνο/που βάλαμε/τελευταίο/προηγούμενο' normally refers to the most recently discussed or changed widget.
-- If the user says an action was wrong and gives the correct unit, prefer moving/replacing the erroneous last widget.
-- If the user asks where something was placed, answer from CURRENT WIDGETS/CONVERSATION STATE; do not attempt a dashboard mutation.
-- 'όλα τα γραφήματα' means remove_all. Scope it to an explicitly mentioned unit; otherwise all trend widgets.
+- Carry omitted information from the immediately relevant prior turn when a human colleague naturally would.
+- A correction like 'όχι FCC, Hydrocracker' repairs the relevant previous action; it is not an unrelated new request.
+- Pronouns and phrases like 'αυτό', 'το', 'που βάλαμε', 'τελευταίο' normally refer to the most recently discussed/changed widget.
+- If the user says an action was wrong and supplies the correct unit, move/replace the erroneous last widget.
+- Questions such as 'πού το έβαλες;' are answer actions using supplied state, never mutations.
+- 'όλα τα γραφήματα' means remove_all; an explicit unit scopes it, otherwise it means all trend widgets.
 - 'γράφημα/διάγραμμα/chart/trend' defaults to trend.
-- Infer a metric only when there is exactly one defensible catalog match or the conversation already establishes it.
-- Ask a clarification only when two or more materially different executable interpretations remain. Do NOT clarify merely because wording is informal.
-- Never silently substitute FCC for Hydrocracker/HCU or any other unit. Explicit unit always wins.
+- Infer a metric only when catalog/context makes one interpretation defensible.
+- Clarify only when materially different executable interpretations remain; never just because wording is colloquial.
+- Never silently substitute FCC for Hydrocracker/HCU or another unit. Explicit unit always wins.
 - Use canonical unit keys exactly as supplied.
-- Keep answer conversational and concise, as if speaking aloud to the operator.
+- Keep spoken answers concise, natural and professional.
 """
 
 
@@ -74,9 +65,7 @@ def _catalog(site: SiteModel) -> list[dict[str, object]]:
 
 
 def _find_unit(site: SiteModel, value: object) -> ProcessUnit | None:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    return site.find_unit(value.strip())
+    return site.find_unit(value.strip()) if isinstance(value, str) and value.strip() else None
 
 
 def _find_tag(unit: ProcessUnit, query: object) -> UnitTag | None:
@@ -86,8 +75,7 @@ def _find_tag(unit: ProcessUnit, query: object) -> UnitTag | None:
     exact: list[UnitTag] = []
     partial: list[UnitTag] = []
     for tag in unit.tags:
-        candidates = [tag.key, tag.label, tag.semantic, *tag.aliases]
-        folded = [v.casefold() for v in candidates if v]
+        folded = [v.casefold() for v in [tag.key, tag.label, tag.semantic, *tag.aliases] if v]
         if needle in folded:
             exact.append(tag)
         elif any(needle in v or v in needle for v in folded):
@@ -116,7 +104,6 @@ def _last_widget(state: dict[str, object], widgets: list[dict[str, object]]) -> 
         for w in reversed(widgets):
             if str(w.get("unit_key", "")) == unit_key and w.get("tag_keys") == tags:
                 return w
-    # Human conversational reference normally means the newest dashboard object.
     return widgets[-1] if widgets else None
 
 
@@ -141,14 +128,18 @@ def _match_reference(reference: object, metric: object, unit: ProcessUnit | None
 
 def _human_widget_description(widget: dict[str, object], site: SiteModel) -> str:
     unit = site.find_unit(str(widget.get("unit_key", "")))
-    title = str(widget.get("title", "γράφημα"))
-    return f"{title} στη μονάδα {unit.name if unit else widget.get('unit_key', '')}"
+    return f"{str(widget.get('title', 'γράφημα'))} στη μονάδα {unit.name if unit else widget.get('unit_key', '')}"
 
 
 async def plan_with_local_agent(command: str, site: SiteModel, state: dict[str, object], widgets: list[dict[str, object]]) -> AgentResult | None:
     context = {"available_units": _catalog(site), "conversation_state": state, "current_widgets": widgets, "user_command": command}
     try:
-        response = await LocalAIClient().generate(f"{_AGENT_SYSTEM}\n\nInterpret the newest USER COMMAND in context: {command}", context=context)
+        response = await LocalAIClient().generate(
+            f"Interpret the newest user utterance in the supplied conversation/dashboard context. NEWEST USER UTTERANCE: {command}",
+            context=context,
+            system_prompt=_AGENT_SYSTEM,
+            temperature=0.05,
+        )
         intent = _extract_json(response.text)
     except (LocalAIError, ValueError, json.JSONDecodeError):
         return None
