@@ -8,7 +8,7 @@ def test_natural_greek_keeps_ordinary_words_and_normalizes_hydrocracker():
     assert "Hydrocracker" in decision.normalized_text
     assert "reactor temperature" in decision.normalized_text
     assert "Θέλω" in decision.normalized_text
-    assert decision.confidence_level != "low"
+    assert decision.level != "low"
 
 
 def test_hcu_spoken_letters_are_normalized_without_rewriting_sentence():
