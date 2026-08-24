@@ -46,7 +46,7 @@ class DashboardDialogueStore:
         state = dict(workspaces.get(workspace) or {}); state["last_requested_unit_key"] = unit_key.strip().casefold()
         workspaces[workspace] = state; self._save(payload)
 
-    def remember(self, workspace: str, command: str, plan: dict[str, object], workspace_payload: dict[str, object], message: str | None = None) -> None:
+    def remember(self, workspace: str, command: str, plan: dict[str, object], workspace_payload: dict[str, object], message: str | None = None, previous_widgets: list[dict[str, object]] | None = None) -> None:
         payload = self._load(); workspaces = payload.setdefault("workspaces", {})
         if not isinstance(workspaces, dict): workspaces = {}; payload["workspaces"] = workspaces
         state = dict(workspaces.get(workspace) or {})
@@ -54,15 +54,36 @@ class DashboardDialogueStore:
         if message: state["last_message"] = message
         action = str(plan.get("action", "")); candidate = plan.get("widget")
         if action == "add_widgets":
-            widgets = plan.get("widgets")
-            if isinstance(widgets, list) and widgets and isinstance(widgets[-1], dict): candidate = widgets[-1]
+            ws = plan.get("widgets")
+            if isinstance(ws, list) and ws and isinstance(ws[-1], dict): candidate = ws[-1]
         elif action == "replace_widget": candidate = plan.get("widget")
         if isinstance(candidate, dict):
             state["last_widget"] = candidate; state["last_unit_key"] = str(candidate.get("unit_key", ""))
-        elif action == "remove_widget": state["last_removed_id"] = str(plan.get("target_id", ""))
 
-        # Compact rolling dialogue gives the local model actual multi-turn continuity instead of
-        # only one previous command. Keep it bounded so inference stays fast on laptop hardware.
+        # Preserve exact snapshots of the last removed batch so phrases such as
+        # "βάλε τα πάλι πίσω" can be executed without reconstructing or guessing tags.
+        before = previous_widgets or []
+        removed: list[dict[str, object]] = []
+        if action == "remove_widget":
+            target = str(plan.get("target_id", ""))
+            removed = [dict(w) for w in before if str(w.get("id", "")) == target]
+            state["last_removed_id"] = target
+        elif action == "remove_widgets":
+            ids = {str(x) for x in (plan.get("target_ids") or [])}
+            removed = [dict(w) for w in before if str(w.get("id", "")) in ids]
+        elif action == "transaction":
+            steps = plan.get("steps")
+            ids: set[str] = set()
+            if isinstance(steps, list):
+                for step in steps:
+                    if not isinstance(step, dict): continue
+                    if step.get("action") == "remove_widget": ids.add(str(step.get("target_id", "")))
+                    elif step.get("action") == "remove_widgets": ids.update(str(x) for x in (step.get("target_ids") or []))
+            removed = [dict(w) for w in before if str(w.get("id", "")) in ids]
+        if removed:
+            state["last_removed_widgets"] = removed
+            state["last_removed_count"] = len(removed)
+
         raw_turns = state.get("recent_turns")
         turns = list(raw_turns) if isinstance(raw_turns, list) else []
         turns.append({"user": command, "assistant": message or "", "action": action, "unit": state.get("last_unit_key")})
@@ -110,6 +131,12 @@ def _retarget_widget(widget: dict[str, object], target: ProcessUnit, site: SiteM
 
 def contextual_plan(command: str, site: SiteModel, state: dict[str, object], current_widgets: list[dict[str, object]], learned_aliases: dict[str, str] | None = None) -> tuple[dict[str, object] | None, str | None]:
     text = command.strip().casefold(); last_widget = state.get("last_widget") if isinstance(state.get("last_widget"), dict) else None; units = resolve_units(text, site, learned_aliases)
+    restore_intent = any(token in text for token in ("βάλε τα πάλι", "βαλε τα παλι", "βάλτα πάλι", "βαλτα παλι", "φέρε τα πίσω", "φερε τα πισω", "επαναφέρε", "επαναφερε", "restore", "undo"))
+    if restore_intent:
+        removed = state.get("last_removed_widgets")
+        widgets = [dict(w) for w in removed if isinstance(w, dict)] if isinstance(removed, list) else []
+        if widgets:
+            return {"action": "add_widgets", "widgets": widgets, "read_only": True, "requires_confirmation": False}, f"Επανέφερα τα {len(widgets)} γραφήματα που αφαίρεσα πριν."
     asks_where = any(token in text for token in ("πού", "που", "σε ποια μονάδα", "σε ποια μοναδα", "where")) and any(token in text for token in ("τελευτα", "γράφημα", "γραφημα", "διάγραμμα", "διαγραμμα", "widget"))
     if asks_where and last_widget:
         unit = site.find_unit(str(last_widget.get("unit_key", ""))); unit_name = unit.name if unit else str(last_widget.get("unit_key", "")).upper(); title = str(last_widget.get("title", "το τελευταίο γράφημα"))
