@@ -5,6 +5,7 @@ from .dashboard_agent import plan_with_local_agent
 from .dashboard_config import DashboardCommandError, plan_dashboard_command
 from .dashboard_dialogue import DashboardDialogueStore, contextual_plan, resolve_units
 from .dashboard_store import DashboardStore
+from .diagnostic_trace import append_trace, clear_trace, recent_trace
 from .site_model import load_site_model, site_runtime_status
 router=APIRouter(prefix="/api/v1/dashboard",tags=["dashboard"])
 class DashboardCommandRequest(BaseModel):
@@ -16,6 +17,11 @@ def dashboard_site()->dict[str,object]:
     site=load_site_model();return {"name":site.name,"units":site.list_units(),"read_only":True}
 @router.get("/site/status")
 def dashboard_site_status()->dict[str,object]:return site_runtime_status()
+@router.get("/diagnostics")
+def dashboard_diagnostics(limit:int=30)->dict[str,object]:return {"local_only":True,"events":recent_trace(limit)}
+@router.delete("/diagnostics")
+def dashboard_diagnostics_clear()->dict[str,object]:
+    clear_trace();return {"cleared":True,"local_only":True}
 @router.get("/workspaces/{workspace}")
 def dashboard_workspace(workspace:str)->dict[str,object]:return DashboardStore().get(workspace)
 @router.put("/workspaces/{workspace}")
@@ -46,18 +52,22 @@ def _legacy_plan(command:str,site,state:dict[str,object],widgets:list[dict[str,o
     return plan_dashboard_command(working,site,current_widgets=widgets),None
 @router.post("/command")
 async def dashboard_command(request:DashboardCommandRequest)->dict[str,object]:
-    store=DashboardStore();dialogue=DashboardDialogueStore();current=store.get(request.workspace);raw=current.get("widgets");widgets=[dict(x) for x in raw if isinstance(x,dict)] if isinstance(raw,list) else [];agent_result=None
+    store=DashboardStore();dialogue=DashboardDialogueStore();current=store.get(request.workspace);raw=current.get("widgets");widgets=[dict(x) for x in raw if isinstance(x,dict)] if isinstance(raw,list) else [];agent_result=None;route="unknown"
     try:
         site=load_site_model();aliases=dialogue.aliases();explicit=resolve_units(request.command,site,aliases)
+        append_trace("command.received", {"command":request.command,"workspace":request.workspace,"explicit_units":[u.key for u in explicit],"widgets_before":[{"id":w.get("id"),"unit_key":w.get("unit_key"),"tag_keys":w.get("tag_keys"),"type":w.get("type")} for w in widgets]})
         if len(explicit)==1:dialogue.remember_requested_unit(request.workspace,explicit[0].key)
         state=dialogue.get_state(request.workspace);agent_result=await plan_with_local_agent(request.command,site,state,widgets)
-        if agent_result is not None:plan,message=agent_result.plan,agent_result.message
-        else:plan,message=_legacy_plan(request.command,site,state,widgets,aliases)
+        if agent_result is not None:
+            plan,message=agent_result.plan,agent_result.message;route="local-llm"
+        else:
+            plan,message=_legacy_plan(request.command,site,state,widgets,aliases);route="deterministic-fallback"
         _validate_unit_intent(request.command,site,aliases,plan);steps=_validate_transaction(plan) if str(plan.get("action",""))=="transaction" else []
     except DashboardCommandError as exc:
-        message=str(exc);plan={"action":"clarify","read_only":True,"requires_confirmation":False,"needs_clarification":True};dialogue.remember(request.workspace,request.command,plan,current,message)
-        return {"plan":plan,"workspace":current,"message":message,"needs_clarification":True,"agent":"local-llm"}
+        message=str(exc);plan={"action":"clarify","read_only":True,"requires_confirmation":False,"needs_clarification":True};dialogue.remember(request.workspace,request.command,plan,current,message);append_trace("command.rejected",{"command":request.command,"route":route,"message":message})
+        return {"plan":plan,"workspace":current,"message":message,"needs_clarification":True,"agent":route,"site":site_runtime_status()}
     except (ValueError,OSError) as exc:raise HTTPException(status_code=422,detail=str(exc)) from exc
     action=str(plan.get("action",""));workspace=store.apply_transaction(request.workspace,steps) if action=="transaction" else current if action=="clarify" else store.apply_plan(request.workspace,plan)
+    append_trace("command.executed", {"command":request.command,"route":route,"plan":plan,"message":message,"widgets_after":[{"id":w.get("id"),"unit_key":w.get("unit_key"),"tag_keys":w.get("tag_keys"),"type":w.get("type")} for w in (workspace.get("widgets") or []) if isinstance(w,dict)]})
     dialogue.remember(request.workspace,request.command,plan,workspace,message)
-    return {"plan":plan,"workspace":workspace,"message":message,"needs_clarification":bool(plan.get("needs_clarification",False)),"agent":"local-llm" if agent_result is not None else "deterministic-fallback","site":site_runtime_status()}
+    return {"plan":plan,"workspace":workspace,"message":message,"needs_clarification":bool(plan.get("needs_clarification",False)),"agent":route,"site":site_runtime_status()}
