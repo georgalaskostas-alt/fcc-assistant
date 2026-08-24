@@ -9,188 +9,84 @@ class DashboardStore:
         self.path = path or (Path.home() / ".fcc-assistant" / "dashboards.json")
 
     def _load(self) -> dict[str, object]:
-        if not self.path.exists():
-            return {"workspaces": {}}
-        try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return {"workspaces": {}}
-        if not isinstance(payload, dict) or not isinstance(payload.get("workspaces"), dict):
-            return {"workspaces": {}}
-        return payload
+        if not self.path.exists(): return {"workspaces": {}}
+        try: payload = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError): return {"workspaces": {}}
+        return payload if isinstance(payload, dict) and isinstance(payload.get("workspaces"), dict) else {"workspaces": {}}
 
     def _save(self, payload: dict[str, object]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
+        self.path.parent.mkdir(parents=True, exist_ok=True); tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"); tmp.replace(self.path)
 
     def get(self, workspace: str) -> dict[str, object]:
-        payload = self._load()
-        workspaces = payload["workspaces"]
-        assert isinstance(workspaces, dict)
-        current = workspaces.get(workspace)
-        if isinstance(current, dict):
-            return current
-        return {"workspace": workspace, "title": "Operations Overview", "widgets": []}
+        payload = self._load(); workspaces = payload["workspaces"]; assert isinstance(workspaces, dict); current = workspaces.get(workspace)
+        return current if isinstance(current, dict) else {"workspace": workspace, "title": "Operations Overview", "widgets": []}
 
     def put(self, workspace: str, config: dict[str, object]) -> dict[str, object]:
-        payload = self._load()
-        workspaces = payload["workspaces"]
-        assert isinstance(workspaces, dict)
-        stored = {"workspace": workspace, **config}
-        workspaces[workspace] = stored
-        self._save(payload)
-        return stored
+        payload = self._load(); workspaces = payload["workspaces"]; assert isinstance(workspaces, dict)
+        stored = {"workspace": workspace, **config}; workspaces[workspace] = stored; self._save(payload); return stored
 
     def _normalized_widgets(self, current: dict[str, object]) -> list[dict[str, object]]:
-        widgets = current.get("widgets")
-        if not isinstance(widgets, list):
-            return []
-        normalized: list[dict[str, object]] = []
-        for index, item in enumerate(widgets):
-            if not isinstance(item, dict):
-                continue
-            widget = dict(item)
-            layout = widget.get("layout")
-            if not isinstance(layout, dict):
-                width = 12 if widget.get("type") == "trend" else 6 if widget.get("type") == "summary" else 4
-                height = "tall" if widget.get("type") == "trend" else "normal" if widget.get("type") == "summary" else "compact"
-                layout = {"order": index, "width": width, "height": height}
-            else:
-                layout = {"order": int(layout.get("order", index)), "width": int(layout.get("width", 6)), "height": str(layout.get("height", "normal"))}
-            widget["layout"] = layout
-            normalized.append(widget)
-        normalized.sort(key=lambda item: int(item.get("layout", {}).get("order", 0)) if isinstance(item.get("layout"), dict) else 0)
-        for index, widget in enumerate(normalized):
-            layout = widget["layout"]
-            assert isinstance(layout, dict)
-            layout["order"] = index
-        return normalized
+        raw = current.get("widgets"); widgets: list[dict[str, object]] = []
+        if isinstance(raw, list):
+            for index, item in enumerate(raw):
+                if not isinstance(item, dict): continue
+                w = dict(item); layout = w.get("layout")
+                if not isinstance(layout, dict): layout = {"order": index, "width": 12 if w.get("type") == "trend" else 6 if w.get("type") == "summary" else 4, "height": "tall" if w.get("type") == "trend" else "normal" if w.get("type") == "summary" else "compact"}
+                else: layout = {"order": int(layout.get("order", index)), "width": int(layout.get("width", 6)), "height": str(layout.get("height", "normal"))}
+                w["layout"] = layout; widgets.append(w)
+        widgets.sort(key=lambda w: int(w.get("layout", {}).get("order", 0)) if isinstance(w.get("layout"), dict) else 0)
+        for i, w in enumerate(widgets): w["layout"]["order"] = i  # type: ignore[index]
+        return widgets
 
     def _append_widget(self, widgets: list[dict[str, object]], widget: dict[str, object]) -> list[dict[str, object]]:
-        widget_id = widget.get("id")
-        updated = [item for item in widgets if item.get("id") != widget_id]
-        candidate = dict(widget)
-        layout = candidate.get("layout")
-        if not isinstance(layout, dict):
-            layout = {"order": len(updated), "width": 6, "height": "normal"}
-        else:
-            layout = dict(layout)
-            layout["order"] = len(updated)
-        candidate["layout"] = layout
-        updated.append(candidate)
-        return updated
+        updated = [w for w in widgets if w.get("id") != widget.get("id")]; candidate = dict(widget); layout = candidate.get("layout")
+        if not isinstance(layout, dict): layout = {"order": len(updated), "width": 6, "height": "normal"}
+        else: layout = {**layout, "order": len(updated)}
+        candidate["layout"] = layout; updated.append(candidate); return updated
 
-    def add_widget(self, workspace: str, widget: dict[str, object]) -> dict[str, object]:
-        current = self.get(workspace)
-        widgets = self._append_widget(self._normalized_widgets(current), widget)
-        current["widgets"] = widgets
-        return self.put(workspace, current)
-
-    def add_widgets(self, workspace: str, new_widgets: list[dict[str, object]]) -> dict[str, object]:
-        current = self.get(workspace)
-        widgets = self._normalized_widgets(current)
-        for widget in new_widgets:
-            widgets = self._append_widget(widgets, widget)
-        for index, widget in enumerate(widgets):
-            layout = widget.get("layout")
-            if not isinstance(layout, dict):
-                layout = {}
-                widget["layout"] = layout
-            layout["order"] = index
-        current["widgets"] = widgets
-        return self.put(workspace, current)
+    def _apply_to_config(self, current: dict[str, object], plan: dict[str, object]) -> dict[str, object]:
+        action = str(plan.get("action", "")); result = dict(current); widgets = self._normalized_widgets(result)
+        if action in {"answer", "clarify"}: return result
+        if action == "add_widget":
+            w = plan.get("widget")
+            if isinstance(w, dict): widgets = self._append_widget(widgets, w)
+        elif action == "add_widgets":
+            raw = plan.get("widgets")
+            if isinstance(raw, list):
+                for w in raw:
+                    if isinstance(w, dict): widgets = self._append_widget(widgets, w)
+        elif action in {"remove_widget", "remove_widgets"}:
+            ids = {str(plan.get("target_id", ""))} if action == "remove_widget" else {str(v) for v in plan.get("target_ids", []) if isinstance(v, (str, int))}
+            widgets = [w for w in widgets if str(w.get("id", "")) not in ids]
+        elif action == "replace_widget":
+            target_id = str(plan.get("target_id", "")); replacement = plan.get("widget")
+            if isinstance(replacement, dict):
+                found = False
+                for i, old in enumerate(widgets):
+                    if str(old.get("id", "")) == target_id:
+                        candidate = dict(replacement); candidate["layout"] = dict(old.get("layout", {})); widgets[i] = candidate; found = True; break
+                if not found: widgets = self._append_widget(widgets, replacement)
+        elif action == "resize_widget":
+            target_id = str(plan.get("target_id", ""))
+            for w in widgets:
+                if str(w.get("id", "")) == target_id:
+                    layout = w.get("layout"); layout = dict(layout) if isinstance(layout, dict) else {}
+                    layout["width"] = min(12, max(3, int(plan.get("width", layout.get("width", 6))))); layout["height"] = str(plan.get("height", layout.get("height", "normal"))); w["layout"] = layout; break
+        elif action == "move_between":
+            target_id = str(plan.get("target_id", "")); target = next((w for w in widgets if str(w.get("id", "")) == target_id), None)
+            if target:
+                without = [w for w in widgets if str(w.get("id", "")) != target_id]; pos = {str(w.get("id")): i for i, w in enumerate(without)}; a, b = str(plan.get("first_id", "")), str(plan.get("second_id", ""))
+                if a in pos and b in pos: without.insert(min(pos[a], pos[b]) + 1, target); widgets = without
+        for i, w in enumerate(widgets):
+            layout = w.get("layout"); layout = dict(layout) if isinstance(layout, dict) else {}; layout["order"] = i; w["layout"] = layout
+        result["widgets"] = widgets; return result
 
     def apply_plan(self, workspace: str, plan: dict[str, object]) -> dict[str, object]:
-        action = plan.get("action")
-        if action == "answer":
-            return self.get(workspace)
+        return self.put(workspace, self._apply_to_config(self.get(workspace), plan))
 
-        if action == "add_widget":
-            widget = plan.get("widget")
-            if isinstance(widget, dict):
-                return self.add_widget(workspace, widget)
-            return self.get(workspace)
-
-        if action == "add_widgets":
-            raw_widgets = plan.get("widgets")
-            if isinstance(raw_widgets, list):
-                valid = [widget for widget in raw_widgets if isinstance(widget, dict)]
-                if valid:
-                    return self.add_widgets(workspace, valid)
-            return self.get(workspace)
-
+    def apply_transaction(self, workspace: str, plans: list[dict[str, object]]) -> dict[str, object]:
+        """Apply an already validated plan list atomically: one final disk write."""
         current = self.get(workspace)
-        widgets = self._normalized_widgets(current)
-        target_id = str(plan.get("target_id", ""))
-
-        if action == "replace_widget":
-            replacement = plan.get("widget")
-            if not isinstance(replacement, dict):
-                return current
-            replaced = False
-            for index, existing in enumerate(widgets):
-                if str(existing.get("id")) != target_id:
-                    continue
-                candidate = dict(replacement)
-                old_layout = existing.get("layout")
-                candidate["layout"] = dict(old_layout) if isinstance(old_layout, dict) else {"order": index, "width": 6, "height": "normal"}
-                widgets[index] = candidate
-                replaced = True
-                break
-            if not replaced:
-                widgets = self._append_widget(widgets, replacement)
-            for index, widget in enumerate(widgets):
-                layout = widget.get("layout")
-                if not isinstance(layout, dict):
-                    layout = {}
-                    widget["layout"] = layout
-                layout["order"] = index
-            current["widgets"] = widgets
-            return self.put(workspace, current)
-
-        if action == "remove_widget":
-            widgets = [widget for widget in widgets if str(widget.get("id")) != target_id]
-            for index, widget in enumerate(widgets):
-                layout = widget.get("layout")
-                if not isinstance(layout, dict):
-                    layout = {}
-                    widget["layout"] = layout
-                layout["order"] = index
-            current["widgets"] = widgets
-            return self.put(workspace, current)
-
-        by_id = {str(widget.get("id")): widget for widget in widgets}
-        target = by_id.get(target_id)
-        if target is None:
-            return current
-
-        if action == "resize_widget":
-            layout = target.get("layout")
-            if not isinstance(layout, dict):
-                layout = {}
-                target["layout"] = layout
-            width = int(plan.get("width", layout.get("width", 6)))
-            layout["width"] = min(12, max(3, width))
-            layout["height"] = str(plan.get("height", layout.get("height", "normal")))
-
-        elif action == "move_between":
-            first_id = str(plan.get("first_id", ""))
-            second_id = str(plan.get("second_id", ""))
-            without_target = [widget for widget in widgets if str(widget.get("id")) != target_id]
-            positions = {str(widget.get("id")): index for index, widget in enumerate(without_target)}
-            if first_id in positions and second_id in positions:
-                insert_at = min(positions[first_id], positions[second_id]) + 1
-                without_target.insert(insert_at, target)
-                widgets = without_target
-
-        for index, widget in enumerate(widgets):
-            layout = widget.get("layout")
-            if not isinstance(layout, dict):
-                layout = {}
-                widget["layout"] = layout
-            layout["order"] = index
-
-        current["widgets"] = widgets
+        for plan in plans: current = self._apply_to_config(current, plan)
         return self.put(workspace, current)
