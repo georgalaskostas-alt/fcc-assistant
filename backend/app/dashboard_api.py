@@ -37,17 +37,16 @@ def dashboard_workspace_save(workspace: str, request: DashboardSaveRequest) -> d
     return DashboardStore().put(workspace, request.model_dump())
 
 
-def _canonicalize_learned_aliases(command: str, aliases: dict[str, str]) -> str:
-    """Keep the user's natural phrase but append canonical unit keys for learned aliases.
-
-    The deterministic planner can then resolve the unit without requiring the
-    engineer to repeat exact internal keys such as `hcu`.
-    """
+def _canonicalize_unit_references(command: str, site, aliases: dict[str, str]) -> str:
+    """Append canonical unit keys resolved from names, aliases and learned terms."""
+    resolved = resolve_units(command, site, aliases)
+    canonical_keys = [unit.key for unit in resolved]
     folded = command.casefold()
-    canonical_keys = [unit_key for alias, unit_key in aliases.items() if alias in folded]
+    canonical_keys.extend(unit_key for alias, unit_key in aliases.items() if alias in folded)
+    canonical_keys = list(dict.fromkeys(key.casefold() for key in canonical_keys if key))
     if not canonical_keys:
         return command
-    return f"{command} {' '.join(dict.fromkeys(canonical_keys))}"
+    return f"{command} {' '.join(canonical_keys)}"
 
 
 @router.post("/command")
@@ -64,9 +63,6 @@ def dashboard_command(request: DashboardCommandRequest) -> dict[str, object]:
         aliases = dialogue.aliases()
         state = dialogue.get_state(request.workspace)
 
-        # First resolve conversational references and compound follow-ups such as
-        # “πού έβαλες το τελευταίο γράφημα;” or “βγάλ' το από το FCC και βάλ' το
-        # στο Hydrocracker”. These require dialogue state, not regex-only parsing.
         plan, message = contextual_plan(
             request.command,
             site,
@@ -76,13 +72,14 @@ def dashboard_command(request: DashboardCommandRequest) -> dict[str, object]:
         )
 
         if plan is None:
-            working_command = _canonicalize_learned_aliases(request.command, aliases)
+            # Natural names such as Hydrocracker are resolved first, then their
+            # canonical keys (for example hcu) are appended for the deterministic
+            # widget planner. This prevents a correctly understood unit from being
+            # lost between dialogue interpretation and dashboard planning.
+            working_command = _canonicalize_unit_references(request.command, site, aliases)
             plan = plan_dashboard_command(working_command, site, current_widgets=current_widgets)
             message = None
 
-            # When a user explicitly corrects a unit, persist the natural unit
-            # name/key as a local alias. This is lightweight local learning, not
-            # remote model training and no refinery data leaves the machine.
             folded = request.command.casefold()
             if any(token in folded for token in ("όχι", "οχι", "εννοώ", "εννοω", "λάθος", "λαθος")):
                 corrected_units = resolve_units(folded, site, aliases)
