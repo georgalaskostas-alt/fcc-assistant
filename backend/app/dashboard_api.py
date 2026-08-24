@@ -64,10 +64,10 @@ async def dashboard_command(request:DashboardCommandRequest)->dict[str,object]:
             plan,message=_legacy_plan(request.command,site,state,widgets,aliases);route="deterministic-fallback"
         _validate_unit_intent(request.command,site,aliases,plan);steps=_validate_transaction(plan) if str(plan.get("action",""))=="transaction" else []
     except DashboardCommandError as exc:
-        message=str(exc);plan={"action":"clarify","read_only":True,"requires_confirmation":False,"needs_clarification":True};dialogue.remember(request.workspace,request.command,plan,current,message);append_trace("command.rejected",{"command":request.command,"route":route,"message":message})
+        message=str(exc);plan={"action":"clarify","read_only":True,"requires_confirmation":False,"needs_clarification":True};dialogue.remember(request.workspace,request.command,plan,current,message,previous_widgets=widgets);append_trace("command.rejected",{"command":request.command,"route":route,"message":message})
         return {"plan":plan,"workspace":current,"message":message,"needs_clarification":True,"agent":route,"site":site_runtime_status()}
     except (ValueError,OSError) as exc:raise HTTPException(status_code=422,detail=str(exc)) from exc
     action=str(plan.get("action",""));workspace=store.apply_transaction(request.workspace,steps) if action=="transaction" else current if action=="clarify" else store.apply_plan(request.workspace,plan)
     append_trace("command.executed", {"command":request.command,"route":route,"plan":plan,"message":message,"widgets_after":[{"id":w.get("id"),"unit_key":w.get("unit_key"),"tag_keys":w.get("tag_keys"),"type":w.get("type")} for w in (workspace.get("widgets") or []) if isinstance(w,dict)]})
-    dialogue.remember(request.workspace,request.command,plan,workspace,message)
+    dialogue.remember(request.workspace,request.command,plan,workspace,message,previous_widgets=widgets)
     return {"plan":plan,"workspace":workspace,"message":message,"needs_clarification":bool(plan.get("needs_clarification",False)),"agent":route,"site":site_runtime_status()}
