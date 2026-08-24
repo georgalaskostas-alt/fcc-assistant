@@ -6,6 +6,7 @@ import json
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from .dashboard_dialogue import DashboardDialogueStore
+from .diagnostic_trace import append_trace
 from .site_model import load_site_model
 from .speech_domain import normalize_transcript
 from .speech_runtime import SpeechRuntimeError, runtime_status, transcribe_wav
@@ -26,12 +27,10 @@ def speech_status() -> dict[str, object]:
 
 
 def _unit_vocabulary() -> list[str]:
-    """Return a compact, local refinery-unit vocabulary for STT biasing."""
     try:
         site = load_site_model()
     except (ValueError, OSError):
         return ["FCC", "HCU", "Hydrocracker", "hydro cracker"]
-
     terms: list[str] = []
     for unit in site.units:
         terms.extend([unit.key, unit.name, *getattr(unit, "aliases", ())])
@@ -44,53 +43,30 @@ def _unit_vocabulary() -> list[str]:
 
 
 @router.post("/transcribe")
-async def speech_transcribe(
-    audio: UploadFile = File(...),
-    scope: str = Form(default="all"),
-    terms_json: str = Form(default="[]"),
-    mode: str = Form(default="final"),
-) -> dict[str, object]:
+async def speech_transcribe(audio: UploadFile = File(...), scope: str = Form(default="all"), terms_json: str = Form(default="[]"), mode: str = Form(default="final")) -> dict[str, object]:
     try:
         parsed = json.loads(terms_json)
         extra_terms = [str(value) for value in parsed] if isinstance(parsed, list) else []
     except json.JSONDecodeError:
         extra_terms = []
-
     normalized_mode = mode.strip().casefold()
-    if normalized_mode not in {"partial", "final"}:
-        normalized_mode = "final"
-
+    if normalized_mode not in {"partial", "final"}: normalized_mode = "final"
     unit_terms = _unit_vocabulary()
-
     if normalized_mode == "partial":
-        prompt = (
-            "Ελληνική ομιλία με πιθανές αγγλικές τεχνικές λέξεις. "
-            "Άκουσε ιδιαίτερα προσεκτικά τα ονόματα μονάδων: "
-            + ", ".join(unit_terms)
-            + "."
-        )
+        prompt = "Ελληνική ομιλία με πιθανές αγγλικές τεχνικές λέξεις. Άκουσε ιδιαίτερα προσεκτικά τα ονόματα μονάδων: " + ", ".join(unit_terms) + "."
     else:
         domain_terms = list(dict.fromkeys([*unit_terms, scope, *extra_terms]))[:40]
-        prompt = (
-            "Η ομιλία είναι στα Ελληνικά. Απόδωσε πιστά ολόκληρη την πρόταση στα Ελληνικά. "
-            "Μην αντικαθιστάς μία μονάδα με άλλη και μην εφευρίσκεις λέξεις. "
-            "Διατήρησε τεχνικούς όρους, tags και ακρωνύμια όπως FCC, HCU, Hydrocracker και "
-            "reaction temperature στην καθιερωμένη γραφή τους. Πιθανοί όροι: "
-            + ", ".join(domain_terms)
-        )
-
+        prompt = "Η ομιλία είναι στα Ελληνικά. Απόδωσε πιστά ολόκληρη την πρόταση στα Ελληνικά. Μην αντικαθιστάς μία μονάδα με άλλη και μην εφευρίσκεις λέξεις. Διατήρησε τεχνικούς όρους, tags και ακρωνύμια όπως FCC, HCU, Hydrocracker και reaction temperature στην καθιερωμένη γραφή τους. Πιθανοί όροι: " + ", ".join(domain_terms)
     try:
         data = await audio.read()
-        if len(data) > 25 * 1024 * 1024:
-            raise HTTPException(status_code=413, detail="Audio clip is too large")
+        if len(data) > 25 * 1024 * 1024: raise HTTPException(status_code=413, detail="Audio clip is too large")
         raw = transcribe_wav(data, prompt=prompt, high_accuracy=normalized_mode == "final")
         decision = normalize_transcript(raw, extra_terms=list(dict.fromkeys([*unit_terms, *extra_terms])))
     except SpeechRuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     finally:
         await audio.close()
-
-    return {
+    result = {
         "raw_text": decision.raw_text,
         "text": decision.normalized_text,
         "confidence": decision.confidence,
@@ -104,3 +80,6 @@ async def speech_transcribe(
         "local_only": True,
         "audio_retained": False,
     }
+    if normalized_mode == "final":
+        append_trace("speech.final", {"raw_text": decision.raw_text, "normalized_text": decision.normalized_text, "confidence": decision.confidence, "level": decision.level, "corrections": [asdict(item) for item in decision.corrections], "scope": scope})
+    return result
