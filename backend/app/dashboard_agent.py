@@ -9,192 +9,127 @@ from typing import Any
 from .local_ai import LocalAIClient, LocalAIError
 from .site_model import ProcessUnit, SiteModel, UnitTag
 
-
 @dataclass(frozen=True)
 class AgentResult:
     plan: dict[str, object]
     message: str
 
+_AGENT_SYSTEM = """You are FCC Assistant, a highly capable refinery dashboard copilot. Understand natural conversational Greek, English, and mixed engineering language like a competent human colleague. Resolve continuity, corrections, ellipsis and pronouns from CONVERSATION STATE and CURRENT WIDGETS. Never invent units, tags, values, alarms or widget ids and never control plant equipment.
 
-_AGENT_SYSTEM = """You are FCC Assistant: an exceptionally capable refinery dashboard copilot.
-Behave like a competent human colleague, not a command parser. Understand natural conversational Greek,
-English and mixed Greek/English engineering language. Track conversational continuity, corrections,
-ellipsis, pronouns and implied references such as 'αυτό', 'εκεί', 'το προηγούμενο', 'που βάλαμε',
-'έκανες λάθος', 'όχι εκεί', 'βγάλτο', 'βάλτο στον hydrocracker', 'πού το έβαλες;'.
+Return ONLY JSON, no markdown, using this schema:
+{"actions":[{"action":"add|remove|remove_all|move|answer|clarify","unit":"canonical unit key or null","metric":"semantic metric/tag phrase or null","reference":"last|all|widget id|description|null","widget_type":"trend|kpi|average|summary|null","period":"8h|null"}],"answer":"short natural Greek response"}
 
-Your task here is semantic dashboard intent understanding. Never invent units, tags, values, alarms or widget ids.
-Never control plant equipment. Use only AVAILABLE UNITS, AVAILABLE METRICS, CURRENT WIDGETS and CONVERSATION STATE.
-
-Return ONLY one JSON object, no markdown:
-{"action":"add|remove|remove_all|move|answer|clarify","unit":"canonical unit key or null","metric":"semantic metric/tag phrase or null","reference":"last|all|widget id|description|null","widget_type":"trend|kpi|average|summary|null","period":"8h or another concise period|null","answer":"short natural Greek response"}
-
-Reasoning policy:
-- Understand intent rather than matching keywords; informal wording is normal.
-- Explicit information in the newest utterance overrides older context.
-- Carry omitted information from the immediately relevant prior turn when a human colleague naturally would.
-- A correction like 'όχι FCC, Hydrocracker' repairs the relevant previous action; it is not an unrelated new request.
-- Pronouns and phrases like 'αυτό', 'το', 'που βάλαμε', 'τελευταίο' normally refer to the most recently discussed/changed widget.
-- If the user says an action was wrong and supplies the correct unit, move/replace the erroneous last widget.
-- Questions such as 'πού το έβαλες;' are answer actions using supplied state, never mutations.
-- 'όλα τα γραφήματα' means remove_all; an explicit unit scopes it, otherwise it means all trend widgets.
-- 'γράφημα/διάγραμμα/chart/trend' defaults to trend.
-- Infer a metric only when catalog/context makes one interpretation defensible.
-- Clarify only when materially different executable interpretations remain; never just because wording is colloquial.
-- Never silently substitute FCC for Hydrocracker/HCU or another unit. Explicit unit always wins.
-- Use canonical unit keys exactly as supplied.
-- Keep spoken answers concise, natural and professional.
+Rules:
+- One utterance may contain several intents. Preserve their spoken order in actions[].
+- Explicit newest information overrides older context.
+- 'όχι FCC, Hydrocracker', 'έκανες λάθος', 'βάλτο εκεί αντί εδώ' repairs the relevant previous action/widget.
+- 'αυτό', 'το προηγούμενο', 'που βάλαμε', 'τελευταίο' refer to the most recently relevant widget unless context clearly identifies another.
+- 'όλα τα γραφήματα' => remove_all; explicit unit scopes it, otherwise all trends.
+- A request for two metrics means two add actions, not one ambiguous metric.
+- Questions are answer actions, not mutations.
+- Never silently substitute FCC for HCU/Hydrocracker or another explicit unit.
+- Clarify only if materially different executable interpretations remain.
+- Keep the final answer concise and natural for speech.
 """
 
-
 def _extract_json(text: str) -> dict[str, Any]:
-    raw = text.strip()
-    if raw.startswith("```"):
-        raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.I)
-        raw = re.sub(r"\s*```$", "", raw)
-    start, end = raw.find("{"), raw.rfind("}")
-    if start < 0 or end < start:
-        raise ValueError("agent returned no JSON object")
-    payload = json.loads(raw[start:end + 1])
-    if not isinstance(payload, dict):
-        raise ValueError("agent response must be an object")
-    return payload
+    raw=text.strip(); raw=re.sub(r"^```(?:json)?\s*", "", raw, flags=re.I); raw=re.sub(r"\s*```$", "", raw)
+    a,b=raw.find("{"),raw.rfind("}")
+    if a<0 or b<a: raise ValueError("agent returned no JSON")
+    obj=json.loads(raw[a:b+1])
+    if not isinstance(obj,dict): raise ValueError("agent response must be object")
+    return obj
 
+def _catalog(site: SiteModel)->list[dict[str,object]]:
+    return [{"key":u.key,"name":u.name,"aliases":list(u.aliases),"metrics":[{"key":t.key,"label":t.label,"semantic":t.semantic,"aliases":list(t.aliases)} for t in u.tags]} for u in site.units]
 
-def _catalog(site: SiteModel) -> list[dict[str, object]]:
-    return [{"key": u.key, "name": u.name, "aliases": list(u.aliases), "metrics": [{"key": t.key, "label": t.label, "semantic": t.semantic, "aliases": list(t.aliases)} for t in u.tags]} for u in site.units]
+def _find_unit(site:SiteModel,v:object)->ProcessUnit|None:
+    return site.find_unit(v.strip()) if isinstance(v,str) and v.strip() else None
 
+def _find_tag(unit:ProcessUnit,q:object)->UnitTag|None:
+    if not isinstance(q,str) or not q.strip(): return None
+    n=q.strip().casefold(); exact=[]; partial=[]
+    for t in unit.tags:
+        vals=[x.casefold() for x in [t.key,t.label,t.semantic,*t.aliases] if x]
+        if n in vals: exact.append(t)
+        elif any(n in x or x in n for x in vals): partial.append(t)
+    return exact[0] if len(exact)==1 else partial[0] if not exact and len(partial)==1 else None
 
-def _find_unit(site: SiteModel, value: object) -> ProcessUnit | None:
-    return site.find_unit(value.strip()) if isinstance(value, str) and value.strip() else None
+def _widget(unit:ProcessUnit,tag:UnitTag,kind:str,period:str,order:int)->dict[str,object]:
+    kind=kind if kind in {"trend","kpi","average"} else "trend"; width,height=(12,"tall") if kind=="trend" else (4,"compact")
+    return {"id":f"{unit.key}-{tag.key}-{uuid.uuid4().hex[:8]}","type":kind,"title":tag.label,"unit_key":unit.key,"tag_keys":[tag.key],"period":period or "8h","layout":{"order":order,"width":width,"height":height}}
 
-
-def _find_tag(unit: ProcessUnit, query: object) -> UnitTag | None:
-    if not isinstance(query, str) or not query.strip():
-        return None
-    needle = query.strip().casefold()
-    exact: list[UnitTag] = []
-    partial: list[UnitTag] = []
-    for tag in unit.tags:
-        folded = [v.casefold() for v in [tag.key, tag.label, tag.semantic, *tag.aliases] if v]
-        if needle in folded:
-            exact.append(tag)
-        elif any(needle in v or v in needle for v in folded):
-            partial.append(tag)
-    if len(exact) == 1:
-        return exact[0]
-    if not exact and len(partial) == 1:
-        return partial[0]
-    return None
-
-
-def _widget_for(unit: ProcessUnit, tag: UnitTag, widget_type: str, period: str, order: int) -> dict[str, object]:
-    kind = widget_type if widget_type in {"trend", "kpi", "average"} else "trend"
-    width, height = (12, "tall") if kind == "trend" else (4, "compact")
-    return {"id": f"{unit.key}-{tag.key}-{uuid.uuid4().hex[:8]}", "type": kind, "title": tag.label, "unit_key": unit.key, "tag_keys": [tag.key], "period": period or "8h", "layout": {"order": order, "width": width, "height": height}}
-
-
-def _last_widget(state: dict[str, object], widgets: list[dict[str, object]]) -> dict[str, object] | None:
-    candidate = state.get("last_widget")
-    if isinstance(candidate, dict):
-        cid = str(candidate.get("id", ""))
-        for w in widgets:
-            if str(w.get("id", "")) == cid:
-                return w
-        unit_key, tags = str(candidate.get("unit_key", "")), candidate.get("tag_keys")
-        for w in reversed(widgets):
-            if str(w.get("unit_key", "")) == unit_key and w.get("tag_keys") == tags:
-                return w
+def _last(state:dict[str,object],widgets:list[dict[str,object]])->dict[str,object]|None:
+    c=state.get("last_widget")
+    if isinstance(c,dict):
+        cid=str(c.get("id","")); hit=next((w for w in widgets if str(w.get("id",""))==cid),None)
+        if hit:return hit
     return widgets[-1] if widgets else None
 
-
-def _match_reference(reference: object, metric: object, unit: ProcessUnit | None, widgets: list[dict[str, object]], state: dict[str, object]) -> list[dict[str, object]]:
-    ref = str(reference or "").casefold()
-    if ref in {"last", "previous", "τελευταίο", "τελευταιο", "προηγούμενο", "προηγουμενο", "αυτό", "αυτο"}:
-        last = _last_widget(state, widgets)
-        return [last] if last else []
-    metric_text = str(metric or "").casefold()
-    matches: list[dict[str, object]] = []
+def _matches(ref:object,metric:object,unit:ProcessUnit|None,widgets:list[dict[str,object]],state:dict[str,object])->list[dict[str,object]]:
+    r=str(ref or "").casefold()
+    if r in {"last","previous","τελευταίο","τελευταιο","προηγούμενο","προηγουμενο","αυτό","αυτο"}:
+        x=_last(state,widgets); return [x] if x else []
+    m=str(metric or "").casefold(); out=[]
     for w in widgets:
-        if unit and str(w.get("unit_key", "")).casefold() != unit.key.casefold():
-            continue
-        haystack = " ".join([str(w.get("id", "")), str(w.get("title", "")), *(str(x) for x in (w.get("tag_keys") or []))]).casefold()
-        if (ref and ref not in {"all", "null"} and ref in haystack) or (metric_text and metric_text in haystack):
-            matches.append(w)
-    if not matches and not metric_text and not ref:
-        last = _last_widget(state, widgets)
-        return [last] if last else []
-    return matches
+        if unit and str(w.get("unit_key","" )).casefold()!=unit.key.casefold():continue
+        hay=" ".join([str(w.get("id","")),str(w.get("title","")),*(str(x) for x in (w.get("tag_keys") or []))]).casefold()
+        if (r and r not in {"all","null"} and r in hay) or (m and m in hay):out.append(w)
+    if not out and not m and not r:
+        x=_last(state,widgets); return [x] if x else []
+    return out
 
+def _compile(intent:dict[str,Any],site:SiteModel,state:dict[str,object],working:list[dict[str,object]])->tuple[dict[str,object]|None,str|None]:
+    action=str(intent.get("action") or "clarify").casefold(); unit=_find_unit(site,intent.get("unit")); kind=str(intent.get("widget_type") or "trend").casefold(); period=str(intent.get("period") or "8h")
+    if action in {"answer","clarify"}: return {"action":action,"read_only":True,"requires_confirmation":False,"needs_clarification":action=="clarify"},None
+    if action=="add":
+        if unit is None:
+            key=str(state.get("last_requested_unit_key") or state.get("last_unit_key") or ""); unit=site.find_unit(key) if key else None
+        if unit is None:return None,"Σε ποια μονάδα το θέλεις;"
+        tag=_find_tag(unit,intent.get("metric"))
+        if tag is None:return None,f"Ποια μέτρηση θέλεις στη {unit.name};"
+        return {"action":"add_widget","widget":_widget(unit,tag,kind,period,len(working)),"read_only":True,"requires_confirmation":False},None
+    if action=="remove_all":
+        ids=[str(w.get("id")) for w in working if w.get("id") and str(w.get("type","" )).casefold()=="trend" and (unit is None or str(w.get("unit_key","" )).casefold()==unit.key.casefold())]
+        return {"action":"remove_widgets","target_ids":ids,"read_only":True,"requires_confirmation":False},None
+    if action in {"remove","move"}:
+        hits=_matches(intent.get("reference"),intent.get("metric"),None if action=="move" else unit,working,state)
+        if len(hits)!=1:return None,"Ποιο ακριβώς γράφημα εννοείς;"
+        target=hits[0]
+        if action=="remove":return {"action":"remove_widget","target_id":str(target.get("id")),"read_only":True,"requires_confirmation":False},None
+        if unit is None:return None,"Σε ποια μονάδα να το μεταφέρω;"
+        old=site.find_unit(str(target.get("unit_key",""))); keys=target.get("tag_keys"); oldtag=next((t for t in old.tags if isinstance(keys,list) and keys and t.key==str(keys[0])),None) if old else None
+        if oldtag is None:return None,"Δεν μπορώ να ταυτοποιήσω με ασφάλεια τη μέτρηση."
+        newtag=unit.tag_by_semantic(oldtag.semantic)
+        if newtag is None:return None,f"Η {unit.name} δεν έχει αντιστοιχισμένη μέτρηση για {oldtag.label}."
+        return {"action":"replace_widget","target_id":str(target.get("id")),"widget":_widget(unit,newtag,str(target.get("type","trend")),str(target.get("period","8h")),0),"read_only":True,"requires_confirmation":False},None
+    return None,"Δεν έχω αρκετή βεβαιότητα για να εκτελέσω σωστά αυτή την ενέργεια."
 
-def _human_widget_description(widget: dict[str, object], site: SiteModel) -> str:
-    unit = site.find_unit(str(widget.get("unit_key", "")))
-    return f"{str(widget.get('title', 'γράφημα'))} στη μονάδα {unit.name if unit else widget.get('unit_key', '')}"
+def _simulate(widgets:list[dict[str,object]],plan:dict[str,object])->list[dict[str,object]]:
+    out=[dict(w) for w in widgets]; a=str(plan.get("action",""))
+    if a=="add_widget" and isinstance(plan.get("widget"),dict):out.append(dict(plan["widget"]))
+    elif a=="remove_widget":out=[w for w in out if str(w.get("id"))!=str(plan.get("target_id"))]
+    elif a=="remove_widgets":
+        ids={str(x) for x in plan.get("target_ids",[]) if isinstance(x,(str,int))};out=[w for w in out if str(w.get("id")) not in ids]
+    elif a=="replace_widget" and isinstance(plan.get("widget"),dict):
+        tid=str(plan.get("target_id"));out=[dict(plan["widget"]) if str(w.get("id"))==tid else w for w in out]
+    return out
 
-
-async def plan_with_local_agent(command: str, site: SiteModel, state: dict[str, object], widgets: list[dict[str, object]]) -> AgentResult | None:
-    context = {"available_units": _catalog(site), "conversation_state": state, "current_widgets": widgets, "user_command": command}
+async def plan_with_local_agent(command:str,site:SiteModel,state:dict[str,object],widgets:list[dict[str,object]])->AgentResult|None:
+    context={"available_units":_catalog(site),"conversation_state":state,"current_widgets":widgets,"user_command":command}
     try:
-        response = await LocalAIClient().generate(
-            f"Interpret the newest user utterance in the supplied conversation/dashboard context. NEWEST USER UTTERANCE: {command}",
-            context=context,
-            system_prompt=_AGENT_SYSTEM,
-            temperature=0.05,
-        )
-        intent = _extract_json(response.text)
-    except (LocalAIError, ValueError, json.JSONDecodeError):
-        return None
-
-    action = str(intent.get("action") or "clarify").casefold()
-    message = str(intent.get("answer") or "").strip()
-    unit = _find_unit(site, intent.get("unit"))
-    widget_type = str(intent.get("widget_type") or "trend").casefold()
-    period = str(intent.get("period") or "8h")
-
-    if action == "answer":
-        if not message:
-            last = _last_widget(state, widgets)
-            message = f"Το τελευταίο είναι {_human_widget_description(last, site)}." if last else "Δεν υπάρχει ακόμη γράφημα στο dashboard."
-        return AgentResult({"action": "answer", "read_only": True, "requires_confirmation": False}, message)
-    if action == "clarify":
-        return AgentResult({"action": "clarify", "read_only": True, "requires_confirmation": False, "needs_clarification": True}, message or "Πες μου μόνο ποιο από τα διαθέσιμα εννοείς και το αναλαμβάνω.")
-
-    if action == "add":
-        if unit is None:
-            remembered = str(state.get("last_requested_unit_key") or state.get("last_unit_key") or "")
-            unit = site.find_unit(remembered) if remembered else None
-        if unit is None:
-            return AgentResult({"action": "clarify", "read_only": True, "needs_clarification": True}, "Σε ποια μονάδα το θέλεις;")
-        tag = _find_tag(unit, intent.get("metric"))
-        if tag is None:
-            return AgentResult({"action": "clarify", "read_only": True, "needs_clarification": True}, f"Ποια μέτρηση θέλεις στη {unit.name};")
-        widget = _widget_for(unit, tag, widget_type, period, len(widgets))
-        return AgentResult({"action": "add_widget", "widget": widget, "read_only": True, "requires_confirmation": False}, message or f"Έτοιμο. Έβαλα {tag.label} στη {unit.name}.")
-
-    if action == "remove_all":
-        candidates = [w for w in widgets if (unit is None or str(w.get("unit_key", "")).casefold() == unit.key.casefold()) and str(w.get("type", "")).casefold() == "trend"]
-        ids = [str(w.get("id")) for w in candidates if w.get("id")]
-        if not ids:
-            return AgentResult({"action": "answer", "read_only": True}, message or "Δεν έχει μείνει κάποιο γράφημα για αφαίρεση.")
-        return AgentResult({"action": "remove_widgets", "target_ids": ids, "read_only": True, "requires_confirmation": False}, message or f"Έτοιμο. Αφαίρεσα και τα {len(ids)} γραφήματα.")
-
-    if action in {"remove", "move"}:
-        matches = _match_reference(intent.get("reference"), intent.get("metric"), None if action == "move" else unit, widgets, state)
-        if len(matches) != 1:
-            return AgentResult({"action": "clarify", "read_only": True, "needs_clarification": True}, message or "Βλέπω περισσότερες από μία πιθανές επιλογές. Ποιο γράφημα εννοείς;")
-        target = matches[0]
-        if action == "remove":
-            return AgentResult({"action": "remove_widget", "target_id": str(target.get("id")), "read_only": True, "requires_confirmation": False}, message or "Έγινε, το αφαίρεσα.")
-        if unit is None:
-            return AgentResult({"action": "clarify", "read_only": True, "needs_clarification": True}, "Σε ποια μονάδα να το μεταφέρω;")
-        old_unit = site.find_unit(str(target.get("unit_key", "")))
-        tags = target.get("tag_keys")
-        old_tag = next((t for t in old_unit.tags if isinstance(tags, list) and tags and t.key == str(tags[0])), None) if old_unit else None
-        if old_tag is None:
-            return AgentResult({"action": "clarify", "read_only": True, "needs_clarification": True}, "Δεν μπορώ να ταυτοποιήσω με ασφάλεια τη μέτρηση αυτού του γραφήματος.")
-        new_tag = unit.tag_by_semantic(old_tag.semantic)
-        if new_tag is None:
-            return AgentResult({"action": "clarify", "read_only": True, "needs_clarification": True}, f"Η {unit.name} δεν έχει αντιστοιχισμένη μέτρηση για {old_tag.label}.")
-        replacement = _widget_for(unit, new_tag, str(target.get("type", "trend")), str(target.get("period", "8h")), 0)
-        return AgentResult({"action": "replace_widget", "target_id": str(target.get("id")), "widget": replacement, "read_only": True, "requires_confirmation": False}, message or f"Σωστά. Το μετέφερα στη {unit.name}.")
-
-    return AgentResult({"action": "clarify", "read_only": True, "needs_clarification": True}, message or "Δεν έχω αρκετή βεβαιότητα για να αλλάξω κάτι λάθος. Πες μου ποιο αντικείμενο εννοείς.")
+        response=await LocalAIClient().generate("Interpret the newest utterance and produce the complete ordered action plan.",context=context,system_prompt=_AGENT_SYSTEM,temperature=0.05); payload=_extract_json(response.text)
+    except (LocalAIError,ValueError,json.JSONDecodeError):return None
+    raw=payload.get("actions"); intents=[x for x in raw if isinstance(x,dict)] if isinstance(raw,list) else []
+    if not intents and isinstance(payload.get("action"),str):intents=[payload]
+    if not intents:return AgentResult({"action":"clarify","read_only":True,"needs_clarification":True},"Δεν κατάλαβα αρκετά καθαρά την εντολή.")
+    plans=[]; working=[dict(w) for w in widgets]
+    for intent in intents:
+        plan,error=_compile(intent,site,state,working)
+        if error:return AgentResult({"action":"clarify","read_only":True,"needs_clarification":True},error)
+        if plan and str(plan.get("action")) not in {"answer","clarify"}:
+            plans.append(plan);working=_simulate(working,plan)
+    message=str(payload.get("answer") or "").strip() or ("Έγινε." if plans else "Εντάξει.")
+    if not plans:return AgentResult({"action":"answer","read_only":True,"requires_confirmation":False},message)
+    if len(plans)==1:return AgentResult(plans[0],message)
+    return AgentResult({"action":"transaction","steps":plans,"read_only":True,"requires_confirmation":False},message)
