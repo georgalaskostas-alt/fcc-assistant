@@ -277,7 +277,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     try {
       const audio = await recorderRef.current.snapshot();
       if (audio.size < 14000) return;
-      const result = await api.transcribeSpeech(audio, scopeUnit, voiceTerms());
+      const result = await api.transcribeSpeech(audio, scopeUnit, voiceTerms(), "partial");
       const cleanedText = cleanVoiceTranscript(result.text);
       lastPreviewRef.current = { result: { ...result, text: cleanedText }, audioSize: audio.size, at: Date.now() };
       if (cleanedText) {
@@ -319,7 +319,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       const recorder = recorderRef.current;
       recorderRef.current = null;
       const audio = await recorder.stop();
-      const result = await api.transcribeSpeech(audio, scopeUnit, voiceTerms());
+      const result = await api.transcribeSpeech(audio, scopeUnit, voiceTerms(), "final");
       const finalText = cleanVoiceTranscript(result.text);
       setCommand(finalText);
 
