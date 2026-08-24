@@ -44,6 +44,17 @@ def _contains_any(text: str, words: tuple[str, ...]) -> bool:
     return any(word in text for word in words)
 
 
+def _unit_tokens(unit: ProcessUnit) -> tuple[str, ...]:
+    tokens = [unit.key, unit.name, *getattr(unit, "aliases", ())]
+    key = unit.key.casefold()
+    name = unit.name.casefold()
+    if key == "hcu" or name == "hcu":
+        tokens.extend(("hydrocracker", "hydro cracker", "hydrocracking", "υδροκράκερ", "υδροκρακερ"))
+    if key == "vdu" or name == "vdu":
+        tokens.extend(("vacuum distillation", "vacuum unit", "μονάδα κενού", "μοναδα κενου"))
+    return tuple(dict.fromkeys(token for token in tokens if token))
+
+
 def _default_layout(widget_type: WidgetType, order: int) -> WidgetLayout:
     if widget_type == "trend":
         return WidgetLayout(order=order, width=12, height="tall")
@@ -76,7 +87,7 @@ def _match_widget(query: str, widgets: list[dict[str, object]], site: SiteModel)
     requested_units = {
         unit.key.casefold()
         for unit in site.units
-        if any(candidate.casefold() in needle for candidate in (unit.key, unit.name) if candidate)
+        if any(candidate.casefold() in needle for candidate in _unit_tokens(unit))
     }
     tag_terms: list[str] = []
     for unit in site.units:
@@ -114,7 +125,7 @@ def _match_widget(query: str, widgets: list[dict[str, object]], site: SiteModel)
 def _mentioned_units(text: str, site: SiteModel) -> list[ProcessUnit]:
     mentions: list[tuple[int, ProcessUnit]] = []
     for unit in site.units:
-        positions = [position for candidate in (unit.key.casefold(), unit.name.casefold()) if candidate and (position := text.find(candidate)) >= 0]
+        positions = [position for candidate in _unit_tokens(unit) if (position := text.find(candidate.casefold())) >= 0]
         if positions:
             mentions.append((min(positions), unit))
     mentions.sort(key=lambda item: item[0])
@@ -219,10 +230,20 @@ def plan_dashboard_command(command: str, site: SiteModel, current_widgets: list[
             raise DashboardCommandError("Δεν υπάρχουν στοιχεία για αφαίρεση.")
 
         graph_requested = _contains_any(text, ("γράφημα", "γραφημα", "διάγραμμα", "διαγραμμα", "trend", "chart"))
+        all_requested = _contains_any(text, ("όλα", "ολα", "όλες", "ολες", "all", "every"))
         resolved_tags = [tag for unit in mentioned_units for tag in _resolve_tags(unit, text)]
 
-        # Natural command: “αφαίρεσε το γράφημα του FCC”. If the unit has only
-        # one trend, the intent is unambiguous even without naming the variable.
+        if graph_requested and all_requested:
+            unit_keys = {unit.key.casefold() for unit in mentioned_units}
+            target_ids = [
+                str(widget.get("id", "")) for widget in widgets
+                if str(widget.get("type", "")).casefold() == "trend"
+                and (not unit_keys or str(widget.get("unit_key", "")).casefold() in unit_keys)
+            ]
+            if not target_ids:
+                raise DashboardCommandError("Δεν υπάρχουν γραφήματα που να ταιριάζουν στην εντολή.")
+            return {"action": "remove_widgets", "target_ids": target_ids, "requires_confirmation": False, "read_only": True}
+
         if graph_requested and len(mentioned_units) == 1 and not resolved_tags:
             unit_key = mentioned_units[0].key.casefold()
             candidates = [
@@ -270,7 +291,7 @@ def plan_dashboard_command(command: str, site: SiteModel, current_widgets: list[
         if len(site.units) == 1:
             mentioned_units = [site.units[0]]
         else:
-            raise DashboardCommandError("Could not resolve process unit")
+            raise DashboardCommandError("Δεν κατάλαβα σε ποια μονάδα θέλεις να γίνει η ενέργεια.")
     widget_type, period = _widget_type(text), _period(text)
     planned_widgets: list[dict[str, object]] = []
     unresolved_units: list[str] = []
@@ -279,7 +300,7 @@ def plan_dashboard_command(command: str, site: SiteModel, current_widgets: list[
         if unit_widgets: planned_widgets.extend(unit_widgets)
         else: unresolved_units.append(unit.name)
     if not planned_widgets:
-        raise DashboardCommandError("Could not resolve any tag from command")
+        raise DashboardCommandError("Δεν κατάλαβα ποια μεταβλητή θέλεις να εμφανίσω.")
     result: dict[str, object] = {"requires_confirmation": False, "read_only": True}
     if unresolved_units:
         result["warnings"] = [f"No matching variables found for {name}" for name in unresolved_units]
