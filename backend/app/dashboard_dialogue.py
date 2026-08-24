@@ -4,7 +4,7 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 
-from .dashboard_config import DashboardWidget
+from .dashboard_config import DashboardWidget, WidgetLayout
 from .site_model import ProcessUnit, SiteModel
 
 
@@ -81,7 +81,15 @@ class DashboardDialogueStore:
 
 
 def _unit_tokens(unit: ProcessUnit) -> tuple[str, ...]:
-    aliases = getattr(unit, "aliases", ())
+    aliases = list(getattr(unit, "aliases", ()))
+    key = unit.key.casefold()
+    name = unit.name.casefold()
+    # Common refinery shorthand should work naturally even if the local site
+    # catalog names the unit only by its abbreviation.
+    if key == "hcu" or name == "hcu":
+        aliases.extend(("Hydrocracker", "hydro cracker", "hydrocracking", "υδροκράκερ", "υδροκρακερ"))
+    if key == "vdu" or name == "vdu":
+        aliases.extend(("Vacuum Distillation", "vacuum unit", "μονάδα κενού", "μοναδα κενου"))
     return tuple(dict.fromkeys([unit.key, unit.name, *aliases]))
 
 
@@ -105,8 +113,8 @@ def _retarget_widget(widget: dict[str, object], target: ProcessUnit, site: SiteM
     source = site.find_unit(source_key)
     raw_tags = widget.get("tag_keys")
     source_tag_keys = [str(v) for v in raw_tags] if isinstance(raw_tags, (list, tuple)) else []
-    target_tags = []
-    labels = []
+    target_tags: list[str] = []
+    labels: list[str] = []
     if source and source_tag_keys:
         by_key = {tag.key: tag for tag in source.tags}
         for key in source_tag_keys:
@@ -123,6 +131,12 @@ def _retarget_widget(widget: dict[str, object], target: ProcessUnit, site: SiteM
     if labels:
         title = " / ".join(labels) if widget_type == "trend" else (f"Average {labels[0]}" if widget_type == "average" else labels[0])
     suffix = "-".join(target_tags) if target_tags else "summary"
+    raw_layout = widget.get("layout")
+    layout = WidgetLayout(
+        order=int(raw_layout.get("order", 0)),
+        width=int(raw_layout.get("width", 6)),
+        height=str(raw_layout.get("height", "normal")),
+    ) if isinstance(raw_layout, dict) else WidgetLayout()
     return asdict(DashboardWidget(
         id=f"{target.key}-{widget_type}-{suffix}",
         type=widget_type,  # type: ignore[arg-type]
@@ -130,7 +144,7 @@ def _retarget_widget(widget: dict[str, object], target: ProcessUnit, site: SiteM
         unit_key=target.key,
         tag_keys=tuple(target_tags),
         period=str(widget.get("period", "8h")),
-        layout=widget.get("layout") if hasattr(widget.get("layout"), "order") else DashboardWidget.__dataclass_fields__["layout"].default_factory(),  # type: ignore[misc]
+        layout=layout,
     ))
 
 
@@ -139,7 +153,7 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
     last_widget = state.get("last_widget") if isinstance(state.get("last_widget"), dict) else None
     units = resolve_units(text, site, learned_aliases)
 
-    asks_where = any(token in text for token in ("πού", "που είναι", "σε ποια μονάδα", "where")) and any(token in text for token in ("τελευτα", "γράφημα", "γραφημα", "διάγραμμα", "διαγραμμα", "widget"))
+    asks_where = any(token in text for token in ("πού", "που", "σε ποια μονάδα", "σε ποια μοναδα", "where")) and any(token in text for token in ("τελευτα", "γράφημα", "γραφημα", "διάγραμμα", "διαγραμμα", "widget"))
     if asks_where and last_widget:
         unit = site.find_unit(str(last_widget.get("unit_key", "")))
         unit_name = unit.name if unit else str(last_widget.get("unit_key", "")).upper()
