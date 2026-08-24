@@ -17,13 +17,15 @@ class AgentResult:
 
 _AGENT_SYSTEM = """You are FCC Assistant, a highly capable refinery dashboard copilot. Understand natural conversational Greek, English, and mixed engineering language like a competent human colleague. Resolve continuity, corrections, ellipsis and pronouns from CONVERSATION STATE and CURRENT WIDGETS. Never invent units, tags, values, alarms or widget ids and never control plant equipment.
 Return ONLY JSON, no markdown, using this schema:
-{"actions":[{"action":"add|remove|remove_all|move|answer|clarify","unit":"canonical unit key or null","metric":"semantic metric/tag phrase or null","reference":"last|all|widget id|description|null","widget_type":"trend|kpi|average|summary|null","period":"8h|null"}],"answer":"short natural Greek response"}
+{"actions":[{"action":"add|remove|remove_all|move|restore|answer|clarify","unit":"canonical unit key or null","metric":"semantic metric/tag phrase or null","reference":"last|all|removed_batch|widget id|description|null","widget_type":"trend|kpi|average|summary|null","period":"8h|null"}],"answer":"short natural Greek response"}
 Rules:
 - One utterance may contain several intents. Preserve their spoken order in actions[].
 - Explicit newest information overrides older context.
 - 'όχι FCC, Hydrocracker', 'έκανες λάθος', 'βάλτο εκεί αντί εδώ' repairs the relevant previous action/widget.
 - 'αυτό', 'το προηγούμενο', 'που βάλαμε', 'τελευταίο' refer to the most recently relevant widget unless context clearly identifies another.
-- 'όλα τα γραφήματα' => remove_all; explicit unit scopes it, otherwise all trends.
+- 'όλα τα γραφήματα', 'από παντού', 'σε όλες τις μονάδες', 'όπου υπάρχουν', 'everything everywhere' means remove_all with unit=null: all trend widgets across the whole dashboard.
+- If an explicit unit is named with remove_all, scope removal only to that unit.
+- 'βάλε τα πάλι πίσω', 'βάλτα όπως ήταν', 'φέρε πίσω αυτά που αφαίρεσες', 'undo that removal', 'restore them' means restore the exact last_removed_widgets batch from conversation state; do not reconstruct metrics and do not ask the user to name them again.
 - A request for two metrics means two add actions, not one ambiguous metric.
 - Questions are answer actions, not mutations.
 - Never silently substitute FCC for HCU/Hydrocracker or another explicit unit.
@@ -80,6 +82,11 @@ def _matches(ref:object,metric:object,unit:ProcessUnit|None,widgets:list[dict[st
 def _compile(intent:dict[str,Any],site:SiteModel,state:dict[str,object],working:list[dict[str,object]])->tuple[dict[str,object]|None,str|None]:
     action=str(intent.get("action") or "clarify").casefold(); unit=_find_unit(site,intent.get("unit")); kind=str(intent.get("widget_type") or "trend").casefold(); period=str(intent.get("period") or "8h")
     if action in {"answer","clarify"}: return {"action":action,"read_only":True,"requires_confirmation":False,"needs_clarification":action=="clarify"},None
+    if action=="restore":
+        raw=state.get("last_removed_widgets")
+        restored=[dict(w) for w in raw if isinstance(w,dict)] if isinstance(raw,list) else []
+        if not restored:return None,"Δεν έχω προηγούμενα αφαιρεμένα γραφήματα για επαναφορά."
+        return {"action":"add_widgets","widgets":restored,"read_only":True,"requires_confirmation":False},None
     if action=="add":
         if unit is None:
             key=str(state.get("last_requested_unit_key") or state.get("last_unit_key") or ""); unit=site.find_unit(key) if key else None
@@ -89,6 +96,7 @@ def _compile(intent:dict[str,Any],site:SiteModel,state:dict[str,object],working:
         return {"action":"add_widget","widget":_widget(unit,tag,kind,period,len(working)),"read_only":True,"requires_confirmation":False},None
     if action=="remove_all":
         ids=[str(w.get("id")) for w in working if w.get("id") and str(w.get("type","" )).casefold()=="trend" and (unit is None or str(w.get("unit_key","" )).casefold()==unit.key.casefold())]
+        if not ids:return {"action":"answer","read_only":True,"requires_confirmation":False},None
         return {"action":"remove_widgets","target_ids":ids,"read_only":True,"requires_confirmation":False},None
     if action in {"remove","move"}:
         hits=_matches(intent.get("reference"),intent.get("metric"),None if action=="move" else unit,working,state)
@@ -106,6 +114,9 @@ def _compile(intent:dict[str,Any],site:SiteModel,state:dict[str,object],working:
 def _simulate(widgets:list[dict[str,object]],plan:dict[str,object])->list[dict[str,object]]:
     out=[dict(w) for w in widgets]; a=str(plan.get("action",""))
     if a=="add_widget" and isinstance(plan.get("widget"),dict):out.append(dict(plan["widget"]))
+    elif a=="add_widgets" and isinstance(plan.get("widgets"),list):
+        for w in plan["widgets"]:
+            if isinstance(w,dict): out.append(dict(w))
     elif a=="remove_widget":out=[w for w in out if str(w.get("id"))!=str(plan.get("target_id"))]
     elif a=="remove_widgets":
         ids={str(x) for x in plan.get("target_ids",[]) if isinstance(x,(str,int))};out=[w for w in out if str(w.get("id")) not in ids]
