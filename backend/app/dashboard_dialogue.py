@@ -52,6 +52,17 @@ class DashboardDialogueStore:
         raw[alias] = unit_key.strip().casefold()
         self._save(payload)
 
+    def remember_requested_unit(self, workspace: str, unit_key: str) -> None:
+        payload = self._load()
+        workspaces = payload.setdefault("workspaces", {})
+        if not isinstance(workspaces, dict):
+            workspaces = {}
+            payload["workspaces"] = workspaces
+        state = dict(workspaces.get(workspace) or {})
+        state["last_requested_unit_key"] = unit_key.strip().casefold()
+        workspaces[workspace] = state
+        self._save(payload)
+
     def remember(self, workspace: str, command: str, plan: dict[str, object], workspace_payload: dict[str, object], message: str | None = None) -> None:
         payload = self._load()
         workspaces = payload.setdefault("workspaces", {})
@@ -84,8 +95,6 @@ def _unit_tokens(unit: ProcessUnit) -> tuple[str, ...]:
     aliases = list(getattr(unit, "aliases", ()))
     key = unit.key.casefold()
     name = unit.name.casefold()
-    # Common refinery shorthand should work naturally even if the local site
-    # catalog names the unit only by its abbreviation.
     if key == "hcu" or name == "hcu":
         aliases.extend(("Hydrocracker", "hydro cracker", "hydrocracking", "υδροκράκερ", "υδροκρακερ"))
     if key == "vdu" or name == "vdu":
@@ -160,17 +169,28 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
         title = str(last_widget.get("title", "το τελευταίο γράφημα"))
         return {"action": "answer", "read_only": True, "requires_confirmation": False}, f"Το τελευταίο γράφημα, {title}, βρίσκεται στη μονάδα {unit_name}."
 
-    refers_previous = any(token in text for token in ("το τελευταίο", "το τελευταιο", "που βάλαμε", "που βαλαμε", "αυτό", "αυτο", "το γράφημα", "το γραφημα"))
+    refers_previous = any(token in text for token in ("το τελευταίο", "το τελευταιο", "που βάλαμε", "που βαλαμε", "αυτό", "αυτο", "το γράφημα", "το γραφημα", "το", "αυτό που έβαλες", "αυτο που εβαλες"))
     remove_intent = any(token in text for token in ("αφαίρε", "αφαιρε", "βγάλε", "βγαλε", "διέγρα", "διεγρα", "remove", "delete"))
-    move_intent = any(token in text for token in ("βάλε", "βαλε", "μετέφερε", "μεταφερε", "πήγαιν", "πηγαιν", "move"))
-    correction = any(token in text for token in ("όχι", "οχι", "εννοώ", "εννοω", "λάθος", "λαθος"))
+    move_intent = any(token in text for token in ("βάλε", "βαλε", "μετέφερε", "μεταφερε", "πήγαιν", "πηγαιν", "άλλαξ", "αλλαξ", "move", "change"))
+    correction = any(token in text for token in ("όχι", "οχι", "εννοώ", "εννοω", "λάθος", "λαθος", "έκανες λάθος", "εκανες λαθος", "διόρθ", "διορθ"))
 
-    if last_widget and units and (correction or (remove_intent and move_intent) or (refers_previous and move_intent)):
-        target = units[-1]
+    target: ProcessUnit | None = units[-1] if units else None
+    if correction and target is None:
+        requested_key = str(state.get("last_requested_unit_key", "")).strip()
+        if requested_key:
+            target = site.find_unit(requested_key)
+
+    if last_widget and target and (correction or (remove_intent and move_intent) or (refers_previous and move_intent)):
         replacement = _retarget_widget(last_widget, target, site)
         if replacement is not None:
+            current_unit = str(last_widget.get("unit_key", "")).casefold()
+            if current_unit == target.key.casefold():
+                return {"action": "answer", "read_only": True, "requires_confirmation": False}, f"Το τελευταίο γράφημα είναι ήδη στη μονάδα {target.name}."
             plan = {"action": "replace_widget", "target_id": last_widget.get("id"), "widget": replacement, "read_only": True, "requires_confirmation": False}
-            return plan, f"Μετέφερα το {replacement.get('title', 'γράφημα')} στη μονάδα {target.name}."
+            return plan, f"Διόρθωσα το λάθος και μετέφερα το {replacement.get('title', 'γράφημα')} στη μονάδα {target.name}."
+
+    if last_widget and correction and target is None:
+        return {"action": "answer", "read_only": True, "requires_confirmation": False}, "Κατάλαβα ότι θέλεις να διορθώσω την προηγούμενη ενέργεια, αλλά δεν είμαι βέβαιος για τη σωστή μονάδα. Πες μου μόνο τη μονάδα και θα το διορθώσω."
 
     if last_widget and refers_previous and remove_intent:
         return {"action": "remove_widget", "target_id": last_widget.get("id"), "read_only": True, "requires_confirmation": False}, "Αφαίρεσα το τελευταίο γράφημα."
