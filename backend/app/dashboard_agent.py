@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
+from .diagnostic_trace import append_trace
 from .local_ai import LocalAIClient, LocalAIError
 from .site_model import ProcessUnit, SiteModel, UnitTag
 
@@ -15,10 +16,8 @@ class AgentResult:
     message: str
 
 _AGENT_SYSTEM = """You are FCC Assistant, a highly capable refinery dashboard copilot. Understand natural conversational Greek, English, and mixed engineering language like a competent human colleague. Resolve continuity, corrections, ellipsis and pronouns from CONVERSATION STATE and CURRENT WIDGETS. Never invent units, tags, values, alarms or widget ids and never control plant equipment.
-
 Return ONLY JSON, no markdown, using this schema:
 {"actions":[{"action":"add|remove|remove_all|move|answer|clarify","unit":"canonical unit key or null","metric":"semantic metric/tag phrase or null","reference":"last|all|widget id|description|null","widget_type":"trend|kpi|average|summary|null","period":"8h|null"}],"answer":"short natural Greek response"}
-
 Rules:
 - One utterance may contain several intents. Preserve their spoken order in actions[].
 - Explicit newest information overrides older context.
@@ -43,8 +42,7 @@ def _extract_json(text: str) -> dict[str, Any]:
 def _catalog(site: SiteModel)->list[dict[str,object]]:
     return [{"key":u.key,"name":u.name,"aliases":list(u.aliases),"metrics":[{"key":t.key,"label":t.label,"semantic":t.semantic,"aliases":list(t.aliases)} for t in u.tags]} for u in site.units]
 
-def _find_unit(site:SiteModel,v:object)->ProcessUnit|None:
-    return site.find_unit(v.strip()) if isinstance(v,str) and v.strip() else None
+def _find_unit(site:SiteModel,v:object)->ProcessUnit|None:return site.find_unit(v.strip()) if isinstance(v,str) and v.strip() else None
 
 def _find_tag(unit:ProcessUnit,q:object)->UnitTag|None:
     if not isinstance(q,str) or not q.strip(): return None
@@ -118,18 +116,26 @@ def _simulate(widgets:list[dict[str,object]],plan:dict[str,object])->list[dict[s
 async def plan_with_local_agent(command:str,site:SiteModel,state:dict[str,object],widgets:list[dict[str,object]])->AgentResult|None:
     context={"available_units":_catalog(site),"conversation_state":state,"current_widgets":widgets,"user_command":command}
     try:
-        response=await LocalAIClient().generate("Interpret the newest utterance and produce the complete ordered action plan.",context=context,system_prompt=_AGENT_SYSTEM,temperature=0.05); payload=_extract_json(response.text)
-    except (LocalAIError,ValueError,json.JSONDecodeError):return None
+        response=await LocalAIClient().generate("Interpret the newest utterance and produce the complete ordered action plan.",context=context,system_prompt=_AGENT_SYSTEM,temperature=0.05)
+        append_trace("agent.raw", {"command": command, "model_text": response.text})
+        payload=_extract_json(response.text)
+    except (LocalAIError,ValueError,json.JSONDecodeError) as exc:
+        append_trace("agent.error", {"command": command, "error": str(exc)})
+        return None
     raw=payload.get("actions"); intents=[x for x in raw if isinstance(x,dict)] if isinstance(raw,list) else []
     if not intents and isinstance(payload.get("action"),str):intents=[payload]
-    if not intents:return AgentResult({"action":"clarify","read_only":True,"needs_clarification":True},"Δεν κατάλαβα αρκετά καθαρά την εντολή.")
+    if not intents:
+        append_trace("agent.compiled", {"command": command, "payload": payload, "result": "clarify:no-intents"})
+        return AgentResult({"action":"clarify","read_only":True,"needs_clarification":True},"Δεν κατάλαβα αρκετά καθαρά την εντολή.")
     plans=[]; working=[dict(w) for w in widgets]
     for intent in intents:
         plan,error=_compile(intent,site,state,working)
-        if error:return AgentResult({"action":"clarify","read_only":True,"needs_clarification":True},error)
+        if error:
+            append_trace("agent.compiled", {"command": command, "payload": payload, "error": error, "compiled_plans": plans})
+            return AgentResult({"action":"clarify","read_only":True,"needs_clarification":True},error)
         if plan and str(plan.get("action")) not in {"answer","clarify"}:
             plans.append(plan);working=_simulate(working,plan)
     message=str(payload.get("answer") or "").strip() or ("Έγινε." if plans else "Εντάξει.")
-    if not plans:return AgentResult({"action":"answer","read_only":True,"requires_confirmation":False},message)
-    if len(plans)==1:return AgentResult(plans[0],message)
-    return AgentResult({"action":"transaction","steps":plans,"read_only":True,"requires_confirmation":False},message)
+    final_plan = {"action":"answer","read_only":True,"requires_confirmation":False} if not plans else plans[0] if len(plans)==1 else {"action":"transaction","steps":plans,"read_only":True,"requires_confirmation":False}
+    append_trace("agent.compiled", {"command": command, "payload": payload, "compiled_plan": final_plan, "message": message})
+    return AgentResult(final_plan,message)
