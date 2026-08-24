@@ -106,6 +106,7 @@ export type SpeechTranscript = {
   scope: string;
   language: string;
   engine: string;
+  mode?: "partial" | "final";
   local_only: boolean;
   audio_retained: boolean;
 };
@@ -222,11 +223,12 @@ export const api = {
   startAiRuntime: () => request<RuntimeState>("/api/v1/ai/runtime/start", { method: "POST" }),
   stopAiRuntime: () => request<RuntimeState>("/api/v1/ai/runtime/stop", { method: "POST" }),
   speechStatus: () => request<SpeechStatus>("/api/v1/speech/status"),
-  transcribeSpeech: (audio: Blob, scope: string, terms: string[]) => {
+  transcribeSpeech: (audio: Blob, scope: string, terms: string[], mode: "partial" | "final" = "final") => {
     const form = new FormData();
     form.append("audio", audio, "voice-command.wav");
     form.append("scope", scope);
     form.append("terms_json", JSON.stringify(terms));
+    form.append("mode", mode);
     return request<SpeechTranscript>("/api/v1/speech/transcribe", { method: "POST", body: form });
   },
   simulatorTags: () => request<SimulatorTagsResponse>("/api/v1/site-simulator/tags"),
