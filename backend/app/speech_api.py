@@ -26,22 +26,21 @@ def speech_status() -> dict[str, object]:
 
 
 def _unit_vocabulary() -> list[str]:
-    """Return a compact, local refinery-unit vocabulary for STT biasing.
-
-    Unit names are more important than the full tag catalog for phrases such as
-    "στο Hydrocracker". Learned aliases are included so explicit engineer
-    corrections improve future recognition without sending anything off-device.
-    """
+    """Return a compact, local refinery-unit vocabulary for STT biasing."""
     try:
         site = load_site_model()
     except (ValueError, OSError):
-        return ["FCC", "HCU", "Hydrocracker"]
+        return ["FCC", "HCU", "Hydrocracker", "hydro cracker"]
 
     terms: list[str] = []
     for unit in site.units:
         terms.extend([unit.key, unit.name, *getattr(unit, "aliases", ())])
+        if unit.key.casefold() == "hcu" or unit.name.casefold() == "hcu":
+            terms.extend(["Hydrocracker", "hydro cracker", "hydrocracking", "υδροκράκερ", "υδροκρακερ"])
+        if unit.key.casefold() == "vdu" or unit.name.casefold() == "vdu":
+            terms.extend(["Vacuum Distillation", "vacuum unit", "μονάδα κενού", "μοναδα κενου"])
     terms.extend(DashboardDialogueStore().aliases().keys())
-    return list(dict.fromkeys(term.strip() for term in terms if term.strip()))[:24]
+    return list(dict.fromkeys(term.strip() for term in terms if term.strip()))[:32]
 
 
 @router.post("/transcribe")
@@ -63,9 +62,6 @@ async def speech_transcribe(
 
     unit_terms = _unit_vocabulary()
 
-    # Partial transcription exists only for responsive visual feedback. Unit
-    # names are still supplied because confusing Hydrocracker/HCU with FCC is a
-    # materially different command, while the long tag catalog remains omitted.
     if normalized_mode == "partial":
         prompt = (
             "Ελληνική ομιλία με πιθανές αγγλικές τεχνικές λέξεις. "
@@ -74,7 +70,7 @@ async def speech_transcribe(
             + "."
         )
     else:
-        domain_terms = list(dict.fromkeys([*unit_terms, scope, *extra_terms]))[:32]
+        domain_terms = list(dict.fromkeys([*unit_terms, scope, *extra_terms]))[:40]
         prompt = (
             "Η ομιλία είναι στα Ελληνικά. Απόδωσε πιστά ολόκληρη την πρόταση στα Ελληνικά. "
             "Μην αντικαθιστάς μία μονάδα με άλλη και μην εφευρίσκεις λέξεις. "
