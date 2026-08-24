@@ -85,6 +85,13 @@ function unitFor(key: string, tags: SimulatorTag[]) {
   return tags.find((tag) => tag.key === key)?.unit ?? "";
 }
 
+function cleanVoiceTranscript(value: string) {
+  return value
+    .replace(/^\s*(πρόεδρε|προεδρε)\s*[:;,.-]?\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function TrendChart({ widget, shift, tags }: { widget: DashboardWidget; shift: DemoShiftResponse | null; tags: SimulatorTag[] }) {
   const series = seriesFor(widget, shift);
   const values = series.flat().map((point) => point.Value);
@@ -154,6 +161,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const finalizingVoiceRef = useRef(false);
   const voiceModeRef = useRef(false);
   const lastPreviewRef = useRef<CachedPreview | null>(null);
+  const lastContextWidgetRef = useRef<DashboardWidget | null>(null);
   const [editLayout, setEditLayout] = useState(false);
   const [autoLayout, setAutoLayout] = useState(() => window.localStorage.getItem("fcc-auto-layout") !== "off");
 
@@ -171,6 +179,27 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       window.clearInterval(previewTimerRef.current);
       previewTimerRef.current = null;
     }
+  }
+
+  function contextualizeCommand(value: string) {
+    const clean = value.trim();
+    const folded = clean.toLocaleLowerCase("el");
+    const last = lastContextWidgetRef.current;
+    if (!last) return clean;
+
+    const refersToPrevious = [
+      "που βάλαμε", "που βαλαμε", "που έβαλα", "που εβαλα", "που πρόσθεσα", "που προσθεσα",
+      "αυτό που βάλαμε", "αυτο που βαλαμε", "το τελευταίο", "το τελευταιο", "αυτό", "αυτο",
+    ].some((token) => folded.includes(token));
+    const removeIntent = [
+      "αφαίρεσε", "αφαιρεσε", "βγάλε", "βγαλε", "διέγραψε", "διεγραψε", "remove", "delete",
+    ].some((token) => folded.includes(token));
+
+    if (refersToPrevious && removeIntent) {
+      const kind = last.type === "trend" ? "γράφημα" : last.type === "summary" ? "σύνοψη" : last.type === "average" ? "μέσο όρο" : "ένδειξη";
+      return `Αφαίρεσε το ${kind} ${last.title} από το ${last.unit_key.toUpperCase()}`;
+    }
+    return clean;
   }
 
   async function speak(text: string) {
@@ -215,13 +244,18 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }
 
   async function executeCommand(value: string, clearAfter = true): Promise<boolean> {
-    const clean = value.trim();
+    const clean = contextualizeCommand(value);
     if (!clean) return false;
     setBusy(true);
     setError(null);
     try {
       const response = await api.dashboardCommand(clean, "default");
       setWorkspace(normalizeWorkspace(response.workspace));
+      if (response.plan.action === "add_widget" && response.plan.widget) {
+        lastContextWidgetRef.current = response.plan.widget;
+      } else if (response.plan.action === "add_widgets" && response.plan.widgets?.length) {
+        lastContextWidgetRef.current = response.plan.widgets[response.plan.widgets.length - 1];
+      }
       if (clearAfter) setCommand("");
       if (response.plan.warnings?.length) setError(response.plan.warnings.join(" · "));
       return true;
@@ -244,10 +278,11 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       const audio = await recorderRef.current.snapshot();
       if (audio.size < 14000) return;
       const result = await api.transcribeSpeech(audio, scopeUnit, voiceTerms());
-      lastPreviewRef.current = { result, audioSize: audio.size, at: Date.now() };
-      if (result.text.trim()) {
-        setCommand(result.text);
-        setVoiceHint(result.text);
+      const cleanedText = cleanVoiceTranscript(result.text);
+      lastPreviewRef.current = { result: { ...result, text: cleanedText }, audioSize: audio.size, at: Date.now() };
+      if (cleanedText) {
+        setCommand(cleanedText);
+        setVoiceHint(cleanedText);
       }
     } catch {
       // Partial transcription is best-effort; final transcription is authoritative.
@@ -284,21 +319,19 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       const recorder = recorderRef.current;
       recorderRef.current = null;
       const audio = await recorder.stop();
-      // Live/partial transcription is display-only. Always perform one authoritative
-      // final pass over the complete utterance before executing a command. This is
-      // deliberately accuracy-first for Greek and refinery terminology.
       const result = await api.transcribeSpeech(audio, scopeUnit, voiceTerms());
-      setCommand(result.text);
+      const finalText = cleanVoiceTranscript(result.text);
+      setCommand(finalText);
 
-      if (!result.text.trim() || result.confidence_level === "low") {
-        setVoiceHint(result.text.trim() ? "Χρειάζομαι διευκρίνιση" : "Δεν άκουσα καθαρά");
+      if (!finalText || result.confidence_level === "low") {
+        setVoiceHint(finalText ? "Χρειάζομαι διευκρίνιση" : "Δεν άκουσα καθαρά");
         await speak("Δεν κατάλαβα καθαρά την εντολή.");
         return;
       }
 
       setVoiceState("executing");
       setVoiceHint("Εκτελώ…");
-      const ok = await executeCommand(result.text, false);
+      const ok = await executeCommand(finalText, false);
       if (ok) {
         setVoiceHint("Έτοιμο");
         await speak("Έγινε.");
