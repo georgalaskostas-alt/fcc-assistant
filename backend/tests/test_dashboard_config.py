@@ -4,8 +4,13 @@ from app.dashboard_config import DashboardCommandError, plan_dashboard_command
 from app.site_model import ProcessUnit, SiteModel, UnitTag, default_site_model
 
 
-def test_greek_trend_command_resolves_fcc_feed():
-    plan = plan_dashboard_command("Θέλω γράφημα με την τροφοδοσία για 8h", default_site_model())
+def test_greek_trend_command_requires_unit_in_multi_unit_catalog():
+    with pytest.raises(DashboardCommandError):
+        plan_dashboard_command("Θέλω γράφημα με την τροφοδοσία για 8h", default_site_model())
+
+
+def test_greek_trend_command_resolves_explicit_fcc_feed():
+    plan = plan_dashboard_command("Θέλω γράφημα με την τροφοδοσία στον FCC για 8h", default_site_model())
     assert plan["action"] == "add_widget"
     assert plan["widget"]["type"] == "trend"
     assert plan["widget"]["unit_key"] == "fcc"
@@ -15,8 +20,13 @@ def test_greek_trend_command_resolves_fcc_feed():
     assert plan["read_only"] is True
 
 
-def test_average_command_resolves_alias():
-    plan = plan_dashboard_command("βάλε μέσο όρο O2", default_site_model())
+def test_average_command_requires_unit_in_multi_unit_catalog():
+    with pytest.raises(DashboardCommandError):
+        plan_dashboard_command("βάλε μέσο όρο O2", default_site_model())
+
+
+def test_average_command_resolves_explicit_fcc_alias():
+    plan = plan_dashboard_command("βάλε μέσο όρο O2 στον FCC", default_site_model())
     assert plan["widget"]["type"] == "average"
     assert plan["widget"]["tag_keys"] == ("regenerator_o2",)
     assert plan["widget"]["layout"]["width"] == 4
@@ -48,13 +58,9 @@ def test_move_summary_between_feed_kpi_and_reactor_chart():
 def test_remove_fcc_feed_chart_is_unit_aware():
     widgets = [
         {"id": "fcc-trend-feed_flow", "type": "trend", "title": "Feed Flow", "unit_key": "fcc", "tag_keys": ["feed_flow"]},
-        {"id": "hcu-trend-feed_flow", "type": "trend", "title": "Feed Flow", "unit_key": "hcu", "tag_keys": ["feed_flow"]},
+        {"id": "hcu-trend-hcu_feed_flow", "type": "trend", "title": "Feed Flow", "unit_key": "hcu", "tag_keys": ["hcu_feed_flow"]},
     ]
-    plan = plan_dashboard_command(
-        "Αφαίρεσε το γράφημα τροφοδοσίας από το FCC",
-        default_site_model(),
-        current_widgets=widgets,
-    )
+    plan = plan_dashboard_command("Αφαίρεσε το γράφημα τροφοδοσίας από το FCC", default_site_model(), current_widgets=widgets)
     assert plan["action"] == "remove_widget"
     assert plan["target_id"] == "fcc-trend-feed_flow"
 
@@ -63,7 +69,7 @@ def test_remove_the_fcc_chart_without_tag_when_only_one_exists():
     widgets = [
         {"id": "fcc-trend-feed_flow", "type": "trend", "title": "Feed Flow", "unit_key": "fcc", "tag_keys": ["feed_flow"]},
         {"id": "fcc-kpi-feed_flow", "type": "kpi", "title": "Feed Flow", "unit_key": "fcc", "tag_keys": ["feed_flow"]},
-        {"id": "hcu-trend-feed_flow", "type": "trend", "title": "Feed Flow", "unit_key": "hcu", "tag_keys": ["feed_flow"]},
+        {"id": "hcu-trend-hcu_feed_flow", "type": "trend", "title": "Feed Flow", "unit_key": "hcu", "tag_keys": ["hcu_feed_flow"]},
     ]
     plan = plan_dashboard_command("Αφαίρεσε το γράφημα του FCC", default_site_model(), current_widgets=widgets)
     assert plan["action"] == "remove_widget"
@@ -80,12 +86,9 @@ def test_generic_fcc_chart_removal_asks_for_clarification_when_ambiguous():
 
 
 def test_multi_unit_requires_resolved_unit():
-    site = SiteModel(
-        "Refinery",
-        (
-            ProcessUnit("fcc", "FCC", (UnitTag("feed", "Feed", "m3/h"),)),
-            ProcessUnit("cdu", "CDU", (UnitTag("feed", "Feed", "m3/h"),)),
-        ),
-    )
+    site = SiteModel("Refinery", (
+        ProcessUnit("fcc", "FCC", (UnitTag("feed", "Feed", "m3/h"),)),
+        ProcessUnit("cdu", "CDU", (UnitTag("feed", "Feed", "m3/h"),)),
+    ))
     with pytest.raises(DashboardCommandError):
         plan_dashboard_command("βάλε γράφημα feed", site)
