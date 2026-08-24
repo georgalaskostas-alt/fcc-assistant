@@ -60,8 +60,6 @@ class DashboardDialogueStore:
         if isinstance(candidate, dict):
             state["last_widget"] = candidate; state["last_unit_key"] = str(candidate.get("unit_key", ""))
 
-        # Preserve exact snapshots of the last removed batch so phrases such as
-        # "βάλε τα πάλι πίσω" can be executed without reconstructing or guessing tags.
         before = previous_widgets or []
         removed: list[dict[str, object]] = []
         if action == "remove_widget":
@@ -72,8 +70,7 @@ class DashboardDialogueStore:
             ids = {str(x) for x in (plan.get("target_ids") or [])}
             removed = [dict(w) for w in before if str(w.get("id", "")) in ids]
         elif action == "transaction":
-            steps = plan.get("steps")
-            ids: set[str] = set()
+            steps = plan.get("steps"); ids: set[str] = set()
             if isinstance(steps, list):
                 for step in steps:
                     if not isinstance(step, dict): continue
@@ -89,8 +86,7 @@ class DashboardDialogueStore:
         turns.append({"user": command, "assistant": message or "", "action": action, "unit": state.get("last_unit_key")})
         state["recent_turns"] = turns[-8:]
         current_widgets = workspace_payload.get("widgets")
-        if isinstance(current_widgets, list):
-            state["current_widget_ids"] = [str(w.get("id")) for w in current_widgets if isinstance(w, dict) and w.get("id")]
+        if isinstance(current_widgets, list): state["current_widget_ids"] = [str(w.get("id")) for w in current_widgets if isinstance(w, dict) and w.get("id")]
         workspaces[workspace] = state; self._save(payload)
 
 
@@ -131,17 +127,33 @@ def _retarget_widget(widget: dict[str, object], target: ProcessUnit, site: SiteM
 
 def contextual_plan(command: str, site: SiteModel, state: dict[str, object], current_widgets: list[dict[str, object]], learned_aliases: dict[str, str] | None = None) -> tuple[dict[str, object] | None, str | None]:
     text = command.strip().casefold(); last_widget = state.get("last_widget") if isinstance(state.get("last_widget"), dict) else None; units = resolve_units(text, site, learned_aliases)
+
     restore_intent = any(token in text for token in ("βάλε τα πάλι", "βαλε τα παλι", "βάλτα πάλι", "βαλτα παλι", "φέρε τα πίσω", "φερε τα πισω", "επαναφέρε", "επαναφερε", "restore", "undo"))
     if restore_intent:
-        removed = state.get("last_removed_widgets")
-        widgets = [dict(w) for w in removed if isinstance(w, dict)] if isinstance(removed, list) else []
-        if widgets:
-            return {"action": "add_widgets", "widgets": widgets, "read_only": True, "requires_confirmation": False}, f"Επανέφερα τα {len(widgets)} γραφήματα που αφαίρεσα πριν."
+        removed = state.get("last_removed_widgets"); widgets = [dict(w) for w in removed if isinstance(w, dict)] if isinstance(removed, list) else []
+        if widgets: return {"action": "add_widgets", "widgets": widgets, "read_only": True, "requires_confirmation": False}, f"Επανέφερα τα {len(widgets)} γραφήματα που αφαίρεσα πριν."
+
+    remove_intent = any(token in text for token in ("αφαίρε", "αφαιρε", "βγάλε", "βγαλε", "διέγρα", "διεγρα", "remove", "delete"))
+    graph_intent = any(token in text for token in ("γράφημα", "γραφημα", "διαγράμ", "διαγραμ", "trend", "chart"))
+    global_scope = any(token in text for token in ("από παντού", "απο παντου", "σε όλες τις μονάδες", "σε ολες τις μοναδες", "και από τις δυο μονάδες", "και απο τις δυο μοναδες", "και από τις δύο μονάδες", "και απο τις δυο μοναδες", "όπου υπάρχουν", "οπου υπαρχουν", "παντού", "παντου", "everywhere", "all units"))
+    all_scope = any(token in text for token in ("όλα", "ολα", "όλες", "ολες", "και τα δύο", "και τα δυο", "all", "every"))
+    if remove_intent and graph_intent and (global_scope or all_scope):
+        unit_keys = {u.key.casefold() for u in units}
+        ids = [str(w.get("id")) for w in current_widgets if w.get("id") and str(w.get("type", "")).casefold() == "trend" and (not unit_keys or str(w.get("unit_key", "")).casefold() in unit_keys)]
+        if ids:
+            scope_name = units[0].name if len(units) == 1 else "όλες τις μονάδες"
+            return {"action": "remove_widgets", "target_ids": ids, "read_only": True, "requires_confirmation": False}, f"Αφαίρεσα {len(ids)} γραφήματα από {scope_name}."
+        return {"action": "answer", "read_only": True, "requires_confirmation": False}, "Δεν υπάρχουν γραφήματα για αφαίρεση."
+
     asks_where = any(token in text for token in ("πού", "που", "σε ποια μονάδα", "σε ποια μοναδα", "where")) and any(token in text for token in ("τελευτα", "γράφημα", "γραφημα", "διάγραμμα", "διαγραμμα", "widget"))
     if asks_where and last_widget:
         unit = site.find_unit(str(last_widget.get("unit_key", ""))); unit_name = unit.name if unit else str(last_widget.get("unit_key", "")).upper(); title = str(last_widget.get("title", "το τελευταίο γράφημα"))
         return {"action": "answer", "read_only": True, "requires_confirmation": False}, f"Το τελευταίο γράφημα, {title}, βρίσκεται στη μονάδα {unit_name}."
-    refers_previous = any(token in text for token in ("το τελευταίο", "το τελευταιο", "που βάλαμε", "που βαλαμε", "αυτό", "αυτο", "το γράφημα", "το γραφημα", "το", "αυτό που έβαλες", "αυτο που εβαλες")); remove_intent = any(token in text for token in ("αφαίρε", "αφαιρε", "βγάλε", "βγαλε", "διέγρα", "διεγρα", "remove", "delete")); move_intent = any(token in text for token in ("βάλε", "βαλε", "μετέφερε", "μεταφερε", "πήγαιν", "πηγαιν", "άλλαξ", "αλλαξ", "move", "change")); correction = any(token in text for token in ("όχι", "οχι", "εννοώ", "εννοω", "λάθος", "λαθος", "έκανες λάθος", "εκανες λαθος", "διόρθ", "διορθ"))
+
+    # Avoid generic tokens such as bare "το": they match ordinary Greek sentences and were
+    # incorrectly converting global commands into "remove the last widget".
+    refers_previous = any(token in text for token in ("το τελευταίο", "το τελευταιο", "που βάλαμε", "που βαλαμε", "αυτό", "αυτο", "το γράφημα", "το γραφημα", "αυτό που έβαλες", "αυτο που εβαλες", "εκείνο", "εκεινο"))
+    move_intent = any(token in text for token in ("βάλε", "βαλε", "μετέφερε", "μεταφερε", "πήγαιν", "πηγαιν", "άλλαξ", "αλλαξ", "move", "change")); correction = any(token in text for token in ("όχι", "οχι", "εννοώ", "εννοω", "λάθος", "λαθος", "έκανες λάθος", "εκανες λαθος", "διόρθ", "διορθ"))
     target: ProcessUnit | None = units[-1] if units else None
     if correction and target is None:
         requested_key = str(state.get("last_requested_unit_key", "")).strip(); target = site.find_unit(requested_key) if requested_key else None
