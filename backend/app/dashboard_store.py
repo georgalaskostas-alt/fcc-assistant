@@ -104,6 +104,9 @@ class DashboardStore:
 
     def apply_plan(self, workspace: str, plan: dict[str, object]) -> dict[str, object]:
         action = plan.get("action")
+        if action == "answer":
+            return self.get(workspace)
+
         if action == "add_widget":
             widget = plan.get("widget")
             if isinstance(widget, dict):
@@ -121,6 +124,31 @@ class DashboardStore:
         current = self.get(workspace)
         widgets = self._normalized_widgets(current)
         target_id = str(plan.get("target_id", ""))
+
+        if action == "replace_widget":
+            replacement = plan.get("widget")
+            if not isinstance(replacement, dict):
+                return current
+            replaced = False
+            for index, existing in enumerate(widgets):
+                if str(existing.get("id")) != target_id:
+                    continue
+                candidate = dict(replacement)
+                old_layout = existing.get("layout")
+                candidate["layout"] = dict(old_layout) if isinstance(old_layout, dict) else {"order": index, "width": 6, "height": "normal"}
+                widgets[index] = candidate
+                replaced = True
+                break
+            if not replaced:
+                widgets = self._append_widget(widgets, replacement)
+            for index, widget in enumerate(widgets):
+                layout = widget.get("layout")
+                if not isinstance(layout, dict):
+                    layout = {}
+                    widget["layout"] = layout
+                layout["order"] = index
+            current["widgets"] = widgets
+            return self.put(workspace, current)
 
         if action == "remove_widget":
             widgets = [widget for widget in widgets if str(widget.get("id")) != target_id]
