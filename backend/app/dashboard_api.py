@@ -139,6 +139,14 @@ def dashboard_command(request: DashboardCommandRequest) -> dict[str, object]:
     try:
         site = load_site_model()
         aliases = dialogue.aliases()
+
+        # Preserve what the user explicitly asked for before any planner runs.
+        # This is intentionally separate from the unit that the generated widget
+        # ultimately receives, so a later correction can repair a wrong action.
+        explicit_units = resolve_units(request.command, site, aliases)
+        if len(explicit_units) == 1:
+            dialogue.remember_requested_unit(request.workspace, explicit_units[0].key)
+
         state = dialogue.get_state(request.workspace)
 
         plan, message = _bulk_remove_plan(request.command, site, aliases, current_widgets)
@@ -168,8 +176,6 @@ def dashboard_command(request: DashboardCommandRequest) -> dict[str, object]:
         _validate_unit_intent(request.command, site, aliases, plan)
 
     except DashboardCommandError as exc:
-        # A clarification is part of the conversation, not an execution failure.
-        # Return it as a normal assistant response so the UI can display and speak it.
         message = str(exc)
         plan = {
             "action": "clarify",
