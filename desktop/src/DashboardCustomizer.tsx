@@ -161,7 +161,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const finalizingVoiceRef = useRef(false);
   const voiceModeRef = useRef(false);
   const lastPreviewRef = useRef<CachedPreview | null>(null);
-  const lastContextWidgetRef = useRef<DashboardWidget | null>(null);
+  const lastReplyRef = useRef<string | null>(null);
   const [editLayout, setEditLayout] = useState(false);
   const [autoLayout, setAutoLayout] = useState(() => window.localStorage.getItem("fcc-auto-layout") !== "off");
 
@@ -179,27 +179,6 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       window.clearInterval(previewTimerRef.current);
       previewTimerRef.current = null;
     }
-  }
-
-  function contextualizeCommand(value: string) {
-    const clean = value.trim();
-    const folded = clean.toLocaleLowerCase("el");
-    const last = lastContextWidgetRef.current;
-    if (!last) return clean;
-
-    const refersToPrevious = [
-      "που βάλαμε", "που βαλαμε", "που έβαλα", "που εβαλα", "που πρόσθεσα", "που προσθεσα",
-      "αυτό που βάλαμε", "αυτο που βαλαμε", "το τελευταίο", "το τελευταιο", "αυτό", "αυτο",
-    ].some((token) => folded.includes(token));
-    const removeIntent = [
-      "αφαίρεσε", "αφαιρεσε", "βγάλε", "βγαλε", "διέγραψε", "διεγραψε", "remove", "delete",
-    ].some((token) => folded.includes(token));
-
-    if (refersToPrevious && removeIntent) {
-      const kind = last.type === "trend" ? "γράφημα" : last.type === "summary" ? "σύνοψη" : last.type === "average" ? "μέσο όρο" : "ένδειξη";
-      return `Αφαίρεσε το ${kind} ${last.title} από το ${last.unit_key.toUpperCase()}`;
-    }
-    return clean;
   }
 
   async function speak(text: string) {
@@ -244,18 +223,16 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }
 
   async function executeCommand(value: string, clearAfter = true): Promise<boolean> {
-    const clean = contextualizeCommand(value);
+    const clean = value.trim();
     if (!clean) return false;
     setBusy(true);
     setError(null);
+    lastReplyRef.current = null;
     try {
       const response = await api.dashboardCommand(clean, "default");
       setWorkspace(normalizeWorkspace(response.workspace));
-      if (response.plan.action === "add_widget" && response.plan.widget) {
-        lastContextWidgetRef.current = response.plan.widget;
-      } else if (response.plan.action === "add_widgets" && response.plan.widgets?.length) {
-        lastContextWidgetRef.current = response.plan.widgets[response.plan.widgets.length - 1];
-      }
+      lastReplyRef.current = response.message?.trim() || null;
+      if (response.message?.trim()) setVoiceHint(response.message.trim());
       if (clearAfter) setCommand("");
       if (response.plan.warnings?.length) setError(response.plan.warnings.join(" · "));
       return true;
@@ -333,8 +310,9 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       setVoiceHint("Εκτελώ…");
       const ok = await executeCommand(finalText, false);
       if (ok) {
-        setVoiceHint("Έτοιμο");
-        await speak("Έγινε.");
+        const reply = lastReplyRef.current;
+        setVoiceHint(reply || "Έτοιμο");
+        await speak(reply || "Έγινε.");
       } else {
         setVoiceHint("Δεν μπόρεσα να την εκτελέσω");
         await speak("Δεν μπόρεσα να εκτελέσω την εντολή.");
@@ -429,13 +407,14 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const unitGroups = useMemo(() => scopeUnit === "all" ? allUnitGroups : allUnitGroups.filter((group) => group.unitKey === scopeUnit), [allUnitGroups, scopeUnit]);
   const unitContainerWidth = scopeUnit !== "all" || unitGroups.length <= 1 ? "100%" : unitGroups.length === 2 ? "calc(50% - 6px)" : "min(100%, 680px)";
   const microphoneLabel = voiceModeEnabled ? "Turn off persistent voice mode" : "Turn on persistent local voice mode";
+  const idleReply = voiceState === "idle" && voiceHint && !["Ακούω", "Επεξεργάζομαι…", "Εκτελώ…"].includes(voiceHint) ? voiceHint : null;
   const inlineKind = error
     ? "error"
     : voiceState === "transcribing" || voiceState === "executing"
       ? "processing"
       : voiceState === "listening"
         ? "listening"
-        : voiceHint === "Έτοιμο"
+        : idleReply
           ? "success"
           : voiceModeEnabled
             ? "ready"
@@ -444,7 +423,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     ?? (voiceState === "transcribing" ? "Επεξεργάζομαι" : null)
     ?? (voiceState === "executing" ? "Εκτελώ" : null)
     ?? (voiceState === "listening" ? (command.trim() ? "Ακούω" : "Μίλα") : null)
-    ?? (voiceHint === "Έτοιμο" ? "Έτοιμο" : null);
+    ?? idleReply;
 
   return (
     <div className="workspace-shell">
@@ -453,7 +432,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
           <Bot size={17} />
           <input value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void applyCommand(); }} placeholder={scopeUnit === "all" ? "Πες ή γράψε τι θέλεις να δεις σε όλες τις μονάδες…" : `Πες ή γράψε τι θέλεις να δεις στο ${scopeUnit.toUpperCase()}…`} aria-label="Workspace command" />
           {inlineText && (
-            <div className={`voice-inline-state voice-inline-${inlineKind}`} role={error ? "alert" : "status"}>
+            <div className={`voice-inline-state voice-inline-${inlineKind}`} role={error ? "alert" : "status"} title={inlineText}>
               {voiceState === "listening" ? (
                 <span className="voice-waveform" aria-hidden="true"><i /><i /><i /><i /></span>
               ) : voiceState === "transcribing" || voiceState === "executing" ? (
