@@ -38,7 +38,6 @@ def dashboard_workspace_save(workspace: str, request: DashboardSaveRequest) -> d
 
 
 def _canonicalize_unit_references(command: str, site, aliases: dict[str, str]) -> str:
-    """Append canonical unit keys resolved from names, aliases and learned terms."""
     resolved = resolve_units(command, site, aliases)
     canonical_keys = [unit.key for unit in resolved]
     folded = command.casefold()
@@ -47,6 +46,38 @@ def _canonicalize_unit_references(command: str, site, aliases: dict[str, str]) -
     if not canonical_keys:
         return command
     return f"{command} {' '.join(canonical_keys)}"
+
+
+def _planned_unit_keys(plan: dict[str, object]) -> set[str]:
+    action = str(plan.get("action", ""))
+    if action in {"answer", "remove_widget", "resize_widget", "move_between"}:
+        return set()
+    candidates: list[dict[str, object]] = []
+    widget = plan.get("widget")
+    if isinstance(widget, dict):
+        candidates.append(widget)
+    widgets = plan.get("widgets")
+    if isinstance(widgets, list):
+        candidates.extend(item for item in widgets if isinstance(item, dict))
+    return {str(item.get("unit_key", "")).casefold() for item in candidates if item.get("unit_key")}
+
+
+def _validate_unit_intent(command: str, site, aliases: dict[str, str], plan: dict[str, object]) -> None:
+    """Never silently execute a dashboard action on a different process unit.
+
+    If natural language resolves to one or more explicit units, every newly
+    created/replaced widget must target only those units. This prevents a speech
+    or planner fallback from turning "Hydrocracker" into an FCC action.
+    """
+    requested = {unit.key.casefold() for unit in resolve_units(command, site, aliases)}
+    if not requested:
+        return
+    planned = _planned_unit_keys(plan)
+    if planned and not planned.issubset(requested):
+        raise DashboardCommandError(
+            "Η μονάδα που κατάλαβα δεν συμφωνεί με τη μονάδα της ενέργειας. "
+            "Δεν εκτέλεσα τίποτα· πες μου ξανά τη μονάδα."
+        )
 
 
 @router.post("/command")
@@ -72,10 +103,6 @@ def dashboard_command(request: DashboardCommandRequest) -> dict[str, object]:
         )
 
         if plan is None:
-            # Natural names such as Hydrocracker are resolved first, then their
-            # canonical keys (for example hcu) are appended for the deterministic
-            # widget planner. This prevents a correctly understood unit from being
-            # lost between dialogue interpretation and dashboard planning.
             working_command = _canonicalize_unit_references(request.command, site, aliases)
             plan = plan_dashboard_command(working_command, site, current_widgets=current_widgets)
             message = None
@@ -88,6 +115,8 @@ def dashboard_command(request: DashboardCommandRequest) -> dict[str, object]:
                     for token in (corrected.name, corrected.key, *getattr(corrected, "aliases", ())):
                         if token and token.casefold() in folded:
                             dialogue.learn_alias(token, corrected.key)
+
+        _validate_unit_intent(request.command, site, aliases, plan)
 
     except (DashboardCommandError, ValueError, OSError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
