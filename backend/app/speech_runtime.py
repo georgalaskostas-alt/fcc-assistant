@@ -77,7 +77,7 @@ def runtime_status() -> SpeechRuntimeStatus:
     )
 
 
-def transcribe_wav(data: bytes, *, prompt: str = "") -> str:
+def transcribe_wav(data: bytes, *, prompt: str = "", high_accuracy: bool = False) -> str:
     status = runtime_status()
     if not status.ready:
         raise SpeechRuntimeError(
@@ -106,7 +106,14 @@ def transcribe_wav(data: bytes, *, prompt: str = "") -> str:
             "-nt",
             "-np",
         ]
-        clean_prompt = " ".join(prompt.split())[:1200]
+
+        if high_accuracy:
+            # Final command transcription favors correctness over the few hundred
+            # milliseconds saved by greedy decoding. Beam search is especially
+            # helpful for Greek inflections mixed with English refinery terms.
+            command.extend(["--beam-size", "5", "--temperature", "0"])
+
+        clean_prompt = " ".join(prompt.split())[:700]
         if clean_prompt:
             command.extend(["--prompt", clean_prompt])
 
