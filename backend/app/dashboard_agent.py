@@ -10,152 +10,381 @@ from .diagnostic_trace import append_trace
 from .local_ai import LocalAIClient, LocalAIError
 from .site_model import ProcessUnit, SiteModel, UnitTag
 
+
 @dataclass(frozen=True)
 class AgentResult:
     plan: dict[str, object]
     message: str
 
-_AGENT_SYSTEM = """You are FCC Assistant, a highly capable refinery dashboard copilot. Understand natural conversational Greek, English, and mixed engineering language like a competent human colleague. Resolve continuity, corrections, ellipsis and pronouns from CONVERSATION STATE and CURRENT WIDGETS. Never invent units, tags, values, alarms or widget ids and never control plant equipment.
-Return ONLY JSON, no markdown, using this schema:
-{"actions":[{"action":"add|remove|remove_all|move|restore|answer|clarify","unit":"canonical unit key or null","metric":"semantic metric/tag phrase or null","reference":"last|all|removed_batch|widget id|description|null","widget_type":"trend|kpi|average|summary|null","period":"8h|null"}],"answer":"short natural Greek response"}
+
+_AGENT_SYSTEM = """You are FCC Assistant, a refinery dashboard copilot. Behave like a competent human colleague, not a command parser. Understand conversational Greek, English, and mixed refinery language. Use CURRENT WIDGETS, RECENT TURNS, and PENDING INTENT to resolve ellipsis, pronouns, corrections, and follow-up answers.
+
+Return ONLY JSON using this schema:
+{
+  "operations": [
+    {
+      "action": "add|remove|remove_all|move|restore|answer|clarify",
+      "units": ["canonical unit keys"],
+      "metrics": ["semantic metric phrases"],
+      "scope": "explicit|all_units|previous|null",
+      "reference": "last|all|removed_batch|widget id|description|null",
+      "widget_type": "trend|kpi|average|summary|null",
+      "period": "16h|null",
+      "missing": ["units|metrics|reference"]
+    }
+  ],
+  "answer": "short natural Greek response"
+}
+
 Rules:
-- One utterance may contain several intents. Preserve their spoken order in actions[].
-- Explicit newest information overrides older context.
-- 'όχι FCC, Hydrocracker', 'έκανες λάθος', 'βάλτο εκεί αντί εδώ' repairs the relevant previous action/widget.
-- 'αυτό', 'το προηγούμενο', 'που βάλαμε', 'τελευταίο' refer to the most recently relevant widget unless context clearly identifies another.
-- 'όλα τα γραφήματα', 'από παντού', 'σε όλες τις μονάδες', 'όπου υπάρχουν', 'everything everywhere' means remove_all with unit=null: all trend widgets across the whole dashboard.
-- If an explicit unit is named with remove_all, scope removal only to that unit.
-- 'βάλε τα πάλι πίσω', 'βάλτα όπως ήταν', 'φέρε πίσω αυτά που αφαίρεσες', 'undo that removal', 'restore them' means restore the exact last_removed_widgets batch from conversation state; do not reconstruct metrics and do not ask the user to name them again.
-- A request for two metrics means two add actions, not one ambiguous metric.
-- Questions are answer actions, not mutations.
-- Never silently substitute FCC for HCU/Hydrocracker or another explicit unit.
-- Clarify only if materially different executable interpretations remain.
-- Keep the final answer concise and natural for speech.
+- Do NOT treat each turn as isolated. If PENDING INTENT exists, merge the newest user utterance into it and preserve already-known slots unless the user corrects them.
+- If the user says "HCU και FCC" after you previously asked where to put a feed-flow chart, that completes the pending request; do not ask for the metric again.
+- If the user says "feed flow 16h" after unit(s) were already established, preserve those units.
+- "σε κάθε μονάδα", "και στις δύο μονάδες", "από τις δυο" when exactly two units exist means scope=all_units and units may be all available unit keys.
+- One metric across two units means TWO concrete add widgets, one per unit.
+- Two metrics in one unit means TWO add widgets.
+- Multiple metrics across multiple units means the Cartesian product unless the wording clearly pairs them differently.
+- "γράφημα/διάγραμμα/chart/trend" => widget_type=trend.
+- "όλα τα γραφήματα από παντού" => remove_all, scope=all_units.
+- "βάλε τα πάλι πίσω / αυτά που έσβησες" => restore reference=removed_batch.
+- "αυτό / το προηγούμενο / τελευταίο" refers to the most recently relevant widget/action.
+- Never silently substitute FCC for HCU or another unit.
+- Never invent a unit, metric, widget id, value, alarm, or process fact.
+- Clarify ONLY when a required slot truly cannot be resolved from the current utterance + pending intent + dialogue context.
+- Keep answers concise and natural for speech.
 """
 
+
 def _extract_json(text: str) -> dict[str, Any]:
-    raw=text.strip(); raw=re.sub(r"^```(?:json)?\s*", "", raw, flags=re.I); raw=re.sub(r"\s*```$", "", raw)
-    a,b=raw.find("{"),raw.rfind("}")
-    if a<0 or b<a: raise ValueError("agent returned no JSON")
-    obj=json.loads(raw[a:b+1])
-    if not isinstance(obj,dict): raise ValueError("agent response must be object")
+    raw = text.strip()
+    raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.I)
+    raw = re.sub(r"\s*```$", "", raw)
+    a, b = raw.find("{"), raw.rfind("}")
+    if a < 0 or b < a:
+        raise ValueError("agent returned no JSON")
+    obj = json.loads(raw[a : b + 1])
+    if not isinstance(obj, dict):
+        raise ValueError("agent response must be object")
     return obj
 
-def _catalog(site: SiteModel)->list[dict[str,object]]:
-    return [{"key":u.key,"name":u.name,"aliases":list(u.aliases),"metrics":[{"key":t.key,"label":t.label,"semantic":t.semantic,"aliases":list(t.aliases)} for t in u.tags]} for u in site.units]
 
-def _find_unit(site:SiteModel,v:object)->ProcessUnit|None:return site.find_unit(v.strip()) if isinstance(v,str) and v.strip() else None
+def _catalog(site: SiteModel) -> list[dict[str, object]]:
+    return [
+        {
+            "key": u.key,
+            "name": u.name,
+            "aliases": list(u.aliases),
+            "metrics": [
+                {"key": t.key, "label": t.label, "semantic": t.semantic, "aliases": list(t.aliases)}
+                for t in u.tags
+            ],
+        }
+        for u in site.units
+    ]
 
-def _find_tag(unit:ProcessUnit,q:object)->UnitTag|None:
-    if not isinstance(q,str) or not q.strip(): return None
-    n=q.strip().casefold(); exact=[]; partial=[]
-    for t in unit.tags:
-        vals=[x.casefold() for x in [t.key,t.label,t.semantic,*t.aliases] if x]
-        if n in vals: exact.append(t)
-        elif any(n in x or x in n for x in vals): partial.append(t)
-    return exact[0] if len(exact)==1 else partial[0] if not exact and len(partial)==1 else None
 
-def _widget(unit:ProcessUnit,tag:UnitTag,kind:str,period:str,order:int)->dict[str,object]:
-    kind=kind if kind in {"trend","kpi","average"} else "trend"; width,height=(12,"tall") if kind=="trend" else (4,"compact")
-    return {"id":f"{unit.key}-{tag.key}-{uuid.uuid4().hex[:8]}","type":kind,"title":tag.label,"unit_key":unit.key,"tag_keys":[tag.key],"period":period or "8h","layout":{"order":order,"width":width,"height":height}}
+def _find_unit(site: SiteModel, value: object) -> ProcessUnit | None:
+    return site.find_unit(value.strip()) if isinstance(value, str) and value.strip() else None
 
-def _last(state:dict[str,object],widgets:list[dict[str,object]])->dict[str,object]|None:
-    c=state.get("last_widget")
-    if isinstance(c,dict):
-        cid=str(c.get("id","")); hit=next((w for w in widgets if str(w.get("id",""))==cid),None)
-        if hit:return hit
+
+def _find_tag(unit: ProcessUnit, query: object) -> UnitTag | None:
+    if not isinstance(query, str) or not query.strip():
+        return None
+    needle = query.strip().casefold()
+    exact: list[UnitTag] = []
+    partial: list[UnitTag] = []
+    for tag in unit.tags:
+        values = [x.casefold() for x in [tag.key, tag.label, tag.semantic, *tag.aliases] if x]
+        if needle in values:
+            exact.append(tag)
+        elif any(needle in value or value in needle for value in values):
+            partial.append(tag)
+    if len(exact) == 1:
+        return exact[0]
+    if not exact and len(partial) == 1:
+        return partial[0]
+    return None
+
+
+def _widget(unit: ProcessUnit, tag: UnitTag, kind: str, period: str, order: int) -> dict[str, object]:
+    kind = kind if kind in {"trend", "kpi", "average"} else "trend"
+    width, height = (12, "tall") if kind == "trend" else (4, "compact")
+    return {
+        "id": f"{unit.key}-{tag.key}-{uuid.uuid4().hex[:8]}",
+        "type": kind,
+        "title": tag.label,
+        "unit_key": unit.key,
+        "tag_keys": [tag.key],
+        "period": period or "8h",
+        "layout": {"order": order, "width": width, "height": height},
+    }
+
+
+def _last(state: dict[str, object], widgets: list[dict[str, object]]) -> dict[str, object] | None:
+    candidate = state.get("last_widget")
+    if isinstance(candidate, dict):
+        cid = str(candidate.get("id", ""))
+        hit = next((w for w in widgets if str(w.get("id", "")) == cid), None)
+        if hit:
+            return hit
     return widgets[-1] if widgets else None
 
-def _matches(ref:object,metric:object,unit:ProcessUnit|None,widgets:list[dict[str,object]],state:dict[str,object])->list[dict[str,object]]:
-    r=str(ref or "").casefold()
-    if r in {"last","previous","τελευταίο","τελευταιο","προηγούμενο","προηγουμενο","αυτό","αυτο"}:
-        x=_last(state,widgets); return [x] if x else []
-    m=str(metric or "").casefold(); out=[]
-    for w in widgets:
-        if unit and str(w.get("unit_key","" )).casefold()!=unit.key.casefold():continue
-        hay=" ".join([str(w.get("id","")),str(w.get("title","")),*(str(x) for x in (w.get("tag_keys") or []))]).casefold()
-        if (r and r not in {"all","null"} and r in hay) or (m and m in hay):out.append(w)
-    if not out and not m and not r:
-        x=_last(state,widgets); return [x] if x else []
+
+def _matches(
+    reference: object,
+    metric: object,
+    unit: ProcessUnit | None,
+    widgets: list[dict[str, object]],
+    state: dict[str, object],
+) -> list[dict[str, object]]:
+    ref = str(reference or "").casefold()
+    if ref in {"last", "previous", "τελευταίο", "τελευταιο", "προηγούμενο", "προηγουμενο", "αυτό", "αυτο"}:
+        item = _last(state, widgets)
+        return [item] if item else []
+    metric_text = str(metric or "").casefold()
+    out: list[dict[str, object]] = []
+    for widget in widgets:
+        if unit and str(widget.get("unit_key", "")).casefold() != unit.key.casefold():
+            continue
+        haystack = " ".join(
+            [
+                str(widget.get("id", "")),
+                str(widget.get("title", "")),
+                *(str(x) for x in (widget.get("tag_keys") or [])),
+            ]
+        ).casefold()
+        if (ref and ref not in {"all", "null"} and ref in haystack) or (metric_text and metric_text in haystack):
+            out.append(widget)
+    if not out and not metric_text and not ref:
+        item = _last(state, widgets)
+        return [item] if item else []
     return out
 
-def _compile(intent:dict[str,Any],site:SiteModel,state:dict[str,object],working:list[dict[str,object]])->tuple[dict[str,object]|None,str|None]:
-    action=str(intent.get("action") or "clarify").casefold(); unit=_find_unit(site,intent.get("unit")); kind=str(intent.get("widget_type") or "trend").casefold(); period=str(intent.get("period") or "8h")
-    if action in {"answer","clarify"}: return {"action":action,"read_only":True,"requires_confirmation":False,"needs_clarification":action=="clarify"},None
-    if action=="restore":
-        raw=state.get("last_removed_widgets")
-        restored=[dict(w) for w in raw if isinstance(w,dict)] if isinstance(raw,list) else []
-        if not restored:return None,"Δεν έχω προηγούμενα αφαιρεμένα γραφήματα για επαναφορά."
-        return {"action":"add_widgets","widgets":restored,"read_only":True,"requires_confirmation":False},None
-    if action=="add":
+
+def _operation_from_legacy(intent: dict[str, Any]) -> dict[str, Any]:
+    unit = intent.get("unit")
+    metric = intent.get("metric")
+    return {
+        "action": intent.get("action"),
+        "units": [unit] if isinstance(unit, str) and unit else [],
+        "metrics": [metric] if isinstance(metric, str) and metric else [],
+        "scope": "explicit" if unit else None,
+        "reference": intent.get("reference"),
+        "widget_type": intent.get("widget_type"),
+        "period": intent.get("period"),
+        "missing": [],
+    }
+
+
+def _operations(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = payload.get("operations")
+    if isinstance(raw, list):
+        return [dict(x) for x in raw if isinstance(x, dict)]
+    legacy = payload.get("actions")
+    if isinstance(legacy, list):
+        return [_operation_from_legacy(x) for x in legacy if isinstance(x, dict)]
+    if isinstance(payload.get("action"), str):
+        return [_operation_from_legacy(payload)]
+    return []
+
+
+def _compile_operation(
+    op: dict[str, Any],
+    site: SiteModel,
+    state: dict[str, object],
+    working: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], dict[str, object] | None, str | None]:
+    action = str(op.get("action") or "clarify").casefold()
+    scope = str(op.get("scope") or "").casefold()
+    raw_units = op.get("units")
+    unit_values = [str(x) for x in raw_units if isinstance(x, str) and x.strip()] if isinstance(raw_units, list) else []
+    units = [u for value in unit_values if (u := _find_unit(site, value)) is not None]
+    if scope == "all_units":
+        units = list(site.units)
+
+    raw_metrics = op.get("metrics")
+    metrics = [str(x) for x in raw_metrics if isinstance(x, str) and x.strip()] if isinstance(raw_metrics, list) else []
+    kind = str(op.get("widget_type") or "trend").casefold()
+    period = str(op.get("period") or "8h")
+
+    if action in {"answer", "clarify"}:
+        pending = dict(op)
+        return [], pending if action == "clarify" else None, None
+
+    if action == "restore":
+        raw = state.get("last_removed_widgets")
+        restored = [dict(w) for w in raw if isinstance(w, dict)] if isinstance(raw, list) else []
+        if not restored:
+            return [], dict(op), "Δεν έχω προηγούμενα αφαιρεμένα γραφήματα για επαναφορά."
+        return [{"action": "add_widgets", "widgets": restored, "read_only": True, "requires_confirmation": False}], None, None
+
+    if action == "add":
+        if not units:
+            pending = dict(op)
+            pending["missing"] = sorted(set([*(pending.get("missing") or []), "units"]))
+            return [], pending, "Σε ποια μονάδα ή μονάδες το θέλεις;"
+        if not metrics:
+            pending = dict(op)
+            pending["missing"] = sorted(set([*(pending.get("missing") or []), "metrics"]))
+            return [], pending, "Ποια μεταβλητή ή μεταβλητές θέλεις να εμφανίσω;"
+        plans: list[dict[str, object]] = []
+        unresolved: list[str] = []
+        for unit in units:
+            for metric in metrics:
+                tag = _find_tag(unit, metric)
+                if tag is None:
+                    unresolved.append(f"{metric} στη {unit.name}")
+                    continue
+                plans.append(
+                    {
+                        "action": "add_widget",
+                        "widget": _widget(unit, tag, kind, period, len(working) + len(plans)),
+                        "read_only": True,
+                        "requires_confirmation": False,
+                    }
+                )
+        if not plans:
+            pending = dict(op)
+            return [], pending, "Δεν μπόρεσα να αντιστοιχίσω με ασφάλεια τη μεταβλητή στις μονάδες που ζήτησες."
+        if unresolved:
+            return [], dict(op), f"Δεν βρήκα ασφαλή αντιστοίχιση για: {', '.join(unresolved)}."
+        return plans, None, None
+
+    unit = units[0] if len(units) == 1 else None
+    if action == "remove_all":
+        ids = [
+            str(w.get("id"))
+            for w in working
+            if w.get("id")
+            and str(w.get("type", "")).casefold() == "trend"
+            and (scope == "all_units" or unit is None or str(w.get("unit_key", "")).casefold() == unit.key.casefold())
+        ]
+        if not ids:
+            return [{"action": "answer", "read_only": True, "requires_confirmation": False}], None, None
+        return [{"action": "remove_widgets", "target_ids": ids, "read_only": True, "requires_confirmation": False}], None, None
+
+    if action in {"remove", "move"}:
+        metric = metrics[0] if len(metrics) == 1 else None
+        hits = _matches(op.get("reference"), metric, None if action == "move" else unit, working, state)
+        if len(hits) != 1:
+            pending = dict(op)
+            pending["missing"] = sorted(set([*(pending.get("missing") or []), "reference"]))
+            return [], pending, "Ποιο ακριβώς γράφημα εννοείς;"
+        target = hits[0]
+        if action == "remove":
+            return [{"action": "remove_widget", "target_id": str(target.get("id")), "read_only": True, "requires_confirmation": False}], None, None
         if unit is None:
-            key=str(state.get("last_requested_unit_key") or state.get("last_unit_key") or ""); unit=site.find_unit(key) if key else None
-        if unit is None:return None,"Σε ποια μονάδα το θέλεις;"
-        tag=_find_tag(unit,intent.get("metric"))
-        if tag is None:return None,f"Ποια μέτρηση θέλεις στη {unit.name};"
-        return {"action":"add_widget","widget":_widget(unit,tag,kind,period,len(working)),"read_only":True,"requires_confirmation":False},None
-    if action=="remove_all":
-        ids=[str(w.get("id")) for w in working if w.get("id") and str(w.get("type","" )).casefold()=="trend" and (unit is None or str(w.get("unit_key","" )).casefold()==unit.key.casefold())]
-        if not ids:return {"action":"answer","read_only":True,"requires_confirmation":False},None
-        return {"action":"remove_widgets","target_ids":ids,"read_only":True,"requires_confirmation":False},None
-    if action in {"remove","move"}:
-        hits=_matches(intent.get("reference"),intent.get("metric"),None if action=="move" else unit,working,state)
-        if len(hits)!=1:return None,"Ποιο ακριβώς γράφημα εννοείς;"
-        target=hits[0]
-        if action=="remove":return {"action":"remove_widget","target_id":str(target.get("id")),"read_only":True,"requires_confirmation":False},None
-        if unit is None:return None,"Σε ποια μονάδα να το μεταφέρω;"
-        old=site.find_unit(str(target.get("unit_key",""))); keys=target.get("tag_keys"); oldtag=next((t for t in old.tags if isinstance(keys,list) and keys and t.key==str(keys[0])),None) if old else None
-        if oldtag is None:return None,"Δεν μπορώ να ταυτοποιήσω με ασφάλεια τη μέτρηση."
-        newtag=unit.tag_by_semantic(oldtag.semantic)
-        if newtag is None:return None,f"Η {unit.name} δεν έχει αντιστοιχισμένη μέτρηση για {oldtag.label}."
-        return {"action":"replace_widget","target_id":str(target.get("id")),"widget":_widget(unit,newtag,str(target.get("type","trend")),str(target.get("period","8h")),0),"read_only":True,"requires_confirmation":False},None
-    return None,"Δεν έχω αρκετή βεβαιότητα για να εκτελέσω σωστά αυτή την ενέργεια."
+            pending = dict(op)
+            pending["missing"] = sorted(set([*(pending.get("missing") or []), "units"]))
+            return [], pending, "Σε ποια μονάδα να το μεταφέρω;"
+        old = site.find_unit(str(target.get("unit_key", "")))
+        keys = target.get("tag_keys")
+        oldtag = next((t for t in old.tags if isinstance(keys, list) and keys and t.key == str(keys[0])), None) if old else None
+        if oldtag is None:
+            return [], dict(op), "Δεν μπορώ να ταυτοποιήσω με ασφάλεια τη μέτρηση."
+        newtag = unit.tag_by_semantic(oldtag.semantic)
+        if newtag is None:
+            return [], dict(op), f"Η {unit.name} δεν έχει αντιστοιχισμένη μέτρηση για {oldtag.label}."
+        return [
+            {
+                "action": "replace_widget",
+                "target_id": str(target.get("id")),
+                "widget": _widget(unit, newtag, str(target.get("type", "trend")), str(target.get("period", "8h")), 0),
+                "read_only": True,
+                "requires_confirmation": False,
+            }
+        ], None, None
 
-def _simulate(widgets:list[dict[str,object]],plan:dict[str,object])->list[dict[str,object]]:
-    out=[dict(w) for w in widgets]; a=str(plan.get("action",""))
-    if a=="add_widget" and isinstance(plan.get("widget"),dict):out.append(dict(plan["widget"]))
-    elif a=="add_widgets" and isinstance(plan.get("widgets"),list):
-        for w in plan["widgets"]:
-            if isinstance(w,dict): out.append(dict(w))
-    elif a=="remove_widget":out=[w for w in out if str(w.get("id"))!=str(plan.get("target_id"))]
-    elif a=="remove_widgets":
-        ids={str(x) for x in plan.get("target_ids",[]) if isinstance(x,(str,int))};out=[w for w in out if str(w.get("id")) not in ids]
-    elif a=="replace_widget" and isinstance(plan.get("widget"),dict):
-        tid=str(plan.get("target_id"));out=[dict(plan["widget"]) if str(w.get("id"))==tid else w for w in out]
+    return [], dict(op), "Δεν έχω αρκετή βεβαιότητα για να εκτελέσω σωστά αυτή την ενέργεια."
+
+
+def _simulate(widgets: list[dict[str, object]], plan: dict[str, object]) -> list[dict[str, object]]:
+    out = [dict(w) for w in widgets]
+    action = str(plan.get("action", ""))
+    if action == "add_widget" and isinstance(plan.get("widget"), dict):
+        out.append(dict(plan["widget"]))
+    elif action == "add_widgets" and isinstance(plan.get("widgets"), list):
+        out.extend(dict(w) for w in plan["widgets"] if isinstance(w, dict))
+    elif action == "remove_widget":
+        out = [w for w in out if str(w.get("id")) != str(plan.get("target_id"))]
+    elif action == "remove_widgets":
+        ids = {str(x) for x in plan.get("target_ids", []) if isinstance(x, (str, int))}
+        out = [w for w in out if str(w.get("id")) not in ids]
+    elif action == "replace_widget" and isinstance(plan.get("widget"), dict):
+        tid = str(plan.get("target_id"))
+        out = [dict(plan["widget"]) if str(w.get("id")) == tid else w for w in out]
     return out
 
-async def plan_with_local_agent(command:str,site:SiteModel,state:dict[str,object],widgets:list[dict[str,object]])->AgentResult|None:
-    context={"available_units":_catalog(site),"conversation_state":state,"current_widgets":widgets,"user_command":command}
+
+async def plan_with_local_agent(
+    command: str,
+    site: SiteModel,
+    state: dict[str, object],
+    widgets: list[dict[str, object]],
+) -> AgentResult | None:
+    context = {
+        "available_units": _catalog(site),
+        "conversation_state": state,
+        "pending_intent": state.get("pending_intent"),
+        "recent_turns": state.get("recent_turns"),
+        "current_widgets": widgets,
+        "user_command": command,
+    }
     try:
-        response=await LocalAIClient().generate("Interpret the newest utterance and produce the complete ordered action plan.",context=context,system_prompt=_AGENT_SYSTEM,temperature=0.05)
+        response = await LocalAIClient().generate(
+            "Interpret the newest utterance in context. Complete any pending request before creating a new one.",
+            context=context,
+            system_prompt=_AGENT_SYSTEM,
+            temperature=0.05,
+        )
         append_trace("agent.raw", {"command": command, "model_text": response.text})
-        payload=_extract_json(response.text)
-    except (LocalAIError,ValueError,json.JSONDecodeError) as exc:
+        payload = _extract_json(response.text)
+    except (LocalAIError, ValueError, json.JSONDecodeError) as exc:
         append_trace("agent.error", {"command": command, "error": str(exc), "fallback": True})
         return None
-    raw=payload.get("actions"); intents=[x for x in raw if isinstance(x,dict)] if isinstance(raw,list) else []
-    if not intents and isinstance(payload.get("action"),str):intents=[payload]
-    if not intents:
-        append_trace("agent.compiled", {"command": command, "payload": payload, "result": "fallback:no-intents", "fallback": True})
+
+    operations = _operations(payload)
+    if not operations:
+        append_trace("agent.compiled", {"command": command, "payload": payload, "result": "fallback:no-operations", "fallback": True})
         return None
-    plans=[]; working=[dict(w) for w in widgets]
-    for intent in intents:
-        plan,error=_compile(intent,site,state,working)
-        if error:
-            append_trace("agent.compiled", {"command": command, "payload": payload, "error": error, "compiled_plans": plans, "fallback": True})
-            return None
-        if plan and str(plan.get("action")) not in {"answer","clarify"}:
-            plans.append(plan);working=_simulate(working,plan)
-    message=str(payload.get("answer") or "").strip() or ("Έγινε." if plans else "Εντάξει.")
+
+    plans: list[dict[str, object]] = []
+    working = [dict(w) for w in widgets]
+    pending: dict[str, object] | None = None
+    error: str | None = None
+    for operation in operations:
+        op_plans, op_pending, op_error = _compile_operation(operation, site, state, working)
+        if op_pending is not None:
+            pending = op_pending
+        if op_error:
+            error = op_error
+            break
+        for plan in op_plans:
+            if str(plan.get("action")) not in {"answer", "clarify"}:
+                plans.append(plan)
+                working = _simulate(working, plan)
+
+    message = str(payload.get("answer") or "").strip()
+    if error or pending:
+        text = error or message or "Χρειάζομαι μία ακόμη πληροφορία για να το εκτελέσω σωστά."
+        final = {
+            "action": "clarify",
+            "read_only": True,
+            "requires_confirmation": False,
+            "needs_clarification": True,
+            "pending_intent": pending or operations[0],
+        }
+        append_trace("agent.compiled", {"command": command, "payload": payload, "compiled_plan": final, "message": text})
+        return AgentResult(final, text)
+
     if not plans:
-        # If the model intentionally answered/clarified conversationally, preserve that response.
-        first_action=str(intents[0].get("action") or "").casefold() if intents else ""
-        if first_action in {"answer","clarify"}:
-            final_plan={"action":first_action,"read_only":True,"requires_confirmation":False,"needs_clarification":first_action=="clarify"}
-            append_trace("agent.compiled", {"command": command, "payload": payload, "compiled_plan": final_plan, "message": message})
-            return AgentResult(final_plan,message)
-        append_trace("agent.compiled", {"command": command, "payload": payload, "result": "fallback:no-executable-plans", "fallback": True})
-        return None
-    final_plan = plans[0] if len(plans)==1 else {"action":"transaction","steps":plans,"read_only":True,"requires_confirmation":False}
-    append_trace("agent.compiled", {"command": command, "payload": payload, "compiled_plan": final_plan, "message": message})
-    return AgentResult(final_plan,message)
+        first_action = str(operations[0].get("action") or "").casefold()
+        final = {"action": first_action if first_action in {"answer", "clarify"} else "answer", "read_only": True, "requires_confirmation": False}
+        text = message or "Εντάξει."
+        append_trace("agent.compiled", {"command": command, "payload": payload, "compiled_plan": final, "message": text})
+        return AgentResult(final, text)
+
+    final_plan = plans[0] if len(plans) == 1 else {"action": "transaction", "steps": plans, "read_only": True, "requires_confirmation": False}
+    text = message or (f"Έγινε. Εκτέλεσα {len(plans)} ενέργειες." if len(plans) > 1 else "Έγινε.")
+    append_trace("agent.compiled", {"command": command, "payload": payload, "compiled_plan": final_plan, "message": text})
+    return AgentResult(final_plan, text)
