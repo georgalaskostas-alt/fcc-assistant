@@ -1,8 +1,22 @@
 from pathlib import Path
 
-from app.dashboard_agent import _compile
+from app.dashboard_agent import _compile_operation, _operation_from_legacy
 from app.dashboard_dialogue import DashboardDialogueStore, contextual_plan
 from app.site_model import default_site_model
+
+
+def _compile(intent, site_model, state, working):
+    operation = _operation_from_legacy(intent)
+    plans, pending, error = _compile_operation(operation, site_model, state, working)
+    if error:
+        return None, error
+    if pending is not None:
+        return None, "Χρειάζομαι μία ακόμη πληροφορία."
+    if not plans:
+        return None, None
+    if len(plans) == 1:
+        return plans[0], None
+    return {"action": "transaction", "steps": plans, "read_only": True, "requires_confirmation": False}, None
 
 
 def _widgets():
