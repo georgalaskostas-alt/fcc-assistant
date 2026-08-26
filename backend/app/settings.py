@@ -18,9 +18,13 @@ class Settings(BaseSettings):
     prefer_travis_ai: bool = False
 
     # Standalone intelligence path: llama.cpp + locally stored GGUF model.
-    # Both live under ~/.fcc-assistant so packaged app rebuilds cannot lose them.
+    # Port 18081 is intentionally dedicated to FCC Assistant. Do not reuse the
+    # common Expo/Metro development port 8081; another local service answering
+    # there must never be mistaken for the AI runtime.
+    # Both runtime and model live under ~/.fcc-assistant so packaged app rebuilds
+    # cannot lose them.
     local_ai_runtime: str = "llama_cpp"
-    local_ai_url: str = "http://127.0.0.1:8081"
+    local_ai_url: str = "http://127.0.0.1:18081"
     local_ai_model_name: str = "Qwen3-4B-Q4_K_M"
     local_ai_timeout_seconds: float = 180.0
     local_ai_binary_path: str = "~/.fcc-assistant/runtime/bin/llama-server"
