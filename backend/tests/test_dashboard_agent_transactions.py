@@ -1,4 +1,4 @@
-from app.dashboard_agent import _compile, _simulate
+from app.dashboard_agent import _compile_operation, _operation_from_legacy, _simulate
 from app.dashboard_store import DashboardStore
 from app.site_model import ProcessUnit, SiteModel, UnitTag
 
@@ -14,6 +14,21 @@ def site():
             UnitTag("hcu_feed", "HCU Feed Flow", "m3/h", ("feed",), "feed_flow"),
         ), ("hydrocracker", "hydro cracking", "hcu")),
     ))
+
+
+def _compile(intent, site_model, state, working):
+    """Compatibility adapter for assertions written against the pre-frame compiler."""
+    operation = _operation_from_legacy(intent)
+    plans, pending, error = _compile_operation(operation, site_model, state, working)
+    if error:
+        return None, error
+    if pending is not None:
+        return None, "Ποιο ακριβώς γράφημα εννοείς;" if "reference" in (pending.get("missing") or []) else "Χρειάζομαι μία ακόμη πληροφορία."
+    if not plans:
+        return None, None
+    if len(plans) == 1:
+        return plans[0], None
+    return {"action": "transaction", "steps": plans, "read_only": True, "requires_confirmation": False}, None
 
 
 def test_two_adds_stay_in_explicit_hydrocracker():
