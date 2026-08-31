@@ -67,6 +67,13 @@ class DashboardStore:
                     if str(old.get("id", "")) == target_id:
                         candidate = dict(replacement); candidate["layout"] = dict(old.get("layout", {})); widgets[i] = candidate; found = True; break
                 if not found: widgets = self._append_widget(widgets, replacement)
+        elif action == "update_widgets":
+            ids = {str(v) for v in plan.get("target_ids", []) if isinstance(v, (str, int))}
+            period = str(plan.get("period", "")).strip()
+            if ids and period:
+                for w in widgets:
+                    if str(w.get("id", "")) in ids:
+                        w["period"] = period
         elif action == "resize_widget":
             target_id = str(plan.get("target_id", ""))
             for w in widgets:
