@@ -3,7 +3,8 @@ import json,os,platform,socket,subprocess,time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse,urlopen
+from urllib.parse import urlparse
+from urllib.request import urlopen
 from .settings import get_settings
 class EmbeddedRuntimeError(RuntimeError):pass
 @dataclass
