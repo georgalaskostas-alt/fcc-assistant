@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from dataclasses import dataclass
 import json
 from typing import Any
@@ -24,10 +25,18 @@ def _model_matches(ids:list[str],configured:str)->bool:
     needle=configured.casefold().replace(".gguf","").strip()
     return any(needle in x.casefold().replace(".gguf","") or "qwen3-4b" in x.casefold() for x in ids)
 class LocalAIClient:
+    _embedded_lock:asyncio.Lock|None=None
     def __init__(self)->None:
         s=get_settings();self.travis_url=s.travis_ai_url.rstrip("/");self.travis_timeout=s.travis_ai_timeout_seconds;self.prefer_travis=s.prefer_travis_ai;self.base_url=s.local_ai_url.rstrip("/");self.model=s.local_ai_model_name.strip() or "embedded-local-model";self.timeout=s.local_ai_timeout_seconds
         if self.travis_url and not _is_local_url(self.travis_url):raise LocalAIError("TRAVIS endpoint must be localhost only")
         if not _is_local_url(self.base_url):raise LocalAIError("External AI endpoints are blocked. Only localhost is allowed.")
+    @classmethod
+    def _lock(cls)->asyncio.Lock:
+        # Construct lazily inside the active uvicorn event loop. Qwen/llama.cpp is
+        # a single local reasoning resource; serializing dashboard requests avoids
+        # slot/context collisions and makes command ordering deterministic.
+        if cls._embedded_lock is None:cls._embedded_lock=asyncio.Lock()
+        return cls._embedded_lock
     async def status(self)->dict[str,Any]:
         if self.prefer_travis:
             try:
@@ -46,7 +55,7 @@ class LocalAIClient:
         if self.prefer_travis and system_prompt is None:
             try:return await self._generate_with_travis(prompt,context)
             except LocalAIError:pass
-        return await self._generate_with_embedded(prompt,context,system_prompt=system_prompt,temperature=temperature)
+        async with self._lock():return await self._generate_with_embedded(prompt,context,system_prompt=system_prompt,temperature=temperature)
     async def _generate_with_travis(self,prompt,context):
         if not self.travis_url or not _is_local_url(self.travis_url):raise LocalAIError("TRAVIS local bridge is not configured")
         body={"source":"fcc-assistant","mode":"read_only_process_analysis","question":prompt,"system_prompt":SYSTEM_PROMPT,"evidence":context or {},"data_policy":"local_only_no_external_process_data"}
@@ -60,7 +69,13 @@ class LocalAIClient:
         evidence="\n\nLOCAL STRUCTURED CONTEXT:\n"+json.dumps(context,ensure_ascii=False,separators=(",",":")) if context else ""
         body={"model":self.model,"stream":False,"temperature":max(0.0,min(float(temperature),1.0)),"messages":[{"role":"system","content":system_prompt or SYSTEM_PROMPT},{"role":"user","content":f"{prompt}{evidence}"}]}
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as c:r=await c.post(f"{self.base_url}/v1/chat/completions",json=body);r.raise_for_status();p=r.json()
+            async with httpx.AsyncClient(timeout=self.timeout) as c:
+                r=await c.post(f"{self.base_url}/v1/chat/completions",json=body)
+                if r.is_error:
+                    detail=r.text.strip().replace("\n"," ")[:800]
+                    raise LocalAIError(f"Embedded local AI HTTP {r.status_code}: {detail or 'no response body'}")
+                p=r.json()
+        except LocalAIError:raise
         except Exception as exc:raise LocalAIError(f"Embedded local AI request failed: {type(exc).__name__}: {exc}") from exc
         try:text=p["choices"][0]["message"]["content"]
         except (KeyError,IndexError,TypeError) as exc:raise LocalAIError("Embedded local AI returned an invalid response") from exc
