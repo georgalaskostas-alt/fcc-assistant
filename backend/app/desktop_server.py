@@ -2,6 +2,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .bridge_api import router as bridge_router
 from .dashboard_api import router as dashboard_router
+from .debug_api import router as debug_router
 from .diagnostic_trace import append_trace
 from .embedded_runtime import EmbeddedAIRuntime, EmbeddedRuntimeError
 from .main import app
@@ -11,6 +12,7 @@ from .speech_api import router as speech_router
 from .unit_knowledge_api import router as unit_knowledge_router
 
 app.include_router(dashboard_router)
+app.include_router(debug_router)
 app.include_router(bridge_router)
 app.include_router(site_simulator_router)
 app.include_router(unit_knowledge_router)
