@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api, BridgeSite, DemoShiftResponse, RuntimeInfo, SimulatorTag, SystemCapabilities } from "./api";
+import { DashboardConversationPanel } from "./DashboardConversationPanel";
 import { DashboardCustomizer } from "./DashboardCustomizer";
 import { UnitKnowledgeView } from "./UnitKnowledgeView";
 import { UnitScopeBar } from "./UnitScopeBar";
@@ -258,7 +259,7 @@ export default function App() {
 
           {view === "dashboard" && <>
             <section className="section-head"><div><span className="eyebrow">OPERATING OVERVIEW</span><h1>Operations workspace</h1><p>Dynamic refinery/unit layout · source quality is shown explicitly.</p></div><span className="readonly-pill"><ShieldCheck size={15} /> Read-only mode</span></section>
-            {backendOk ? <DashboardCustomizer shift={shift} tags={tags} scopeUnit={activeUnit} /> : <div className="placeholder-panel"><Database size={22} /><h3>Starting local backend…</h3><p>The workspace will load automatically when the packaged local service is ready.</p></div>}
+            {backendOk ? <><DashboardCustomizer shift={shift} tags={tags} scopeUnit={activeUnit} /><DashboardConversationPanel /></> : <div className="placeholder-panel"><Database size={22} /><h3>Starting local backend…</h3><p>The workspace will load automatically when the packaged local service is ready.</p></div>}
           </>}
 
           {view === "chat" && <section className="assistant-panel">
