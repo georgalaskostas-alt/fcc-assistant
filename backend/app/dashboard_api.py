@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import re
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-
 from .dashboard_agent import plan_with_local_agent
 from .dashboard_config import DashboardCommandError, plan_dashboard_command
 from .dashboard_dialogue import DashboardDialogueStore, contextual_plan, resolve_units
@@ -47,6 +47,29 @@ def _validate_transaction(plan):
     steps=_steps(plan);allowed={"add_widget","add_widgets","remove_widget","remove_widgets","replace_widget","update_widgets","resize_widget","move_between","answer"}
     if not steps or any(str(s.get("action","")) not in allowed for s in steps):raise DashboardCommandError("Δεν μπόρεσα να επαληθεύσω με ασφάλεια όλη τη σύνθετη εντολή. Δεν άλλαξα τίποτα.")
     return steps
+
+def _period_followup_plan(command,state,widgets,explicit_units):
+    """Safety net for elliptical follow-ups such as 'τελικά τα θέλω 8 ώρες'.
+    It only fires when an explicit time window is present and the target can be
+    resolved without guessing: explicit units, explicit chart wording, or a
+    plural follow-up immediately after a dashboard mutation.
+    """
+    text=command.casefold().strip()
+    match=re.search(r"(?<!\d)(\d{1,3})\s*(?:h|hr|hrs|hour|hours|ωρ(?:α|ες|ών)?|ωρες|ώρα|ώρες)(?!\w)",text,re.I)
+    if not match:return None
+    period=f"{int(match.group(1))}h"
+    trends=[w for w in widgets if str(w.get("type","")).casefold()=="trend" and w.get("id")]
+    if not trends:return None
+    unit_keys={u.key.casefold() for u in explicit_units}
+    if unit_keys:trends=[w for w in trends if str(w.get("unit_key","")).casefold() in unit_keys]
+    graph_words=any(x in text for x in ("διάγραμ","διαγραμ","γράφημ","γραφημ","trend","chart"))
+    plural_followup=any(x in text for x in ("τελικά τα","τελικα τα","τα θέλω","τα θελω","κάν' τα","καν' τα","κάντα","καντα","και τα δύο","και τα δυο","both"))
+    prior_mutation=str(state.get("last_action","")).casefold() in {"transaction","add_widget","add_widgets","update_widgets"}
+    if not unit_keys and not graph_words and not (plural_followup and prior_mutation):return None
+    if not trends:return None
+    ids=[str(w["id"]) for w in trends]
+    return {"action":"update_widgets","target_ids":ids,"period":period,"read_only":True,"requires_confirmation":False},f"Έγινε. Άλλαξα {len(ids)} γραφήματα σε {period}."
+
 def _legacy_plan(command,site,state,widgets,aliases):
     plan,message=contextual_plan(command,site,state,widgets,learned_aliases=aliases)
     if plan is not None:return plan,message
@@ -69,9 +92,13 @@ async def dashboard_command(request:DashboardCommandRequest)->dict[str,object]:
         if len(explicit)==1:dialogue.remember_requested_unit(request.workspace,explicit[0].key)
         state=dialogue.get_state(request.workspace)
         if pending is not None:state["pending_intent"]=pending
-        agent_result=await plan_with_local_agent(request.command,site,state,widgets)
-        if agent_result is not None:plan,message=agent_result.plan,agent_result.message;route="local-llm"
-        else:plan,message=_legacy_plan(request.command,site,state,widgets,aliases);route="deterministic-fallback"
+        deterministic_update=_period_followup_plan(request.command,state,widgets,explicit)
+        if deterministic_update is not None:
+            plan,message=deterministic_update;route="verified-context-update";append_trace("command.context_resolved",{"command":request.command,"plan":plan,"reason":"explicit-period-followup"})
+        else:
+            agent_result=await plan_with_local_agent(request.command,site,state,widgets)
+            if agent_result is not None:plan,message=agent_result.plan,agent_result.message;route="local-llm"
+            else:plan,message=_legacy_plan(request.command,site,state,widgets,aliases);route="deterministic-fallback"
         _validate_unit_intent(request.command,site,aliases,plan);steps=_validate_transaction(plan) if str(plan.get("action",""))=="transaction" else []
     except DashboardCommandError as exc:
         message=str(exc);plan={"action":"clarify","read_only":True,"requires_confirmation":False,"needs_clarification":True};dialogue.remember(request.workspace,request.command,plan,current,message,previous_widgets=widgets);append_trace("command.rejected",{"command":request.command,"route":route,"message":message,"pending_intent":pending_store.get(request.workspace)});return {"plan":plan,"workspace":current,"message":message,"needs_clarification":True,"agent":route,"site":site_runtime_status()}
