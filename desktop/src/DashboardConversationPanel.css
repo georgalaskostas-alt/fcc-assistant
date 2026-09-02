@@ -1,0 +1,91 @@
+.dashboard-conversation-panel {
+  margin: 14px 0 10px;
+  border: 1px solid #223241;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(10,20,30,.96), rgba(8,15,24,.96));
+  overflow: hidden;
+  box-shadow: 0 14px 40px rgba(0,0,0,.16);
+}
+
+.dashboard-conversation-head {
+  min-height: 52px;
+  padding: 10px 12px 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid #1d2b37;
+}
+
+.dashboard-conversation-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #c9d5e2;
+}
+
+.dashboard-conversation-title strong { display: block; font-size: 12px; }
+.dashboard-conversation-title span { display: block; margin-top: 2px; color: #66798d; font-size: 9px; }
+
+.dashboard-conversation-actions { display: flex; align-items: center; gap: 6px; }
+.dashboard-conversation-actions button {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid #293a49;
+  border-radius: 8px;
+  background: #111b24;
+  color: #8395a8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 10px;
+}
+.dashboard-conversation-actions button:hover,
+.dashboard-conversation-actions button.active { color: #e3ebf3; border-color: #3b5367; background: #182734; }
+
+.dashboard-conversation-scroll {
+  min-height: 240px;
+  max-height: 420px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: #33485a #0b131c;
+}
+
+.conversation-turn { display: grid; gap: 8px; margin-bottom: 16px; }
+.conversation-message { max-width: min(82%, 900px); padding: 10px 12px; border-radius: 11px; }
+.conversation-message span { display: block; margin-bottom: 5px; font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.conversation-message p { margin: 0; white-space: pre-wrap; line-height: 1.55; font-size: 12px; }
+.conversation-message small { display: block; margin-top: 7px; color: #60768b; font-size: 8px; }
+.conversation-message.user { justify-self: end; background: #12304a; border: 1px solid #225579; color: #e7f2fb; }
+.conversation-message.user span { color: #78bce8; }
+.conversation-message.assistant { justify-self: start; background: #101a23; border: 1px solid #253542; color: #ced8e2; }
+.conversation-message.assistant span { color: #7d9eb8; }
+.conversation-empty { min-height: 180px; display: grid; place-items: center; align-content: center; gap: 8px; color: #65798d; font-size: 11px; }
+
+.console-line {
+  display: grid;
+  grid-template-columns: 74px 170px 1fr;
+  align-items: start;
+  gap: 9px;
+  padding: 8px 9px;
+  border-bottom: 1px solid #17232d;
+  font-size: 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.console-line:last-child { border-bottom: 0; }
+.console-line strong { color: #8dafc9; font-weight: 650; }
+.console-line code { color: #8c9dad; white-space: pre-wrap; word-break: break-word; }
+.console-line.error { background: rgba(92, 31, 37, .17); }
+.console-line.error strong, .console-line.error code { color: #d69ca1; }
+.console-time { color: #53687b; }
+
+.dashboard-conversation-panel.collapsed .dashboard-conversation-head { border-bottom: 0; }
+.spin { animation: dashboard-spin .8s linear infinite; }
+@keyframes dashboard-spin { to { transform: rotate(360deg); } }
+
+@media (min-height: 900px) {
+  .dashboard-conversation-scroll { max-height: 520px; }
+}
