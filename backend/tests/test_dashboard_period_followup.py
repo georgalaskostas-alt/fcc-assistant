@@ -12,13 +12,7 @@ def _widgets():
 
 
 def test_elliptical_plural_followup_updates_both_existing_trends():
-    result=_period_followup_plan(
-        "Τελικά τα θέλω 8 ώρες.",
-        {"last_action":"clarify"},
-        {"last_action":"transaction","last_touched_widget_ids":["hcu-feed-trend","fcc-feed-trend"]},
-        _widgets(),
-        [],
-    )
+    result=_period_followup_plan("Τελικά τα θέλω 8 ώρες.",{"last_action":"clarify"},{"last_action":"transaction","last_touched_widget_ids":["hcu-feed-trend","fcc-feed-trend"]},_widgets(),[])
     assert result is not None
     plan,message=result
     assert plan["action"]=="update_widgets"
@@ -51,7 +45,7 @@ def test_explicit_feed_metric_updates_feed_trends_in_both_units_only():
 
 
 def test_live_kpis_are_never_period_updated():
-    result=_period_followup_plan("Τα διαγράμματα να γίνουν 8 ώρες",{}, {}, _widgets(),[])
+    result=_period_followup_plan("Τα διαγραμματα να γίνουν 8 ώρες",{}, {}, _widgets(),[])
     assert result is not None
     plan,_=result
     assert "hcu-live" not in plan["target_ids"]
