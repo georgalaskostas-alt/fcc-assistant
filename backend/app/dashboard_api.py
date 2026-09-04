@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import re
+import time
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from .dashboard_agent import plan_with_local_agent
@@ -12,8 +14,23 @@ from .diagnostic_trace import append_trace, clear_trace, recent_trace
 from .site_model import load_site_model, site_runtime_status
 
 router=APIRouter(prefix="/api/v1/dashboard",tags=["dashboard"])
-class DashboardCommandRequest(BaseModel): command:str=Field(min_length=1,max_length=4000); workspace:str=Field(default="default",min_length=1,max_length=120)
+class DashboardCommandRequest(BaseModel): command:str=Field(min_length=1,max_length=4000); workspace:str=Field(default="default",min_length=1,max_length=120); command_id:str|None=Field(default=None,max_length=120)
 class DashboardSaveRequest(BaseModel): title:str=Field(default="Operations Overview",min_length=1,max_length=200); widgets:list[dict[str,object]]=Field(default_factory=list)
+
+_command_gate:asyncio.Lock|None=None
+_command_cache:dict[str,tuple[float,dict[str,object]]]={}
+_COMMAND_CACHE_TTL=8.0
+
+def _gate()->asyncio.Lock:
+    global _command_gate
+    if _command_gate is None:_command_gate=asyncio.Lock()
+    return _command_gate
+
+def _command_key(request:DashboardCommandRequest)->str:
+    if request.command_id:return f"id:{request.command_id}"
+    normalized=" ".join(request.command.casefold().split())
+    return f"text:{request.workspace}:{normalized}"
+
 @router.get("/site")
 def dashboard_site()->dict[str,object]:
     site=load_site_model();return {"name":site.name,"units":site.list_units(),"read_only":True}
@@ -102,10 +119,24 @@ def _safe_failure(request,current,widgets,dialogue,pending_store,route,exc):
 
 @router.post("/command")
 async def dashboard_command(request:DashboardCommandRequest)->dict[str,object]:
+    key=_command_key(request)
+    async with _gate():
+        now=time.monotonic()
+        stale=[k for k,(created,_) in _command_cache.items() if now-created>_COMMAND_CACHE_TTL]
+        for k in stale:_command_cache.pop(k,None)
+        cached=_command_cache.get(key)
+        if cached is not None:
+            append_trace("command.deduplicated",{"command":request.command,"workspace":request.workspace,"command_id":request.command_id,"age_ms":round((now-cached[0])*1000)})
+            return cached[1]
+        result=await _execute_dashboard_command(request)
+        _command_cache[key]=(time.monotonic(),result)
+        return result
+
+async def _execute_dashboard_command(request:DashboardCommandRequest)->dict[str,object]:
     store=DashboardStore();dialogue=DashboardDialogueStore();pending_store=DashboardPendingStore();current=store.get(request.workspace);raw=current.get("widgets");widgets=[dict(x) for x in raw if isinstance(x,dict)] if isinstance(raw,list) else [];route="unknown"
     try:
         site=load_site_model();aliases=dialogue.aliases();explicit=resolve_units(request.command,site,aliases);pending=pending_store.get(request.workspace)
-        append_trace("command.received",{"command":request.command,"workspace":request.workspace,"explicit_units":[u.key for u in explicit],"pending_intent":pending,"widgets_before":[{"id":w.get("id"),"unit_key":w.get("unit_key"),"tag_keys":w.get("tag_keys"),"type":w.get("type"),"period":w.get("period")} for w in widgets]})
+        append_trace("command.received",{"command":request.command,"workspace":request.workspace,"command_id":request.command_id,"explicit_units":[u.key for u in explicit],"pending_intent":pending,"widgets_before":[{"id":w.get("id"),"unit_key":w.get("unit_key"),"tag_keys":w.get("tag_keys"),"type":w.get("type"),"period":w.get("period")} for w in widgets]})
         if len(explicit)==1:dialogue.remember_requested_unit(request.workspace,explicit[0].key)
         state=dialogue.get_state(request.workspace)
         if pending is not None:state["pending_intent"]=pending
