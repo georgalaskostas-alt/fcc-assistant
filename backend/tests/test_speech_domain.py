@@ -47,3 +47,16 @@ def test_allows_mixed_or_technical_english_when_it_has_refinery_context():
 def test_corrects_scc_to_fcc():
     result = normalize_transcript("βάλε γράφημα feed flow του SCC")
     assert "FCC" in result.normalized_text
+
+
+def test_short_conversational_followup_is_preserved_without_inventing_a_unit():
+    result = normalize_transcript("τελικά κάντα οκτώ ώρες")
+    assert result.normalized_text
+    assert "FCC" not in result.normalized_text
+    assert "HCU" not in result.normalized_text
+
+
+def test_restore_style_followup_remains_natural_greek():
+    result = normalize_transcript("μπορείς να τα ξαναβάλεις")
+    assert "ξαναβάλεις" in result.normalized_text
+    assert result.normalized_text != ""
