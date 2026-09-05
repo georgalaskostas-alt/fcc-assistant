@@ -1,0 +1,201 @@
+.command-icon-button.voice-mode-enabled {
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, .58);
+  background: rgba(14, 116, 144, .16);
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, .08), 0 0 14px rgba(56, 189, 248, .10);
+}
+
+.command-icon-button.voice-listening {
+  color: #8ce0ff;
+  border-color: rgba(56, 189, 248, .72);
+  background: rgba(14, 116, 144, .20);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, .07), 0 0 18px rgba(56, 189, 248, .14);
+}
+
+.command-icon-button.voice-transcribing,
+.command-icon-button.voice-executing {
+  color: #d6c8ff;
+  border-color: rgba(139, 92, 246, .48);
+  background: rgba(76, 29, 149, .18);
+}
+
+.voice-command-bar {
+  position: relative;
+  isolation: isolate;
+  min-height: 58px;
+  padding-block: 9px !important;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.voice-command-bar::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.voice-command-listening {
+  border-color: rgba(56, 189, 248, .38) !important;
+  box-shadow: 0 10px 28px rgba(2, 12, 27, .28), inset 0 0 0 1px rgba(125, 211, 252, .025);
+}
+
+.voice-command-listening::before {
+  opacity: 1;
+  background: linear-gradient(105deg, rgba(34, 211, 238, .18), rgba(59, 130, 246, .04), rgba(34, 211, 238, .16));
+  filter: blur(8px);
+}
+
+.voice-command-processing {
+  border-color: rgba(139, 92, 246, .44) !important;
+  background: linear-gradient(100deg, rgba(10, 24, 42, .96), rgba(24, 20, 53, .95), rgba(10, 24, 42, .96)) !important;
+  background-size: 220% 100% !important;
+  animation: premium-processing-sheen 1.7s ease-in-out infinite;
+}
+
+.voice-command-processing::before {
+  opacity: .92;
+  background: conic-gradient(from 90deg, rgba(124, 58, 237, .05), rgba(167, 139, 250, .38), rgba(56, 189, 248, .12), rgba(124, 58, 237, .05));
+  filter: blur(11px);
+  animation: premium-border-orbit 2.4s linear infinite;
+}
+
+.voice-command-success {
+  border-color: rgba(52, 211, 153, .35) !important;
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, .05), 0 8px 24px rgba(2, 18, 21, .22);
+}
+
+.voice-command-error {
+  border-color: rgba(248, 113, 113, .42) !important;
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, .04), 0 8px 24px rgba(31, 8, 12, .20);
+}
+
+/* Status is visually tied to the composer but removed from its flex flow. This keeps
+   the input, mic and send button perfectly stationary when a long reply appears. */
+.voice-inline-state {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  min-width: 92px;
+  max-width: min(56%, 640px);
+  min-height: 25px;
+  padding: 5px 10px;
+  border-radius: 11px;
+  border: 1px solid rgba(100, 116, 139, .18);
+  background: rgba(6, 18, 34, .88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 10px;
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.voice-inline-state span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-inline-listening {
+  color: #8ce0ff;
+  border-color: rgba(56, 189, 248, .22);
+  background: rgba(8, 44, 68, .88);
+}
+
+.voice-inline-processing {
+  color: #d6c8ff;
+  border-color: rgba(167, 139, 250, .24);
+  background: rgba(54, 37, 95, .88);
+}
+
+.voice-inline-success {
+  color: #d7ffe6;
+  border-color: rgba(52, 211, 153, .28);
+  background: rgba(9, 59, 42, .88);
+}
+
+.voice-inline-error {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, .28);
+  background: rgba(78, 24, 31, .90);
+}
+
+.voice-inline-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.voice-waveform {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 13px;
+}
+
+.voice-waveform i {
+  display: block;
+  width: 2px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 7px currentColor;
+  animation: premium-wave 720ms ease-in-out infinite alternate;
+}
+
+.voice-waveform i:nth-child(2) { animation-delay: -160ms; }
+.voice-waveform i:nth-child(3) { animation-delay: -320ms; }
+.voice-waveform i:nth-child(4) { animation-delay: -480ms; }
+
+.voice-orbit {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1.5px solid rgba(216, 204, 255, .25);
+  border-top-color: currentColor;
+  border-right-color: currentColor;
+  box-shadow: 0 0 10px rgba(167, 139, 250, .18);
+  animation: premium-spin 650ms linear infinite;
+}
+
+@keyframes premium-wave {
+  0% { height: 4px; opacity: .45; }
+  100% { height: 12px; opacity: 1; }
+}
+
+@keyframes premium-spin { to { transform: rotate(360deg); } }
+@keyframes premium-processing-sheen {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+@keyframes premium-border-orbit { to { transform: rotate(360deg) scale(1.015); } }
+
+@media (max-width: 900px) {
+  .voice-inline-state {
+    max-width: 58%;
+    font-size: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-command-processing,
+  .voice-command-processing::before,
+  .voice-waveform i,
+  .voice-orbit { animation: none; }
+}

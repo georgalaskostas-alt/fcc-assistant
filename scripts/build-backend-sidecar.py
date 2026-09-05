@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import platform
 import shutil
 import subprocess
@@ -10,6 +11,19 @@ from pathlib import Path
 def run(command: list[str], cwd: Path) -> None:
     print("+", " ".join(command))
     subprocess.run(command, cwd=cwd, check=True)
+
+
+def require_modules(modules: dict[str, str]) -> None:
+    missing = [package for module, package in modules.items() if importlib.util.find_spec(module) is None]
+    if not missing:
+        return
+    packages = " ".join(missing)
+    raise RuntimeError(
+        "Missing backend build dependencies: "
+        f"{', '.join(missing)}. Install the current backend requirements first with:\n"
+        f"  {sys.executable} -m pip install -r backend/requirements.txt\n"
+        f"or install the missing package(s):\n  {sys.executable} -m pip install {packages}"
+    )
 
 
 def host_triple() -> str:
@@ -33,6 +47,18 @@ def main() -> int:
     dist = build_root / "dist"
     work = build_root / "work"
     spec = build_root / "spec"
+
+    # PyInstaller can otherwise complete successfully while an optional FastAPI
+    # runtime dependency is absent, producing a sidecar that only fails when it
+    # imports routes using Form/UploadFile. Fail before packaging instead.
+    require_modules(
+        {
+            "PyInstaller": "pyinstaller",
+            "fastapi": "fastapi",
+            "uvicorn": "uvicorn",
+            "multipart": "python-multipart",
+        }
+    )
 
     tauri_binaries.mkdir(parents=True, exist_ok=True)
     build_root.mkdir(parents=True, exist_ok=True)
