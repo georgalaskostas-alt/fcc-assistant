@@ -29,6 +29,11 @@ class DashboardDialogueStore:
         state = workspaces.get(workspace) if isinstance(workspaces, dict) else None
         return dict(state) if isinstance(state, dict) else {}
 
+    def get_action_context(self, workspace: str) -> dict[str, object]:
+        state = self.get_state(workspace)
+        raw = state.get("last_action_context")
+        return dict(raw) if isinstance(raw, dict) else {}
+
     def aliases(self) -> dict[str, str]:
         raw = self._load().get("unit_aliases")
         return {str(k).casefold(): str(v).casefold() for k, v in raw.items()} if isinstance(raw, dict) else {}
@@ -46,6 +51,47 @@ class DashboardDialogueStore:
         state = dict(workspaces.get(workspace) or {}); state["last_requested_unit_key"] = unit_key.strip().casefold()
         workspaces[workspace] = state; self._save(payload)
 
+    @staticmethod
+    def _plan_touched_widget_ids(plan: dict[str, object], before: list[dict[str, object]], after: list[dict[str, object]]) -> list[str]:
+        action = str(plan.get("action", ""))
+        before_ids = {str(w.get("id")) for w in before if w.get("id")}
+        after_ids = {str(w.get("id")) for w in after if w.get("id")}
+        touched: list[str] = []
+
+        def add(value: object) -> None:
+            if value is None: return
+            item = str(value)
+            if item and item not in touched: touched.append(item)
+
+        def collect(step: dict[str, object]) -> None:
+            step_action = str(step.get("action", ""))
+            if step_action in {"add_widget", "replace_widget"}:
+                widget = step.get("widget")
+                if isinstance(widget, dict): add(widget.get("id"))
+            elif step_action == "add_widgets":
+                widgets = step.get("widgets")
+                if isinstance(widgets, list):
+                    for widget in widgets:
+                        if isinstance(widget, dict): add(widget.get("id"))
+            elif step_action in {"remove_widget", "resize_widget", "move_between"}:
+                add(step.get("target_id"))
+            elif step_action in {"remove_widgets", "update_widgets"}:
+                ids = step.get("target_ids")
+                if isinstance(ids, list):
+                    for widget_id in ids: add(widget_id)
+
+        if action == "transaction":
+            steps = plan.get("steps")
+            if isinstance(steps, list):
+                for step in steps:
+                    if isinstance(step, dict): collect(step)
+        else:
+            collect(plan)
+
+        if not touched and action in {"add_widget", "add_widgets", "replace_widget", "transaction"}:
+            for widget_id in sorted(after_ids - before_ids): add(widget_id)
+        return touched
+
     def remember(self, workspace: str, command: str, plan: dict[str, object], workspace_payload: dict[str, object], message: str | None = None, previous_widgets: list[dict[str, object]] | None = None) -> None:
         payload = self._load(); workspaces = payload.setdefault("workspaces", {})
         if not isinstance(workspaces, dict): workspaces = {}; payload["workspaces"] = workspaces
@@ -57,10 +103,25 @@ class DashboardDialogueStore:
             ws = plan.get("widgets")
             if isinstance(ws, list) and ws and isinstance(ws[-1], dict): candidate = ws[-1]
         elif action == "replace_widget": candidate = plan.get("widget")
+        elif action == "transaction":
+            steps = plan.get("steps")
+            if isinstance(steps, list):
+                for step in reversed(steps):
+                    if not isinstance(step, dict): continue
+                    widget = step.get("widget")
+                    if isinstance(widget, dict): candidate = widget; break
+                    widgets = step.get("widgets")
+                    if isinstance(widgets, list) and widgets and isinstance(widgets[-1], dict): candidate = widgets[-1]; break
         if isinstance(candidate, dict):
             state["last_widget"] = candidate; state["last_unit_key"] = str(candidate.get("unit_key", ""))
 
         before = previous_widgets or []
+        current_widgets = workspace_payload.get("widgets")
+        after = [dict(w) for w in current_widgets if isinstance(w, dict)] if isinstance(current_widgets, list) else []
+        touched_ids = self._plan_touched_widget_ids(plan, before, after)
+        if action not in {"answer", "clarify"}:
+            state["last_action_context"] = {"last_action": action, "last_touched_widget_ids": touched_ids}
+
         removed: list[dict[str, object]] = []
         if action == "remove_widget":
             target = str(plan.get("target_id", ""))
@@ -85,7 +146,6 @@ class DashboardDialogueStore:
         turns = list(raw_turns) if isinstance(raw_turns, list) else []
         turns.append({"user": command, "assistant": message or "", "action": action, "unit": state.get("last_unit_key")})
         state["recent_turns"] = turns[-8:]
-        current_widgets = workspace_payload.get("widgets")
         if isinstance(current_widgets, list): state["current_widget_ids"] = [str(w.get("id")) for w in current_widgets if isinstance(w, dict) and w.get("id")]
         workspaces[workspace] = state; self._save(payload)
 
