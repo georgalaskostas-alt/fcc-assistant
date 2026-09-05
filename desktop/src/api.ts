@@ -14,7 +14,8 @@ export type AssistantReply = { mode: string; read_only: boolean; model: string; 
 export type RuntimeState = { running: boolean; pid: number | null; binary_path: string; model_path: string; endpoint: string; runtime: string; local_only: boolean; };
 export type RuntimeInfo = { readiness: Record<string, unknown>; state: RuntimeState; };
 export type SpeechStatus = { ready: boolean; binary: string; model: string; language: string; local_only: boolean; engine: string; cloud: boolean; audio_leaves_device: boolean; };
-export type SpeechTranscript = { raw_text: string; text: string; confidence: number; confidence_level: "low" | "medium" | "high"; execute_immediately: boolean; corrections: Array<{ source: string; target: string; score: number }>; scope: string; language: string; engine: string; mode?: "partial" | "final"; local_only: boolean; audio_retained: boolean; };
+export type SpeechTiming = { read_ms: number; stt_ms: number; normalize_ms: number; total_ms: number; };
+export type SpeechTranscript = { raw_text: string; text: string; confidence: number; confidence_level: "low" | "medium" | "high"; execute_immediately: boolean; corrections: Array<{ source: string; target: string; score: number }>; scope: string; language: string; engine: string; mode?: "partial" | "final"; local_only: boolean; audio_retained: boolean; audio_bytes?: number; timings?: SpeechTiming; };
 export type DashboardWidgetLayout = { order: number; width: 3 | 4 | 6 | 8 | 12; height: "compact" | "normal" | "tall"; };
 export type DashboardWidget = { id: string; type: "kpi" | "trend" | "average" | "summary"; title: string; unit_key: string; tag_keys: string[]; period: string; layout?: DashboardWidgetLayout; };
 export type DashboardWorkspace = { workspace: string; title: string; widgets: DashboardWidget[]; };
@@ -74,6 +75,7 @@ export const api = {
     const form = new FormData(); form.append("audio", audio, "voice-command.wav"); form.append("scope", scope); form.append("terms_json", JSON.stringify(terms)); form.append("mode", mode);
     return request<SpeechTranscript>("/api/v1/speech/transcribe", { method: "POST", body: form });
   },
+  traceVoice: (stage: string, payload: Record<string, unknown>) => request<{ ok: boolean; local_only: boolean }>("/api/v1/speech/trace", { method: "POST", body: JSON.stringify({ stage, payload }) }),
   simulatorTags: () => request<SimulatorTagsResponse>("/api/v1/site-simulator/tags"),
   demoShift: () => request<DemoShiftResponse>("/api/v1/site-simulator/demo-shift"),
   analyze: (question: string, evidence: Record<string, unknown>) => request<AssistantReply>("/api/v1/ai/analyze", { method: "POST", body: JSON.stringify({ question, evidence }) }),
