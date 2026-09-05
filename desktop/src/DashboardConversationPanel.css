@@ -1,36 +1,36 @@
 .dashboard-conversation-panel {
-  margin: 14px 0 10px;
+  margin: 10px 0 8px;
   border: 1px solid #223241;
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(10,20,30,.96), rgba(8,15,24,.96));
   overflow: hidden;
-  box-shadow: 0 14px 40px rgba(0,0,0,.16);
+  box-shadow: 0 12px 32px rgba(0,0,0,.14);
 }
 
 .dashboard-conversation-head {
-  min-height: 52px;
-  padding: 10px 12px 10px 14px;
+  min-height: 44px;
+  padding: 8px 10px 8px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   border-bottom: 1px solid #1d2b37;
 }
 
 .dashboard-conversation-title {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   color: #c9d5e2;
 }
 
-.dashboard-conversation-title strong { display: block; font-size: 12px; }
-.dashboard-conversation-title span { display: block; margin-top: 2px; color: #66798d; font-size: 9px; }
+.dashboard-conversation-title strong { display: block; font-size: 11px; }
+.dashboard-conversation-title span { display: block; margin-top: 1px; color: #66798d; font-size: 8px; }
 
-.dashboard-conversation-actions { display: flex; align-items: center; gap: 6px; }
+.dashboard-conversation-actions { display: flex; align-items: center; gap: 5px; }
 .dashboard-conversation-actions button {
-  min-height: 30px;
-  padding: 0 9px;
+  min-height: 28px;
+  padding: 0 8px;
   border: 1px solid #293a49;
   border-radius: 8px;
   background: #111b24;
@@ -39,40 +39,42 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: 9px;
 }
 .dashboard-conversation-actions button:hover,
 .dashboard-conversation-actions button.active { color: #e3ebf3; border-color: #3b5367; background: #182734; }
 
 .dashboard-conversation-scroll {
-  min-height: 240px;
-  max-height: 420px;
+  height: 220px;
   overflow-y: auto;
-  scroll-behavior: smooth;
-  padding: 14px;
+  scroll-behavior: auto;
+  padding: 11px 12px;
   scrollbar-width: thin;
   scrollbar-color: #33485a #0b131c;
+  contain: content;
 }
 
-.conversation-turn { display: grid; gap: 8px; margin-bottom: 16px; }
-.conversation-message { max-width: min(82%, 900px); padding: 10px 12px; border-radius: 11px; }
-.conversation-message span { display: block; margin-bottom: 5px; font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
-.conversation-message p { margin: 0; white-space: pre-wrap; line-height: 1.55; font-size: 12px; }
-.conversation-message small { display: block; margin-top: 7px; color: #60768b; font-size: 8px; }
+.conversation-turn { display: grid; gap: 6px; margin-bottom: 11px; }
+.conversation-message { max-width: min(78%, 820px); padding: 8px 10px; border-radius: 10px; }
+.conversation-message span { display: block; margin-bottom: 4px; font-size: 8px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.conversation-message p { margin: 0; white-space: pre-wrap; line-height: 1.45; font-size: 11px; }
+.conversation-message small { display: block; margin-top: 5px; color: #60768b; font-size: 8px; }
 .conversation-message.user { justify-self: end; background: #12304a; border: 1px solid #225579; color: #e7f2fb; }
 .conversation-message.user span { color: #78bce8; }
 .conversation-message.assistant { justify-self: start; background: #101a23; border: 1px solid #253542; color: #ced8e2; }
 .conversation-message.assistant span { color: #7d9eb8; }
-.conversation-empty { min-height: 180px; display: grid; place-items: center; align-content: center; gap: 8px; color: #65798d; font-size: 11px; }
+.conversation-message.assistant.pending { color: #a9bdd0; border-style: dashed; opacity: .86; }
+.pending-turn { margin-bottom: 2px; }
+.conversation-empty { min-height: 150px; display: grid; place-items: center; align-content: center; gap: 8px; color: #65798d; font-size: 10px; }
 
 .console-line {
   display: grid;
-  grid-template-columns: 74px 170px 1fr;
+  grid-template-columns: 70px 150px 1fr;
   align-items: start;
-  gap: 9px;
-  padding: 8px 9px;
+  gap: 8px;
+  padding: 7px 8px;
   border-bottom: 1px solid #17232d;
-  font-size: 9px;
+  font-size: 8px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .console-line:last-child { border-bottom: 0; }
@@ -86,6 +88,11 @@
 .spin { animation: dashboard-spin .8s linear infinite; }
 @keyframes dashboard-spin { to { transform: rotate(360deg); } }
 
-@media (min-height: 900px) {
-  .dashboard-conversation-scroll { max-height: 520px; }
+@media (min-height: 1000px) {
+  .dashboard-conversation-scroll { height: 260px; }
+}
+
+@media (max-width: 900px) {
+  .dashboard-conversation-scroll { height: 180px; }
+  .conversation-message { max-width: 90%; }
 }
