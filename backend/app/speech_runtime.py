@@ -39,16 +39,9 @@ def _candidate_model() -> str:
     configured = os.environ.get("FCC_STT_MODEL", "").strip()
     if configured:
         return configured
-    roots = [
-        Path.home() / ".fcc-assistant" / "models",
-        Path.cwd() / "models",
-        Path.cwd() / "assets" / "models",
-    ]
-    names = (
-        "ggml-large-v3-turbo.bin",
-        "ggml-large-v3-turbo-q5_0.bin",
-        "ggml-large-v3.bin",
-    )
+    roots = [Path.home() / ".fcc-assistant" / "models", Path.cwd() / "models", Path.cwd() / "assets" / "models"]
+    # Prefer quantized turbo when present to reduce unified-memory pressure.
+    names = ("ggml-large-v3-turbo-q5_0.bin", "ggml-large-v3-turbo.bin", "ggml-large-v3.bin")
     for root in roots:
         for name in names:
             candidate = root / name
@@ -59,17 +52,25 @@ def _candidate_model() -> str:
 
 def _language() -> str:
     configured = os.environ.get("FCC_STT_LANGUAGE", "el").strip().casefold()
-    if configured in {"", "auto"}:
-        return "el"
-    return configured
+    return "el" if configured in {"", "auto"} else configured
 
 
-def _beam_size() -> int:
+def _int_env(name: str, default: int, minimum: int, maximum: int) -> int:
     try:
-        value = int(os.environ.get("FCC_STT_BEAM_SIZE", "3"))
+        value = int(os.environ.get(name, str(default)))
     except ValueError:
-        value = 3
-    return max(1, min(value, 5))
+        value = default
+    return max(minimum, min(value, maximum))
+
+
+def _threads() -> int:
+    return _int_env("FCC_STT_THREADS", 4, 1, 8)
+
+
+def _use_gpu() -> bool:
+    # Qwen already occupies Metal/unified memory. CPU STT is the conservative
+    # packaged-app default; capable workstations can opt in with FCC_STT_USE_GPU=1.
+    return os.environ.get("FCC_STT_USE_GPU", "0").strip().casefold() in {"1", "true", "yes", "on"}
 
 
 def runtime_status() -> SpeechRuntimeStatus:
@@ -86,9 +87,7 @@ def runtime_status() -> SpeechRuntimeStatus:
 def transcribe_wav(data: bytes, *, prompt: str = "", high_accuracy: bool = False) -> str:
     status = runtime_status()
     if not status.ready:
-        raise SpeechRuntimeError(
-            "Local speech runtime is not ready. Install whisper.cpp and a local model or configure FCC_STT_BINARY/FCC_STT_MODEL."
-        )
+        raise SpeechRuntimeError("Local speech runtime is not ready. Install whisper.cpp and a local model or configure FCC_STT_BINARY/FCC_STT_MODEL.")
     if len(data) < 44 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
         raise SpeechRuntimeError("Speech input must be PCM WAV audio")
 
@@ -99,48 +98,37 @@ def transcribe_wav(data: bytes, *, prompt: str = "", high_accuracy: bool = False
         wav_path.write_bytes(data)
 
         command = [
-            status.binary,
-            "-m",
-            status.model,
-            "-f",
-            str(wav_path),
-            "-l",
-            status.language,
-            "-otxt",
-            "-of",
-            str(output_base),
-            "-nt",
-            "-np",
+            status.binary, "-m", status.model, "-f", str(wav_path), "-l", status.language,
+            "-t", str(_threads()), "-otxt", "-of", str(output_base), "-nt", "-np", "-nf",
         ]
-
+        if not _use_gpu():
+            command.append("-ng")
+        # Keep decoding light. The domain normalizer handles refinery aliases;
+        # beam search was causing unacceptable contention on the desktop target.
         if high_accuracy:
-            # Voice v2 uses a modest beam rather than beam=5. Large-v3-turbo is
-            # already strong on short commands; beam=3 keeps accuracy while
-            # materially reducing turn latency on Apple Silicon. It remains
-            # configurable for plants that prefer maximum accuracy.
-            command.extend(["--beam-size", str(_beam_size()), "--temperature", "0"])
+            command.extend(["--best-of", "2", "--temperature", "0"])
 
-        clean_prompt = " ".join(prompt.split())[:1000]
+        clean_prompt = " ".join(prompt.split())[:700]
         if clean_prompt:
             command.extend(["--prompt", clean_prompt])
 
+        timeout_seconds = _int_env("FCC_STT_TIMEOUT_SECONDS", 35, 10, 90)
         try:
             completed = subprocess.run(
-                command,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=90,
+                command, check=False, capture_output=True, text=True, timeout=timeout_seconds,
                 env={**os.environ, "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8")},
             )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise SpeechRuntimeError(f"Local speech runtime failed: {exc}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise SpeechRuntimeError(f"Local speech runtime timed out after {timeout_seconds}s; transcription was stopped to protect system responsiveness.") from exc
+        except OSError as exc:
+            raise SpeechRuntimeError(f"Local speech runtime could not start: {exc}") from exc
 
         txt_path = output_base.with_suffix(".txt")
         transcript = txt_path.read_text(encoding="utf-8").strip() if txt_path.exists() else ""
         if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip() or "unknown whisper.cpp error"
-            raise SpeechRuntimeError(detail[-2000:])
+            detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic output"
+            reason = f"signal {-completed.returncode}" if completed.returncode < 0 else f"exit {completed.returncode}"
+            raise SpeechRuntimeError(f"Local speech runtime failed ({reason}): {detail[-1200:]}")
         if not transcript:
             raise SpeechRuntimeError("No speech was recognized")
         return transcript
