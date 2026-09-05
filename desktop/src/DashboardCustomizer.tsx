@@ -96,14 +96,12 @@ function TrendChart({ widget, shift, tags }: { widget: DashboardWidget; shift: D
   const series = seriesFor(widget, shift);
   const values = series.flat().map((point) => point.Value);
   if (!values.length) return <div className="widget-empty">No data</div>;
-
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = Math.max(max - min, 0.0001);
   const width = 680;
   const height = 190;
   const pad = 14;
-
   return (
     <div className="trend-widget-body">
       <div className="trend-latest-row">
@@ -170,21 +168,8 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }
 
   function voiceTerms() {
-    const processTerms = [
-      "FCC",
-      "HCU",
-      "Hydrocracker",
-      "Hydro cracker",
-      "VDU",
-      "Vacuum Distillation",
-      "reaction temperature",
-      "reactor temperature",
-      "feed flow",
-    ];
-    return Array.from(new Set([
-      ...processTerms,
-      ...tags.flatMap((tag) => [tag.key, tag.name, tag.group, tag.unit_key ?? "", tag.semantic_key ?? ""]).filter(Boolean),
-    ]));
+    const processTerms = ["FCC", "HCU", "Hydrocracker", "Hydro cracker", "VDU", "Vacuum Distillation", "reaction temperature", "reactor temperature", "feed flow"];
+    return Array.from(new Set([...processTerms, ...tags.flatMap((tag) => [tag.key, tag.name, tag.group, tag.unit_key ?? "", tag.semantic_key ?? ""]).filter(Boolean)]));
   }
 
   function clearPreviewTimer() {
@@ -195,11 +180,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }
 
   async function speak(text: string) {
-    try {
-      await invoke("speak_text", { text });
-    } catch {
-      // Spoken feedback is optional; command execution must not depend on TTS.
-    }
+    try { await invoke("speak_text", { text }); } catch { /* optional */ }
   }
 
   async function load() {
@@ -211,15 +192,8 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     }
   }
 
-  useEffect(() => {
-    setCommand("");
-    void load();
-  }, []);
-
-  useEffect(() => () => {
-    clearPreviewTimer();
-    void recorderRef.current?.cancel();
-  }, []);
+  useEffect(() => { setCommand(""); void load(); }, []);
+  useEffect(() => () => { clearPreviewTimer(); void recorderRef.current?.cancel(); }, []);
 
   async function persist(next: DashboardWorkspace) {
     setWorkspace(next);
@@ -229,9 +203,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save dashboard layout");
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   async function executeCommand(value: string, clearAfter = true): Promise<boolean> {
@@ -247,17 +219,22 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
       if (response.message?.trim()) setVoiceHint(response.message.trim());
       if (clearAfter) setCommand("");
       if (response.plan.warnings?.length) setError(response.plan.warnings.join(" · "));
+      window.dispatchEvent(new Event("fcc-dashboard-conversation-updated"));
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to apply dashboard command");
+      window.dispatchEvent(new Event("fcc-dashboard-conversation-updated"));
       return false;
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
   async function applyCommand() {
-    await executeCommand(command);
+    const submitted = command.trim();
+    if (!submitted || busy || voiceState !== "idle" || voiceModeEnabled) return;
+    setCommand("");
+    setVoiceHint("Εκτελώ…");
+    window.dispatchEvent(new CustomEvent("fcc-dashboard-command-submitted", { detail: { command: submitted } }));
+    await executeCommand(submitted, false);
   }
 
   async function previewVoiceTranscript() {
@@ -266,110 +243,59 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     try {
       const audio = await recorderRef.current.snapshot();
       if (audio.size < 14000) return;
-      // The current dashboard tab is visual context only. It must never bias STT
-      // toward FCC/HCU/VDU; an explicitly spoken unit is authoritative.
       const result = await api.transcribeSpeech(audio, "all", voiceTerms(), "partial");
       const cleanedText = cleanVoiceTranscript(result.text);
       lastPreviewRef.current = { result: { ...result, text: cleanedText }, audioSize: audio.size, at: Date.now() };
-      if (cleanedText) {
-        setCommand(cleanedText);
-        setVoiceHint(cleanedText);
-      }
-    } catch {
-      // Partial transcription is best-effort; final transcription is authoritative.
-    } finally {
-      previewBusyRef.current = false;
-    }
+      if (cleanedText) { setCommand(cleanedText); setVoiceHint(cleanedText); }
+    } catch { /* best effort */ } finally { previewBusyRef.current = false; }
   }
 
   async function startVoiceCycle() {
     if (recorderRef.current || finalizingVoiceRef.current || voiceState !== "idle") return;
-    setError(null);
-    setCommand("");
-    setVoiceModeEnabled(true);
-    setVoiceState("listening");
-    setVoiceHint("Ακούω");
-    lastPreviewRef.current = null;
-    recorderRef.current = await startLocalPcmRecorder({
-      silenceMs: 1150,
-      maxDurationMs: 25000,
-      onSilence: () => { void finishVoiceCapture(); },
-    });
+    setError(null); setCommand(""); setVoiceModeEnabled(true); setVoiceState("listening"); setVoiceHint("Ακούω"); lastPreviewRef.current = null;
+    recorderRef.current = await startLocalPcmRecorder({ silenceMs: 1150, maxDurationMs: 25000, onSilence: () => { void finishVoiceCapture(); } });
     clearPreviewTimer();
     previewTimerRef.current = window.setInterval(() => { void previewVoiceTranscript(); }, 1000);
   }
 
   async function finishVoiceCapture() {
     if (finalizingVoiceRef.current || !recorderRef.current) return;
-    finalizingVoiceRef.current = true;
-    clearPreviewTimer();
-    setError(null);
-    setVoiceState("transcribing");
-    setVoiceHint("Επεξεργάζομαι…");
-
+    finalizingVoiceRef.current = true; clearPreviewTimer(); setError(null); setVoiceState("transcribing"); setVoiceHint("Επεξεργάζομαι…");
     try {
-      const recorder = recorderRef.current;
-      recorderRef.current = null;
+      const recorder = recorderRef.current; recorderRef.current = null;
       const audio = await recorder.stop();
       const result = await api.transcribeSpeech(audio, "all", voiceTerms(), "final");
-      const finalText = cleanVoiceTranscript(result.text);
-      setCommand(finalText);
-
+      const finalText = cleanVoiceTranscript(result.text); setCommand(finalText);
       if (!finalText || result.confidence_level === "low") {
         setVoiceHint(finalText ? "Χρειάζομαι διευκρίνιση" : "Δεν άκουσα καθαρά");
         await speak("Δεν κατάλαβα καθαρά την εντολή.");
         return;
       }
-
-      setVoiceState("executing");
-      setVoiceHint("Εκτελώ…");
+      setVoiceState("executing"); setVoiceHint("Εκτελώ…");
+      window.dispatchEvent(new CustomEvent("fcc-dashboard-command-submitted", { detail: { command: finalText } }));
       const ok = await executeCommand(finalText, false);
-      if (ok) {
-        const reply = lastReplyRef.current;
-        setVoiceHint(reply || "Έτοιμο");
-        await speak(reply || "Έγινε.");
-      } else {
-        setVoiceHint("Δεν μπόρεσα να την εκτελέσω");
-        await speak("Δεν μπόρεσα να εκτελέσω την εντολή.");
-      }
+      if (ok) { const reply = lastReplyRef.current; setVoiceHint(reply || "Έτοιμο"); await speak(reply || "Έγινε."); }
+      else { setVoiceHint("Δεν μπόρεσα να την εκτελέσω"); await speak("Δεν μπόρεσα να εκτελέσω την εντολή."); }
       setCommand("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Voice transcription failed");
       await speak("Υπήρξε πρόβλημα στην επεξεργασία της φωνής.");
-    } finally {
-      // One click = one command. Never reopen the microphone automatically.
-      // Dialogue memory stays in the backend, so the next click can still say
-      // “πού το έβαλες;” or “βάλ' το στο FCC” with conversational continuity.
-      finalizingVoiceRef.current = false;
-      setVoiceModeEnabled(false);
-      setVoiceState("idle");
-    }
+    } finally { finalizingVoiceRef.current = false; setVoiceModeEnabled(false); setVoiceState("idle"); }
   }
 
   async function toggleVoiceMode() {
     setError(null);
-
     if (voiceModeEnabled || recorderRef.current) {
-      clearPreviewTimer();
-      const recorder = recorderRef.current;
-      recorderRef.current = null;
+      clearPreviewTimer(); const recorder = recorderRef.current; recorderRef.current = null;
       if (recorder) await recorder.cancel();
-      setVoiceModeEnabled(false);
-      setVoiceState("idle");
-      setVoiceHint(null);
-      setCommand("");
-      return;
+      setVoiceModeEnabled(false); setVoiceState("idle"); setVoiceHint(null); setCommand(""); return;
     }
-
     try {
       const status = await api.speechStatus();
       if (!status.ready) throw new Error("Το local speech model δεν είναι ακόμη εγκατεστημένο.");
-      setCommand("");
-      await startVoiceCycle();
+      setCommand(""); await startVoiceCycle();
     } catch (err) {
-      setVoiceModeEnabled(false);
-      setVoiceState("idle");
-      setError(err instanceof Error ? err.message : "Unable to start microphone");
+      setVoiceModeEnabled(false); setVoiceState("idle"); setError(err instanceof Error ? err.message : "Unable to start microphone");
     }
   }
 
@@ -380,8 +306,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     const from = widgets.findIndex((widget) => widget.id === widgetId);
     const to = Math.max(0, Math.min(widgets.length - 1, from + delta));
     if (from < 0 || from === to) return;
-    const [moved] = widgets.splice(from, 1);
-    widgets.splice(to, 0, moved);
+    const [moved] = widgets.splice(from, 1); widgets.splice(to, 0, moved);
     void persist(normalizeWorkspace({ ...workspace, widgets }));
   }
 
@@ -408,46 +333,25 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const orderedWidgets = useMemo(() => [...(workspace?.widgets ?? [])].sort((a, b) => (a.layout?.order ?? 0) - (b.layout?.order ?? 0)), [workspace]);
   const allUnitGroups = useMemo<UnitWidgetGroup[]>(() => {
     const groups = new Map<string, DashboardWidget[]>();
-    for (const widget of orderedWidgets) {
-      const key = widget.unit_key || "site";
-      groups.set(key, [...(groups.get(key) ?? []), widget]);
-    }
+    for (const widget of orderedWidgets) { const key = widget.unit_key || "site"; groups.set(key, [...(groups.get(key) ?? []), widget]); }
     return [...groups.entries()].map(([unitKey, widgets]) => ({ unitKey, widgets }));
   }, [orderedWidgets]);
   const unitGroups = useMemo(() => scopeUnit === "all" ? allUnitGroups : allUnitGroups.filter((group) => group.unitKey === scopeUnit), [allUnitGroups, scopeUnit]);
   const unitContainerWidth = scopeUnit !== "all" || unitGroups.length <= 1 ? "100%" : unitGroups.length === 2 ? "calc(50% - 6px)" : "min(100%, 680px)";
   const microphoneLabel = voiceModeEnabled ? "Stop current voice command" : "Speak one command";
   const idleReply = voiceState === "idle" && voiceHint && !["Ακούω", "Επεξεργάζομαι…", "Εκτελώ…"].includes(voiceHint) ? voiceHint : null;
-  const inlineKind = error
-    ? "error"
-    : voiceState === "transcribing" || voiceState === "executing"
-      ? "processing"
-      : voiceState === "listening"
-        ? "listening"
-        : idleReply
-          ? "success"
-          : "idle";
-  const inlineText = error
-    ?? (voiceState === "transcribing" ? "Επεξεργάζομαι" : null)
-    ?? (voiceState === "executing" ? "Εκτελώ" : null)
-    ?? (voiceState === "listening" ? (command.trim() ? "Ακούω" : "Μίλα") : null)
-    ?? idleReply;
+  const inlineKind = error ? "error" : voiceState === "transcribing" || voiceState === "executing" ? "processing" : voiceState === "listening" ? "listening" : idleReply ? "success" : "idle";
+  const inlineText = error ?? (voiceState === "transcribing" ? "Επεξεργάζομαι" : null) ?? (voiceState === "executing" ? "Εκτελώ" : null) ?? (voiceState === "listening" ? (command.trim() ? "Ακούω" : "Μίλα") : null) ?? idleReply;
 
   return (
     <div className="workspace-shell">
       <div className="workspace-command-wrap" style={{ position: "sticky", top: 0, zIndex: 30, paddingTop: 8, paddingBottom: 8, background: "linear-gradient(180deg, rgba(6,14,27,.98) 0%, rgba(6,14,27,.94) 82%, rgba(6,14,27,0) 100%)" }}>
         <div className={`workspace-command-bar voice-command-bar voice-command-${inlineKind}`}>
           <Bot size={17} />
-          <input value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void applyCommand(); }} placeholder={scopeUnit === "all" ? "Πες ή γράψε τι θέλεις να δεις σε όλες τις μονάδες…" : `Πες ή γράψε τι θέλεις να δεις στο ${scopeUnit.toUpperCase()}…`} aria-label="Workspace command" />
+          <input value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void applyCommand(); } }} placeholder={scopeUnit === "all" ? "Πες ή γράψε τι θέλεις να δεις σε όλες τις μονάδες…" : `Πες ή γράψε τι θέλεις να δεις στο ${scopeUnit.toUpperCase()}…`} aria-label="Workspace command" />
           {inlineText && (
             <div className={`voice-inline-state voice-inline-${inlineKind}`} role={error ? "alert" : "status"} title={inlineText}>
-              {voiceState === "listening" ? (
-                <span className="voice-waveform" aria-hidden="true"><i /><i /><i /><i /></span>
-              ) : voiceState === "transcribing" || voiceState === "executing" ? (
-                <span className="voice-orbit" aria-hidden="true" />
-              ) : (
-                <span className="voice-inline-dot" aria-hidden="true" />
-              )}
+              {voiceState === "listening" ? <span className="voice-waveform" aria-hidden="true"><i /><i /><i /><i /></span> : voiceState === "transcribing" || voiceState === "executing" ? <span className="voice-orbit" aria-hidden="true" /> : <span className="voice-inline-dot" aria-hidden="true" />}
               <span>{inlineText}</span>
             </div>
           )}
