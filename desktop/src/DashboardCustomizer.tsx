@@ -19,7 +19,6 @@ import {
   DashboardWorkspace,
   DemoShiftResponse,
   SimulatorTag,
-  SpeechTranscript,
 } from "./api";
 import { LocalRecorder, startLocalPcmRecorder } from "./speech";
 
@@ -32,7 +31,6 @@ type Props = {
 type Point = { Timestamp: string; Value: number };
 type UnitWidgetGroup = { unitKey: string; widgets: DashboardWidget[] };
 type VoiceState = "idle" | "listening" | "transcribing" | "executing";
-type CachedPreview = { result: SpeechTranscript; audioSize: number; at: number };
 
 const WIDTH_STEPS: DashboardWidgetLayout["width"][] = [3, 4, 6, 8, 12];
 const HEIGHT_STEPS: DashboardWidgetLayout["height"][] = ["compact", "normal", "tall"];
@@ -90,6 +88,11 @@ function cleanVoiceTranscript(value: string) {
     .replace(/^\s*(πρόεδρε|προεδρε)\s*[:;,.-]?\s*/i, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function spokenReply(value: string | null) {
+  const clean = (value || "Έγινε.").replace(/\s+/g, " ").trim();
+  return clean.length <= 180 ? clean : `${clean.slice(0, 176).trimEnd()}…`;
 }
 
 function TrendChart({ widget, shift, tags }: { widget: DashboardWidget; shift: DemoShiftResponse | null; tags: SimulatorTag[] }) {
@@ -154,10 +157,8 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
   const recorderRef = useRef<LocalRecorder | null>(null);
-  const previewTimerRef = useRef<number | null>(null);
-  const previewBusyRef = useRef(false);
   const finalizingVoiceRef = useRef(false);
-  const lastPreviewRef = useRef<CachedPreview | null>(null);
+  const voiceStartedAtRef = useRef<number | null>(null);
   const lastReplyRef = useRef<string | null>(null);
   const [editLayout, setEditLayout] = useState(false);
   const [autoLayout, setAutoLayout] = useState(() => window.localStorage.getItem("fcc-auto-layout") !== "off");
@@ -168,19 +169,20 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }
 
   function voiceTerms() {
-    const processTerms = ["FCC", "HCU", "Hydrocracker", "Hydro cracker", "VDU", "Vacuum Distillation", "reaction temperature", "reactor temperature", "feed flow"];
+    const processTerms = [
+      "FCC", "HCU", "Hydrocracker", "Hydro cracker", "VDU", "Vacuum Distillation",
+      "reaction temperature", "reactor temperature", "feed flow", "regenerator", "riser",
+      "stripper", "main fractionator", "LCO", "slurry",
+    ];
     return Array.from(new Set([...processTerms, ...tags.flatMap((tag) => [tag.key, tag.name, tag.group, tag.unit_key ?? "", tag.semantic_key ?? ""]).filter(Boolean)]));
   }
 
-  function clearPreviewTimer() {
-    if (previewTimerRef.current != null) {
-      window.clearInterval(previewTimerRef.current);
-      previewTimerRef.current = null;
-    }
+  async function speak(text: string) {
+    try { await invoke("speak_text", { text }); } catch { /* spoken feedback is optional */ }
   }
 
-  async function speak(text: string) {
-    try { await invoke("speak_text", { text }); } catch { /* optional */ }
+  function traceVoice(stage: string, payload: Record<string, unknown>) {
+    void api.traceVoice(stage, payload).catch(() => undefined);
   }
 
   async function load() {
@@ -193,7 +195,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   }
 
   useEffect(() => { setCommand(""); void load(); }, []);
-  useEffect(() => () => { clearPreviewTimer(); void recorderRef.current?.cancel(); }, []);
+  useEffect(() => () => { void recorderRef.current?.cancel(); }, []);
 
   async function persist(next: DashboardWorkspace) {
     setWorkspace(next);
@@ -237,65 +239,137 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     await executeCommand(submitted, false);
   }
 
-  async function previewVoiceTranscript() {
-    if (!recorderRef.current || previewBusyRef.current || finalizingVoiceRef.current) return;
-    previewBusyRef.current = true;
-    try {
-      const audio = await recorderRef.current.snapshot();
-      if (audio.size < 14000) return;
-      const result = await api.transcribeSpeech(audio, "all", voiceTerms(), "partial");
-      const cleanedText = cleanVoiceTranscript(result.text);
-      lastPreviewRef.current = { result: { ...result, text: cleanedText }, audioSize: audio.size, at: Date.now() };
-      if (cleanedText) { setCommand(cleanedText); setVoiceHint(cleanedText); }
-    } catch { /* best effort */ } finally { previewBusyRef.current = false; }
-  }
-
   async function startVoiceCycle() {
     if (recorderRef.current || finalizingVoiceRef.current || voiceState !== "idle") return;
-    setError(null); setCommand(""); setVoiceModeEnabled(true); setVoiceState("listening"); setVoiceHint("Ακούω"); lastPreviewRef.current = null;
-    recorderRef.current = await startLocalPcmRecorder({ silenceMs: 1150, maxDurationMs: 25000, onSilence: () => { void finishVoiceCapture(); } });
-    clearPreviewTimer();
-    previewTimerRef.current = window.setInterval(() => { void previewVoiceTranscript(); }, 1000);
+    setError(null);
+    setCommand("");
+    setVoiceModeEnabled(true);
+    setVoiceState("listening");
+    setVoiceHint("Ακούω");
+    voiceStartedAtRef.current = performance.now();
+    traceVoice("capture_started", { scope: scopeUnit });
+
+    // Voice v2 intentionally does not launch repeated partial Whisper processes.
+    // One recording -> one final transcription eliminates CPU contention and
+    // avoids a partial decoder still running when silence closes the command.
+    recorderRef.current = await startLocalPcmRecorder({
+      silenceMs: 850,
+      maxDurationMs: 20000,
+      onSilence: () => { void finishVoiceCapture(); },
+    });
   }
 
   async function finishVoiceCapture() {
     if (finalizingVoiceRef.current || !recorderRef.current) return;
-    finalizingVoiceRef.current = true; clearPreviewTimer(); setError(null); setVoiceState("transcribing"); setVoiceHint("Επεξεργάζομαι…");
+    finalizingVoiceRef.current = true;
+    setError(null);
+    setVoiceState("transcribing");
+    setVoiceHint("Επεξεργάζομαι…");
+
+    const turnStarted = voiceStartedAtRef.current ?? performance.now();
+    let sttClientMs = 0;
+    let commandMs = 0;
     try {
-      const recorder = recorderRef.current; recorderRef.current = null;
+      const recorder = recorderRef.current;
+      recorderRef.current = null;
       const audio = await recorder.stop();
+      const capturedMs = Math.round(performance.now() - turnStarted);
+
+      const sttStarted = performance.now();
       const result = await api.transcribeSpeech(audio, "all", voiceTerms(), "final");
-      const finalText = cleanVoiceTranscript(result.text); setCommand(finalText);
+      sttClientMs = Math.round(performance.now() - sttStarted);
+      const finalText = cleanVoiceTranscript(result.text);
+      setCommand(finalText);
+
+      traceVoice("transcribed", {
+        captured_ms: capturedMs,
+        stt_client_ms: sttClientMs,
+        stt_server_ms: result.timings?.total_ms ?? null,
+        whisper_ms: result.timings?.stt_ms ?? null,
+        normalize_ms: result.timings?.normalize_ms ?? null,
+        raw_text: result.raw_text,
+        normalized_text: finalText,
+        confidence: result.confidence,
+        confidence_level: result.confidence_level,
+        corrections: result.corrections.length,
+      });
+
       if (!finalText || result.confidence_level === "low") {
         setVoiceHint(finalText ? "Χρειάζομαι διευκρίνιση" : "Δεν άκουσα καθαρά");
-        await speak("Δεν κατάλαβα καθαρά την εντολή.");
+        traceVoice("clarification", { total_ms: Math.round(performance.now() - turnStarted), transcript: finalText });
+        void speak("Δεν κατάλαβα καθαρά την εντολή.");
         return;
       }
-      setVoiceState("executing"); setVoiceHint("Εκτελώ…");
+
+      setVoiceState("executing");
+      setVoiceHint("Εκτελώ…");
       window.dispatchEvent(new CustomEvent("fcc-dashboard-command-submitted", { detail: { command: finalText } }));
+      const commandStarted = performance.now();
       const ok = await executeCommand(finalText, false);
-      if (ok) { const reply = lastReplyRef.current; setVoiceHint(reply || "Έτοιμο"); await speak(reply || "Έγινε."); }
-      else { setVoiceHint("Δεν μπόρεσα να την εκτελέσω"); await speak("Δεν μπόρεσα να εκτελέσω την εντολή."); }
+      commandMs = Math.round(performance.now() - commandStarted);
+
+      if (ok) {
+        const reply = lastReplyRef.current;
+        const totalMs = Math.round(performance.now() - turnStarted);
+        setVoiceHint(reply || "Έτοιμο");
+        traceVoice("completed", {
+          total_ms: totalMs,
+          stt_client_ms: sttClientMs,
+          command_ms: commandMs,
+          transcript: finalText,
+          reply: reply || "Έγινε.",
+        });
+        // TTS must not hold the interaction lock. The user can start the next
+        // command immediately while the local spoken confirmation finishes.
+        void speak(spokenReply(reply));
+      } else {
+        setVoiceHint("Δεν μπόρεσα να την εκτελέσω");
+        traceVoice("failed", {
+          total_ms: Math.round(performance.now() - turnStarted),
+          stt_client_ms: sttClientMs,
+          command_ms: commandMs,
+          transcript: finalText,
+        });
+        void speak("Δεν μπόρεσα να εκτελέσω την εντολή.");
+      }
       setCommand("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Voice transcription failed");
-      await speak("Υπήρξε πρόβλημα στην επεξεργασία της φωνής.");
-    } finally { finalizingVoiceRef.current = false; setVoiceModeEnabled(false); setVoiceState("idle"); }
+      const message = err instanceof Error ? err.message : "Voice transcription failed";
+      setError(message);
+      traceVoice("error", { total_ms: Math.round(performance.now() - turnStarted), stt_client_ms: sttClientMs, command_ms: commandMs, error: message });
+      void speak("Υπήρξε πρόβλημα στην επεξεργασία της φωνής.");
+    } finally {
+      finalizingVoiceRef.current = false;
+      voiceStartedAtRef.current = null;
+      setVoiceModeEnabled(false);
+      setVoiceState("idle");
+      window.dispatchEvent(new Event("fcc-dashboard-conversation-updated"));
+    }
   }
 
   async function toggleVoiceMode() {
     setError(null);
     if (voiceModeEnabled || recorderRef.current) {
-      clearPreviewTimer(); const recorder = recorderRef.current; recorderRef.current = null;
+      const recorder = recorderRef.current;
+      recorderRef.current = null;
       if (recorder) await recorder.cancel();
-      setVoiceModeEnabled(false); setVoiceState("idle"); setVoiceHint(null); setCommand(""); return;
+      traceVoice("capture_cancelled", { elapsed_ms: voiceStartedAtRef.current == null ? null : Math.round(performance.now() - voiceStartedAtRef.current) });
+      voiceStartedAtRef.current = null;
+      setVoiceModeEnabled(false);
+      setVoiceState("idle");
+      setVoiceHint(null);
+      setCommand("");
+      return;
     }
     try {
       const status = await api.speechStatus();
       if (!status.ready) throw new Error("Το local speech model δεν είναι ακόμη εγκατεστημένο.");
-      setCommand(""); await startVoiceCycle();
+      setCommand("");
+      await startVoiceCycle();
     } catch (err) {
-      setVoiceModeEnabled(false); setVoiceState("idle"); setError(err instanceof Error ? err.message : "Unable to start microphone");
+      setVoiceModeEnabled(false);
+      setVoiceState("idle");
+      setError(err instanceof Error ? err.message : "Unable to start microphone");
     }
   }
 
@@ -306,7 +380,8 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
     const from = widgets.findIndex((widget) => widget.id === widgetId);
     const to = Math.max(0, Math.min(widgets.length - 1, from + delta));
     if (from < 0 || from === to) return;
-    const [moved] = widgets.splice(from, 1); widgets.splice(to, 0, moved);
+    const [moved] = widgets.splice(from, 1);
+    widgets.splice(to, 0, moved);
     void persist(normalizeWorkspace({ ...workspace, widgets }));
   }
 
@@ -333,7 +408,10 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const orderedWidgets = useMemo(() => [...(workspace?.widgets ?? [])].sort((a, b) => (a.layout?.order ?? 0) - (b.layout?.order ?? 0)), [workspace]);
   const allUnitGroups = useMemo<UnitWidgetGroup[]>(() => {
     const groups = new Map<string, DashboardWidget[]>();
-    for (const widget of orderedWidgets) { const key = widget.unit_key || "site"; groups.set(key, [...(groups.get(key) ?? []), widget]); }
+    for (const widget of orderedWidgets) {
+      const key = widget.unit_key || "site";
+      groups.set(key, [...(groups.get(key) ?? []), widget]);
+    }
     return [...groups.entries()].map(([unitKey, widgets]) => ({ unitKey, widgets }));
   }, [orderedWidgets]);
   const unitGroups = useMemo(() => scopeUnit === "all" ? allUnitGroups : allUnitGroups.filter((group) => group.unitKey === scopeUnit), [allUnitGroups, scopeUnit]);
@@ -341,7 +419,7 @@ export function DashboardCustomizer({ shift, tags, scopeUnit = "all" }: Props) {
   const microphoneLabel = voiceModeEnabled ? "Stop current voice command" : "Speak one command";
   const idleReply = voiceState === "idle" && voiceHint && !["Ακούω", "Επεξεργάζομαι…", "Εκτελώ…"].includes(voiceHint) ? voiceHint : null;
   const inlineKind = error ? "error" : voiceState === "transcribing" || voiceState === "executing" ? "processing" : voiceState === "listening" ? "listening" : idleReply ? "success" : "idle";
-  const inlineText = error ?? (voiceState === "transcribing" ? "Επεξεργάζομαι" : null) ?? (voiceState === "executing" ? "Εκτελώ" : null) ?? (voiceState === "listening" ? (command.trim() ? "Ακούω" : "Μίλα") : null) ?? idleReply;
+  const inlineText = error ?? (voiceState === "transcribing" ? "Επεξεργάζομαι" : null) ?? (voiceState === "executing" ? "Εκτελώ" : null) ?? (voiceState === "listening" ? "Ακούω" : null) ?? idleReply;
 
   return (
     <div className="workspace-shell">
