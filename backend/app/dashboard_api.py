@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import time
+import traceback
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from .dashboard_agent import plan_with_local_agent
@@ -111,11 +112,16 @@ def _legacy_plan(command,site,state,widgets,aliases):
     return plan_dashboard_command(working,site,current_widgets=widgets),None
 
 def _safe_failure(request,current,widgets,dialogue,pending_store,route,exc):
-    append_trace("command.error",{"command":request.command,"route":route,"error_type":type(exc).__name__,"error":str(exc)})
+    append_trace("command.error",{"command":request.command,"command_id":request.command_id,"route":route,"error_type":type(exc).__name__,"error":str(exc),"traceback":"".join(traceback.format_exception(type(exc),exc,exc.__traceback__))[-6000:]})
     message="Δεν ολοκληρώθηκε η ενέργεια λόγω τοπικού σφάλματος. Δεν άλλαξα τίποτα."
     plan={"action":"clarify","read_only":True,"requires_confirmation":False,"needs_clarification":True}
-    dialogue.remember(request.workspace,request.command,plan,current,message,previous_widgets=widgets)
-    return {"plan":plan,"workspace":current,"message":message,"needs_clarification":True,"agent":route,"pending_intent":pending_store.get(request.workspace),"site":site_runtime_status()}
+    try:dialogue.remember(request.workspace,request.command,plan,current,message,previous_widgets=widgets)
+    except Exception as remember_exc:append_trace("command.error.remember",{"command_id":request.command_id,"error_type":type(remember_exc).__name__,"error":str(remember_exc)})
+    try:pending=pending_store.get(request.workspace)
+    except Exception:pending=None
+    try:site_status=site_runtime_status()
+    except Exception:site_status={"status":"unavailable","read_only":True}
+    return {"plan":plan,"workspace":current,"message":message,"needs_clarification":True,"agent":route,"pending_intent":pending,"site":site_status,"error":{"type":type(exc).__name__,"message":str(exc)}}
 
 @router.post("/command")
 async def dashboard_command(request:DashboardCommandRequest)->dict[str,object]:
@@ -128,7 +134,16 @@ async def dashboard_command(request:DashboardCommandRequest)->dict[str,object]:
         if cached is not None:
             append_trace("command.deduplicated",{"command":request.command,"workspace":request.workspace,"command_id":request.command_id,"age_ms":round((now-cached[0])*1000)})
             return cached[1]
-        result=await _execute_dashboard_command(request)
+        try:result=await _execute_dashboard_command(request)
+        except Exception as exc:
+            # Last-resort API boundary: a dashboard command must never escape as an
+            # opaque FastAPI 500. Preserve the workspace and expose the traceback in
+            # the local-only diagnostic trace so packaged-app failures are actionable.
+            try:
+                current=DashboardStore().get(request.workspace);raw=current.get("widgets");widgets=[dict(x) for x in raw if isinstance(x,dict)] if isinstance(raw,list) else []
+            except Exception:
+                current={"workspace":request.workspace,"title":"Operations Overview","widgets":[]};widgets=[]
+            result=_safe_failure(request,current,widgets,DashboardDialogueStore(),DashboardPendingStore(),"unhandled",exc)
         _command_cache[key]=(time.monotonic(),result)
         return result
 
@@ -151,7 +166,7 @@ async def _execute_dashboard_command(request:DashboardCommandRequest)->dict[str,
         _validate_unit_intent(request.command,site,aliases,plan);steps=_validate_transaction(plan) if str(plan.get("action",""))=="transaction" else []
     except DashboardCommandError as exc:
         message=str(exc);plan={"action":"clarify","read_only":True,"requires_confirmation":False,"needs_clarification":True};dialogue.remember(request.workspace,request.command,plan,current,message,previous_widgets=widgets);append_trace("command.rejected",{"command":request.command,"route":route,"message":message,"pending_intent":pending_store.get(request.workspace)});return {"plan":plan,"workspace":current,"message":message,"needs_clarification":True,"agent":route,"site":site_runtime_status()}
-    except (ValueError,OSError,RuntimeError) as exc:return _safe_failure(request,current,widgets,dialogue,pending_store,route,exc)
+    except Exception as exc:return _safe_failure(request,current,widgets,dialogue,pending_store,route,exc)
     action=str(plan.get("action",""))
     try:
         if action=="clarify":
@@ -161,7 +176,7 @@ async def _execute_dashboard_command(request:DashboardCommandRequest)->dict[str,
         else:
             workspace=store.apply_transaction(request.workspace,steps) if action=="transaction" else store.apply_plan(request.workspace,plan)
             if action!="answer":pending_store.clear(request.workspace)
-    except OSError as exc:return _safe_failure(request,current,widgets,dialogue,pending_store,route,exc)
+    except Exception as exc:return _safe_failure(request,current,widgets,dialogue,pending_store,route,exc)
     append_trace("command.executed",{"command":request.command,"route":route,"plan":plan,"message":message,"pending_after":pending_store.get(request.workspace),"widgets_after":[{"id":w.get("id"),"unit_key":w.get("unit_key"),"tag_keys":w.get("tag_keys"),"type":w.get("type"),"period":w.get("period")} for w in (workspace.get("widgets") or []) if isinstance(w,dict)]})
     dialogue.remember(request.workspace,request.command,plan,workspace,message,previous_widgets=widgets)
     return {"plan":plan,"workspace":workspace,"message":message,"needs_clarification":bool(plan.get("needs_clarification",False)),"agent":route,"pending_intent":pending_store.get(request.workspace),"site":site_runtime_status()}
