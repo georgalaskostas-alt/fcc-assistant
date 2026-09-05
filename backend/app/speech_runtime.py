@@ -58,12 +58,18 @@ def _candidate_model() -> str:
 
 
 def _language() -> str:
-    # Production voice UX is Greek-first. Do not silently fall back to auto
-    # language detection, which can hallucinate English on short Greek clips.
     configured = os.environ.get("FCC_STT_LANGUAGE", "el").strip().casefold()
     if configured in {"", "auto"}:
         return "el"
     return configured
+
+
+def _beam_size() -> int:
+    try:
+        value = int(os.environ.get("FCC_STT_BEAM_SIZE", "3"))
+    except ValueError:
+        value = 3
+    return max(1, min(value, 5))
 
 
 def runtime_status() -> SpeechRuntimeStatus:
@@ -108,12 +114,13 @@ def transcribe_wav(data: bytes, *, prompt: str = "", high_accuracy: bool = False
         ]
 
         if high_accuracy:
-            # Final command transcription favors correctness over the few hundred
-            # milliseconds saved by greedy decoding. Beam search is especially
-            # helpful for Greek inflections mixed with English refinery terms.
-            command.extend(["--beam-size", "5", "--temperature", "0"])
+            # Voice v2 uses a modest beam rather than beam=5. Large-v3-turbo is
+            # already strong on short commands; beam=3 keeps accuracy while
+            # materially reducing turn latency on Apple Silicon. It remains
+            # configurable for plants that prefer maximum accuracy.
+            command.extend(["--beam-size", str(_beam_size()), "--temperature", "0"])
 
-        clean_prompt = " ".join(prompt.split())[:700]
+        clean_prompt = " ".join(prompt.split())[:1000]
         if clean_prompt:
             command.extend(["--prompt", clean_prompt])
 
