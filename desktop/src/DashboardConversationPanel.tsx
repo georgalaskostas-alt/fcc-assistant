@@ -28,8 +28,7 @@ function eventSummary(event: TraceEvent) {
   const error = typeof payload.error === "string" ? payload.error : "";
   const message = typeof payload.message === "string" ? payload.message : "";
   const route = typeof payload.route === "string" ? payload.route : "";
-  const bits = [command, route ? `route=${route}` : "", error || message].filter(Boolean);
-  return bits.join(" · ");
+  return [command, route ? `route=${route}` : "", error || message].filter(Boolean).join(" · ");
 }
 
 export function DashboardConversationPanel() {
@@ -37,6 +36,7 @@ export function DashboardConversationPanel() {
   const [mode, setMode] = useState<"conversation" | "console">("conversation");
   const [open, setOpen] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [pendingCommand, setPendingCommand] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   async function refresh() {
@@ -45,8 +45,9 @@ export function DashboardConversationPanel() {
       const response = await fetch(DEBUG_URL);
       if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
       setPayload(await response.json() as DebugPayload);
+      setPendingCommand(null);
     } catch {
-      // This panel is diagnostic only; it must never interfere with dashboard execution.
+      // Diagnostic UI only; never interfere with command execution.
     } finally {
       setRefreshing(false);
     }
@@ -54,8 +55,24 @@ export function DashboardConversationPanel() {
 
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 1500);
-    return () => window.clearInterval(timer);
+    const timer = window.setInterval(() => { void refresh(); }, 5000);
+    const submitted = (event: Event) => {
+      const detail = (event as CustomEvent<{ command?: string }>).detail;
+      const command = detail?.command?.trim();
+      if (command) {
+        setMode("conversation");
+        setOpen(true);
+        setPendingCommand(command);
+      }
+    };
+    const updated = () => { void refresh(); };
+    window.addEventListener("fcc-dashboard-command-submitted", submitted);
+    window.addEventListener("fcc-dashboard-conversation-updated", updated);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("fcc-dashboard-command-submitted", submitted);
+      window.removeEventListener("fcc-dashboard-conversation-updated", updated);
+    };
   }, []);
 
   const conversation = payload.conversation ?? [];
@@ -71,14 +88,14 @@ export function DashboardConversationPanel() {
   useEffect(() => {
     const node = scrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [conversation.length, importantEvents.length, mode]);
+  }, [conversation.length, importantEvents.length, pendingCommand, mode]);
 
   return (
     <section className={`dashboard-conversation-panel ${open ? "open" : "collapsed"}`}>
       <header className="dashboard-conversation-head">
         <div className="dashboard-conversation-title">
           <MessageSquareText size={17} />
-          <div><strong>Conversation</strong><span>Persistent local command history</span></div>
+          <div><strong>Conversation</strong><span>Local command history</span></div>
         </div>
         <div className="dashboard-conversation-actions">
           <button className={mode === "conversation" ? "active" : ""} onClick={() => setMode("conversation")}><MessageSquareText size={14} /> Chat</button>
@@ -90,10 +107,16 @@ export function DashboardConversationPanel() {
 
       {open && <div className="dashboard-conversation-scroll" ref={scrollRef}>
         {mode === "conversation" ? (
-          conversation.length ? conversation.map((turn, index) => <div className="conversation-turn" key={`${index}-${turn.user ?? ""}`}>
-            <div className="conversation-message user"><span>You</span><p>{turn.user || "—"}</p></div>
-            <div className="conversation-message assistant"><span>FCC Assistant</span><p>{turn.assistant || "—"}</p>{turn.action && <small>{turn.action}{turn.unit ? ` · ${turn.unit}` : ""}</small>}</div>
-          </div>) : <div className="conversation-empty">No conversation recorded yet.</div>
+          <>
+            {conversation.length ? conversation.map((turn, index) => <div className="conversation-turn" key={`${index}-${turn.user ?? ""}`}>
+              <div className="conversation-message user"><span>You</span><p>{turn.user || "—"}</p></div>
+              <div className="conversation-message assistant"><span>FCC Assistant</span><p>{turn.assistant || "—"}</p>{turn.action && <small>{turn.action}{turn.unit ? ` · ${turn.unit}` : ""}</small>}</div>
+            </div>) : !pendingCommand && <div className="conversation-empty">No conversation recorded yet.</div>}
+            {pendingCommand && <div className="conversation-turn pending-turn">
+              <div className="conversation-message user"><span>You</span><p>{pendingCommand}</p></div>
+              <div className="conversation-message assistant pending"><span>FCC Assistant</span><p>Επεξεργάζομαι…</p></div>
+            </div>}
+          </>
         ) : (
           importantEvents.length ? importantEvents.map((event, index) => {
             const stage = event.stage ?? "event";
