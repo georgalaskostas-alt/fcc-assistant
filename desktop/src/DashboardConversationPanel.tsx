@@ -28,7 +28,18 @@ function eventSummary(event: TraceEvent) {
   const error = typeof payload.error === "string" ? payload.error : "";
   const message = typeof payload.message === "string" ? payload.message : "";
   const route = typeof payload.route === "string" ? payload.route : "";
-  return [command, route ? `route=${route}` : "", error || message].filter(Boolean).join(" · ");
+  const transcript = typeof payload.normalized_text === "string"
+    ? payload.normalized_text
+    : typeof payload.transcript === "string"
+      ? payload.transcript
+      : "";
+  const timings = payload.timings && typeof payload.timings === "object"
+    ? JSON.stringify(payload.timings)
+    : "";
+  const totalMs = typeof payload.total_ms === "number" ? `total=${Math.round(payload.total_ms)}ms` : "";
+  const sttMs = typeof payload.stt_client_ms === "number" ? `stt=${Math.round(payload.stt_client_ms)}ms` : "";
+  const commandMs = typeof payload.command_ms === "number" ? `command=${Math.round(payload.command_ms)}ms` : "";
+  return [command || transcript, route ? `route=${route}` : "", totalMs, sttMs, commandMs, timings, error || message].filter(Boolean).join(" · ");
 }
 
 export function DashboardConversationPanel() {
@@ -80,7 +91,7 @@ export function DashboardConversationPanel() {
   const importantEvents = useMemo(
     () => events.filter((event) => {
       const stage = event.stage ?? "";
-      return stage.includes("command") || stage.includes("agent") || stage.includes("runtime") || stage.includes("error");
+      return stage.includes("command") || stage.includes("agent") || stage.includes("runtime") || stage.includes("error") || stage.includes("speech") || stage.includes("voice");
     }),
     [events],
   );
@@ -120,7 +131,7 @@ export function DashboardConversationPanel() {
         ) : (
           importantEvents.length ? importantEvents.map((event, index) => {
             const stage = event.stage ?? "event";
-            const isError = stage.includes("error") || stage.includes("rejected");
+            const isError = stage.includes("error") || stage.includes("rejected") || stage.includes("failed");
             return <div className={`console-line ${isError ? "error" : ""}`} key={`${event.ts ?? index}-${stage}`}>
               <span className="console-time">{event.ts ? new Date(event.ts).toLocaleTimeString() : "--:--:--"}</span>
               <strong>{stage}</strong>
