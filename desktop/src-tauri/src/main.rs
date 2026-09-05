@@ -27,9 +27,20 @@ fn speak_text(text:String)->Result<(),String>{let t=text.trim();if t.is_empty(){
 #[cfg(target_os="linux")] let status=Command::new("spd-say").args(["-r","8"]).arg(t).status().map_err(|e|format!("Local speech failed: {e}"))?;
 if status.success(){Ok(())}else{Err(format!("Local speech exited with status {status}"))}}
 fn main(){tauri::Builder::default().plugin(tauri_plugin_shell::init()).invoke_handler(tauri::generate_handler![backend_runtime_status,speak_text]).setup(|app|{
-    // Refuse to silently attach the new UI to a stale backend left by an older
-    // desktop build. A managed sidecar must own 8765 for this app instance.
-    if backend_is_listening(){return Err("FCC backend port 8765 is already in use. Close the previous FCC Assistant instance before reopening.".into())}
-    let command=app.shell().sidecar("fcc-backend")?;let(mut rx,child)=command.spawn()?;let diagnostics=Arc::new(Mutex::new(BackendDiagnostics::default()));let event_diagnostics=Arc::clone(&diagnostics);
+    let diagnostics=Arc::new(Mutex::new(BackendDiagnostics::default()));
+    // A previous desktop instance can briefly leave the backend sidecar on 8765.
+    // Never return Err from setup for that condition: on macOS tao invokes setup
+    // from NSApplicationDelegate::didFinishLaunching, where unwinding across the
+    // Objective-C callback aborts the whole process. Keep the UI alive and expose
+    // the condition through backend_runtime_status instead.
+    if backend_is_listening(){
+        if let Ok(mut s)=diagnostics.lock(){
+            s.last_error=Some("FCC backend port 8765 is already in use. Close the previous FCC Assistant instance before reopening.".into());
+            s.recent_output.push("startup: backend port 8765 already occupied; sidecar was not spawned".into());
+        }
+        app.manage(BackendProcess{child:Mutex::new(None),diagnostics});
+        return Ok(());
+    }
+    let command=app.shell().sidecar("fcc-backend")?;let(mut rx,child)=command.spawn()?;let event_diagnostics=Arc::clone(&diagnostics);
     tauri::async_runtime::spawn(async move{while let Some(event)=rx.recv().await{match event{CommandEvent::Stdout(bytes)=>{let text=String::from_utf8_lossy(&bytes).trim().to_string();if !text.is_empty(){append_output(&event_diagnostics,format!("stdout: {text}"));}},CommandEvent::Stderr(bytes)=>{let text=String::from_utf8_lossy(&bytes).trim().to_string();if !text.is_empty(){if let Ok(mut s)=event_diagnostics.lock(){s.last_error=Some(text.clone());}append_output(&event_diagnostics,format!("stderr: {text}"));}},CommandEvent::Error(message)=>{if let Ok(mut s)=event_diagnostics.lock(){s.last_error=Some(message.clone());}append_output(&event_diagnostics,format!("error: {message}"));},CommandEvent::Terminated(payload)=>{if let Ok(mut s)=event_diagnostics.lock(){s.terminated=true;if s.last_error.is_none(){s.last_error=Some(format!("Backend exited before becoming ready (code: {:?}, signal: {:?})",payload.code,payload.signal));}}break;},_=>{}}}});
     app.manage(BackendProcess{child:Mutex::new(Some(child)),diagnostics});Ok(())}).run(tauri::generate_context!()).expect("error while running FCC Assistant");}
