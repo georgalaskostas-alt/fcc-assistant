@@ -119,9 +119,7 @@ export default function App() {
         if (diagnostic.last_error) detail = `Backend startup failed: ${diagnostic.last_error}`;
         else if (diagnostic.terminated) detail = "Backend process terminated before becoming ready.";
         else if (!diagnostic.listening) detail = `Backend did not start listening on local port ${diagnostic.port}.`;
-        if (diagnostic.recent_output.length) {
-          detail += ` · ${diagnostic.recent_output.at(-1)}`;
-        }
+        if (diagnostic.recent_output.length) detail += ` · ${diagnostic.recent_output.at(-1)}`;
       } catch {
         // Browser-only development does not expose Tauri invoke; keep network error.
       }
@@ -152,14 +150,8 @@ export default function App() {
 
   function processEvidenceForUnit(unitKey: string): Record<string, unknown> {
     if (!shift) return {};
-    const unitTagKeys = new Set(
-      tags
-        .filter((tag) => (tag.unit_key ?? tag.group) === unitKey)
-        .map((tag) => tag.key),
-    );
-    return Object.fromEntries(
-      Object.entries(shift.data).filter(([key]) => unitTagKeys.has(key)),
-    );
+    const unitTagKeys = new Set(tags.filter((tag) => (tag.unit_key ?? tag.group) === unitKey).map((tag) => tag.key));
+    return Object.fromEntries(Object.entries(shift.data).filter(([key]) => unitTagKeys.has(key)));
   }
 
   async function askAssistant() {
@@ -171,37 +163,21 @@ export default function App() {
         await api.startAiRuntime();
         setRuntime(await api.aiRuntime());
       }
-
       if (activeUnit !== "all") {
-        const response = await api.engineeringAnalyze(
-          activeUnit,
-          question.trim(),
-          {
-            source: "simulated development data",
-            data_quality: "simulated",
-            shift: processEvidenceForUnit(activeUnit),
-          },
-        );
+        const response = await api.engineeringAnalyze(activeUnit, question.trim(), {
+          source: "simulated development data",
+          data_quality: "simulated",
+          shift: processEvidenceForUnit(activeUnit),
+        });
         setAnswer(response.answer);
       } else {
         const unitKeys = site?.units.map((unit) => unit.key) ?? [];
-        const evidenceByUnit = Object.fromEntries(
-          unitKeys.map((unitKey) => [
-            unitKey,
-            {
-              source: "simulated development data",
-              data_quality: "simulated",
-              shift: processEvidenceForUnit(unitKey),
-            },
-          ]),
-        );
-        const response = await api.managementAnalyze(
-          "refinery",
-          "refinery",
-          unitKeys,
-          question.trim(),
-          evidenceByUnit,
-        );
+        const evidenceByUnit = Object.fromEntries(unitKeys.map((unitKey) => [unitKey, {
+          source: "simulated development data",
+          data_quality: "simulated",
+          shift: processEvidenceForUnit(unitKey),
+        }]));
+        const response = await api.managementAnalyze("refinery", "refinery", unitKeys, question.trim(), evidenceByUnit);
         setAnswer(response.answer);
       }
     } catch (err) {
@@ -259,7 +235,7 @@ export default function App() {
 
           {view === "dashboard" && <>
             <section className="section-head"><div><span className="eyebrow">OPERATING OVERVIEW</span><h1>Operations workspace</h1><p>Dynamic refinery/unit layout · source quality is shown explicitly.</p></div><span className="readonly-pill"><ShieldCheck size={15} /> Read-only mode</span></section>
-            {backendOk ? <><DashboardCustomizer shift={shift} tags={tags} scopeUnit={activeUnit} /><DashboardConversationPanel /></> : <div className="placeholder-panel"><Database size={22} /><h3>Starting local backend…</h3><p>The workspace will load automatically when the packaged local service is ready.</p></div>}
+            {backendOk ? <><DashboardConversationPanel /><DashboardCustomizer shift={shift} tags={tags} scopeUnit={activeUnit} /></> : <div className="placeholder-panel"><Database size={22} /><h3>Starting local backend…</h3><p>The workspace will load automatically when the packaged local service is ready.</p></div>}
           </>}
 
           {view === "chat" && <section className="assistant-panel">
@@ -270,9 +246,7 @@ export default function App() {
           </section>}
 
           {view === "knowledge" && <UnitKnowledgeView unitKey={activeUnit} unitName={activeUnitName} />}
-
           {view === "reports" && <section className="placeholder-panel"><FileText size={24} /><h3>Reports</h3><p>Shift and refinery reporting workspace will use the same governed evidence and role scope.</p></section>}
-
           {view === "settings" && <section className="settings-grid">
             <article className="settings-card"><Database size={20} /><h3>Data sources</h3><div className="settings-row"><span>PI Web API</span><strong>{capabilities?.pi_web_api ?? "unknown"}</strong></div><div className="settings-row"><span>Plant write access</span><strong>{capabilities?.plant_write_access ? "enabled" : "disabled"}</strong></div></article>
             <article className="settings-card"><Bot size={20} /><h3>Local AI</h3><div className="settings-row"><span>Runtime</span><strong>{runtime?.state.runtime ?? "unknown"}</strong></div><div className="settings-row"><span>Status</span><strong>{runtime?.state.running ? "running" : "stopped"}</strong></div><button className="secondary-button" onClick={() => void toggleRuntime()} disabled={runtimeBusy || !backendOk}>{runtimeBusy ? "Working…" : runtime?.state.running ? "Stop local AI" : "Start local AI"}</button></article>
