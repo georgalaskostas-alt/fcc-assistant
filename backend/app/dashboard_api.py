@@ -66,6 +66,20 @@ def _validate_transaction(plan):
     if not steps or any(str(s.get("action","")) not in allowed for s in steps):raise DashboardCommandError("Δεν μπόρεσα να επαληθεύσω με ασφάλεια όλη τη σύνθετη εντολή. Δεν άλλαξα τίποτα.")
     return steps
 
+def _explicit_action(text):
+    """Return only actions explicitly expressed in the current utterance.
+
+    These are hard current-turn constraints. Dialogue context may fill missing slots in
+    an elliptical follow-up, but it must never turn an explicit ADD into UPDATE (or
+    vice versa).
+    """
+    value=text.casefold()
+    if re.search(r"\b(add|create|show|put)\b",value) or any(x in value for x in ("βάλε","βαλε","πρόσθε","προσθε","δημιούργ","δημιουργ")):return "add"
+    if re.search(r"\b(remove|delete|hide)\b",value) or any(x in value for x in ("αφαίρε","αφαιρε","σβή","σβη","διέγρα","διεγρα")):return "remove"
+    if re.search(r"\b(restore|bring back)\b",value) or any(x in value for x in ("ξαναβάλε","ξαναβαλε","επαναφέρ","επαναφερ","βάλε πίσω","βαλε πισω")):return "restore"
+    if re.search(r"\b(replace|swap)\b",value) or any(x in value for x in ("αντικατάστ","αντικαταστ")):return "replace"
+    return None
+
 def _metric_filter(text):
     compact=re.sub(r"[^a-z0-9α-ωάέήίόύώ]+","",text.casefold())
     if any(token in compact for token in ("feedflow","παροχηfeed","τροφοδοσια")) or "feed" in text.casefold():return "feed"
@@ -82,6 +96,9 @@ def _widget_matches_metric(widget,metric_filter):
 
 def _period_followup_plan(command,state,action_context,widgets,explicit_units):
     text=command.casefold().strip()
+    # A complete current-turn mutation is not a contextual period follow-up even if
+    # it contains a period (e.g. "Βάλε ... για 16 ώρες").
+    if _explicit_action(text) in {"add","remove","restore","replace"}:return None
     match=re.search(r"(?<!\d)(\d{1,3})\s*(?:h|hr|hrs|hour|hours|ωρ(?:α|ες|ών)?|ωρες|ώρα|ώρες)(?!\w)",text,re.I)
     if not match:return None
     period=f"{int(match.group(1))}h"
@@ -136,9 +153,6 @@ async def dashboard_command(request:DashboardCommandRequest)->dict[str,object]:
             return cached[1]
         try:result=await _execute_dashboard_command(request)
         except Exception as exc:
-            # Last-resort API boundary: a dashboard command must never escape as an
-            # opaque FastAPI 500. Preserve the workspace and expose the traceback in
-            # the local-only diagnostic trace so packaged-app failures are actionable.
             try:
                 current=DashboardStore().get(request.workspace);raw=current.get("widgets");widgets=[dict(x) for x in raw if isinstance(x,dict)] if isinstance(raw,list) else []
             except Exception:
