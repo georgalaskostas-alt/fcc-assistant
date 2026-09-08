@@ -1,4 +1,4 @@
-from app.dashboard_api import _period_followup_plan
+from app.dashboard_api import _explicit_action, _period_followup_plan
 from app.site_model import ProcessUnit
 
 
@@ -50,3 +50,17 @@ def test_live_kpis_are_never_period_updated():
     plan,_=result
     assert "hcu-live" not in plan["target_ids"]
     assert "fcc-live" not in plan["target_ids"]
+
+
+def test_explicit_add_with_period_is_not_misclassified_as_period_followup():
+    fcc=ProcessUnit("fcc","FCC",(),())
+    hcu=ProcessUnit("hcu","HCU",(),())
+    command="Βάλε ένα διάγραμμα feed flow στο FCC και ένα στο HCU για 16 ώρες."
+    assert _explicit_action(command)=="add"
+    assert _period_followup_plan(command,{"last_action":"update_widgets"},{"last_action":"update_widgets","last_touched_widget_ids":["hcu-feed-trend","fcc-feed-trend"]},_widgets(),[fcc,hcu]) is None
+
+
+def test_explicit_remove_is_not_a_period_followup_even_if_period_is_mentioned():
+    command="Αφαίρεσε τα γραφήματα 8 ωρών από το FCC"
+    assert _explicit_action(command)=="remove"
+    assert _period_followup_plan(command,{}, {}, _widgets(),[]) is None
