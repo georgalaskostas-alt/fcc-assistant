@@ -25,6 +25,14 @@ def test_restore_is_compatible_with_add_widgets_snapshot():
     assert conflicts_with_current_turn("Επανέφερε το διάγραμμα στο FCC",plan,{"fcc"},_widgets())==[]
 
 
+def test_restore_detected_before_add_for_xanavale():
+    assert explicit_action("Ξαναβάλε το διάγραμμα feed στο FCC")=="restore"
+
+
+def test_restore_detects_elliptical_put_back_phrase():
+    assert explicit_action("Βάλε τα πάλι πίσω αυτά που αφαίρεσες")=="restore"
+
+
 def test_explicit_unit_rejects_plan_targeting_other_unit():
     plan={"action":"remove_widgets","target_ids":["hcu-feed"]}
     conflicts=conflicts_with_current_turn("Αφαίρεσε το feed από το FCC",plan,{"fcc"},_widgets())
