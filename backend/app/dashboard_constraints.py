@@ -15,12 +15,15 @@ def explicit_action_families(command: str) -> set[str]:
     if restore:
         families.add("restore")
 
-    add = bool(re.search(r"\b(add|create|show|put)\b", text)) or any(
-        x in text for x in ("βάλε", "βαλε", "πρόσθε", "προσθε", "δημιούργ", "δημιουργ")
+    add_text = text
+    if restore:
+        add_text = re.sub(r"\b(ξαναβάλε|ξαναβαλε)\b", " ", add_text)
+        add_text = re.sub(r"\b(επαναφέρ\w*|επαναφερ\w*|επανέφερ\w*|επανεφερ\w*)\b", " ", add_text)
+        add_text = re.sub(r"\b(βάλε|βαλε)\b[^,;.]*?\b(πίσω|πισω)\b", " ", add_text)
+    add = bool(re.search(r"\b(add|create|show|put)\b", add_text)) or any(
+        x in add_text for x in ("βάλε", "βαλε", "πρόσθε", "προσθε", "δημιούργ", "δημιουργ")
     )
-    # Restore phrases often contain "βάλε". Do not count that embedded verb as
-    # a second ADD request unless the turn also contains a separate add signal.
-    if add and not restore:
+    if add:
         families.add("add")
 
     if re.search(r"\b(remove|delete|hide)\b", text) or any(
@@ -34,7 +37,6 @@ def explicit_action_families(command: str) -> set[str]:
 
 def explicit_action(command: str) -> str | None:
     families = explicit_action_families(command)
-    # Preserve the legacy single-action API for callers that only need a guard.
     for action in ("restore", "add", "remove", "replace"):
         if action in families:
             return action
@@ -87,12 +89,15 @@ def conflicts_with_current_turn(command: str, plan: dict[str, object], explicit_
     requested = explicit_action_families(command)
     families = plan_action_family(plan)
 
-    # Restore is intentionally compiled as add_widget(s).
     expected = {"add" if action == "restore" else action for action in requested}
-    if expected and families and not expected.issubset(families):
+    if expected and not families:
+        conflicts.append(f"explicit actions {sorted(requested)} produced no executable plan actions")
+    elif expected and not expected.issubset(families):
         conflicts.append(f"explicit actions {sorted(requested)} conflict with plan actions {sorted(families)}")
 
     targets = target_unit_keys(plan, widgets)
-    if explicit_units and targets and not targets.issubset(explicit_units):
+    if explicit_units and families and not targets:
+        conflicts.append(f"explicit units {sorted(explicit_units)} produced no resolvable target units")
+    elif explicit_units and targets and not targets.issubset(explicit_units):
         conflicts.append(f"explicit units {sorted(explicit_units)} conflict with target units {sorted(targets)}")
     return conflicts
