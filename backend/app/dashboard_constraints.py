@@ -27,10 +27,14 @@ def plan_action_family(plan: dict[str, object]) -> set[str]:
     families: set[str] = set()
     for step in _steps(plan):
         action = str(step.get("action", "")).casefold()
-        if action in {"add_widget", "add_widgets"}: families.add("add")
-        elif action in {"remove_widget", "remove_widgets"}: families.add("remove")
-        elif action == "replace_widget": families.add("replace")
-        elif action == "update_widgets": families.add("update")
+        if action in {"add_widget", "add_widgets"}:
+            families.add("add")
+        elif action in {"remove_widget", "remove_widgets"}:
+            families.add("remove")
+        elif action == "replace_widget":
+            families.add("replace")
+        elif action == "update_widgets":
+            families.add("update")
     return families
 
 
@@ -43,7 +47,11 @@ def target_unit_keys(plan: dict[str, object], widgets: list[dict[str, object]]) 
             units.add(str(widget["unit_key"]).casefold())
         raw_widgets = step.get("widgets")
         if isinstance(raw_widgets, list):
-            units.update(str(w.get("unit_key", "")).casefold() for w in raw_widgets if isinstance(w, dict) and w.get("unit_key"))
+            units.update(
+                str(w.get("unit_key", "")).casefold()
+                for w in raw_widgets
+                if isinstance(w, dict) and w.get("unit_key")
+            )
         target_id = step.get("target_id")
         if target_id is not None and str(target_id) in by_id:
             units.add(by_id[str(target_id)])
@@ -53,12 +61,22 @@ def target_unit_keys(plan: dict[str, object], widgets: list[dict[str, object]]) 
     return {x for x in units if x}
 
 
-def conflicts_with_current_turn(command: str, plan: dict[str, object], explicit_units: set[str], widgets: list[dict[str, object]]) -> list[str]:
+def conflicts_with_current_turn(
+    command: str,
+    plan: dict[str, object],
+    explicit_units: set[str],
+    widgets: list[dict[str, object]],
+) -> list[str]:
     conflicts: list[str] = []
     action = explicit_action(command)
     families = plan_action_family(plan)
-    if action and families and action not in families:
+
+    # Restoring an exact snapshot is executed as add_widget(s), so an explicit
+    # restore command is compatible with an ADD-family execution plan.
+    action_is_compatible = action in families or (action == "restore" and "add" in families)
+    if action and families and not action_is_compatible:
         conflicts.append(f"explicit action {action} conflicts with plan actions {sorted(families)}")
+
     targets = target_unit_keys(plan, widgets)
     if explicit_units and targets and not targets.issubset(explicit_units):
         conflicts.append(f"explicit units {sorted(explicit_units)} conflict with target units {sorted(targets)}")
