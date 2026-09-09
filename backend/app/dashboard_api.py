@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from .dashboard_agent import plan_with_local_agent
 from .dashboard_config import DashboardCommandError, plan_dashboard_command
+from .dashboard_constraints import conflicts_with_current_turn, explicit_action
 from .dashboard_dialogue import DashboardDialogueStore, contextual_plan, resolve_units
 from .dashboard_pending import DashboardPendingStore
 from .dashboard_store import DashboardStore
@@ -66,19 +67,8 @@ def _validate_transaction(plan):
     if not steps or any(str(s.get("action","")) not in allowed for s in steps):raise DashboardCommandError("Δεν μπόρεσα να επαληθεύσω με ασφάλεια όλη τη σύνθετη εντολή. Δεν άλλαξα τίποτα.")
     return steps
 
-def _explicit_action(text):
-    """Return only actions explicitly expressed in the current utterance.
-
-    These are hard current-turn constraints. Dialogue context may fill missing slots in
-    an elliptical follow-up, but it must never turn an explicit ADD into UPDATE (or
-    vice versa).
-    """
-    value=text.casefold()
-    if re.search(r"\b(add|create|show|put)\b",value) or any(x in value for x in ("βάλε","βαλε","πρόσθε","προσθε","δημιούργ","δημιουργ")):return "add"
-    if re.search(r"\b(remove|delete|hide)\b",value) or any(x in value for x in ("αφαίρε","αφαιρε","σβή","σβη","διέγρα","διεγρα")):return "remove"
-    if re.search(r"\b(restore|bring back)\b",value) or any(x in value for x in ("ξαναβάλε","ξαναβαλε","επαναφέρ","επαναφερ","βάλε πίσω","βαλε πισω")):return "restore"
-    if re.search(r"\b(replace|swap)\b",value) or any(x in value for x in ("αντικατάστ","αντικαταστ")):return "replace"
-    return None
+# Backward-compatible alias used by tests and the period-follow-up guard.
+_explicit_action=explicit_action
 
 def _metric_filter(text):
     compact=re.sub(r"[^a-z0-9α-ωάέήίόύώ]+","",text.casefold())
@@ -177,6 +167,13 @@ async def _execute_dashboard_command(request:DashboardCommandRequest)->dict[str,
             agent_result=await plan_with_local_agent(request.command,site,state,widgets)
             if agent_result is not None:plan,message=agent_result.plan,agent_result.message;route="local-llm"
             else:plan,message=_legacy_plan(request.command,site,state,widgets,aliases);route="deterministic-fallback"
+
+        explicit_unit_keys={u.key.casefold() for u in explicit}
+        conflicts=conflicts_with_current_turn(request.command,plan,explicit_unit_keys,widgets)
+        if conflicts:
+            append_trace("command.constraint_rejected",{"command":request.command,"route":route,"plan":plan,"conflicts":conflicts,"explicit_units":sorted(explicit_unit_keys)})
+            raise DashboardCommandError("Η προτεινόμενη ενέργεια δεν συμφωνεί με αυτό που ζήτησες τώρα. Δεν άλλαξα τίποτα.")
+
         _validate_unit_intent(request.command,site,aliases,plan);steps=_validate_transaction(plan) if str(plan.get("action",""))=="transaction" else []
     except DashboardCommandError as exc:
         message=str(exc);plan={"action":"clarify","read_only":True,"requires_confirmation":False,"needs_clarification":True};dialogue.remember(request.workspace,request.command,plan,current,message,previous_widgets=widgets);append_trace("command.rejected",{"command":request.command,"route":route,"message":message,"pending_intent":pending_store.get(request.workspace)});return {"plan":plan,"workspace":current,"message":message,"needs_clarification":True,"agent":route,"site":site_runtime_status()}
