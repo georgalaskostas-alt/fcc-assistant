@@ -5,12 +5,33 @@ import re
 
 def explicit_action(command: str) -> str | None:
     text = command.casefold()
-    if re.search(r"\b(add|create|show|put)\b", text) or any(x in text for x in ("βάλε", "βαλε", "πρόσθε", "προσθε", "δημιούργ", "δημιουργ")):
-        return "add"
-    if re.search(r"\b(remove|delete|hide)\b", text) or any(x in text for x in ("αφαίρε", "αφαιρε", "σβή", "σβη", "διέγρα", "διεγρα")):
-        return "remove"
-    if re.search(r"\b(restore|bring back)\b", text) or any(x in text for x in ("ξαναβάλε", "ξαναβαλε", "επαναφέρ", "επαναφερ", "βάλε πίσω", "βαλε πισω")):
+
+    # Restore must be detected before add because Greek forms such as
+    # "ξαναβάλε" contain the add verb "βάλε" as a substring.
+    if (
+        re.search(r"\b(restore|bring back)\b", text)
+        or any(
+            x in text
+            for x in (
+                "ξαναβάλε",
+                "ξαναβαλε",
+                "επαναφέρ",
+                "επαναφερ",
+                "επανέφερ",
+                "επανεφερ",
+            )
+        )
+        or re.search(r"\b(βάλε|βαλε)\b.*\b(πίσω|πισω)\b", text)
+    ):
         return "restore"
+    if re.search(r"\b(add|create|show|put)\b", text) or any(
+        x in text for x in ("βάλε", "βαλε", "πρόσθε", "προσθε", "δημιούργ", "δημιουργ")
+    ):
+        return "add"
+    if re.search(r"\b(remove|delete|hide)\b", text) or any(
+        x in text for x in ("αφαίρε", "αφαιρε", "σβή", "σβη", "διέγρα", "διεγρα")
+    ):
+        return "remove"
     if re.search(r"\b(replace|swap)\b", text) or "αντικατάστ" in text or "αντικαταστ" in text:
         return "replace"
     return None
