@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from app.dashboard_dialogue import DashboardDialogueStore
+from app.dashboard_dialogue import DashboardDialogueStore, contextual_plan
+from app.site_model import default_site_model
 
 
 def _widget(widget_id: str, unit: str, tag: str, period: str = "16h") -> dict[str, object]:
@@ -76,3 +77,36 @@ def test_update_widgets_records_exact_batch(tmp_path: Path):
     context = dialogue.get_action_context("default")
     assert context["last_action"] == "update_widgets"
     assert context["last_touched_widget_ids"] == ["fcc-feed-1", "hcu-feed-1"]
+
+
+def test_delete_what_you_added_resolves_exact_previous_batch(tmp_path: Path):
+    dialogue = DashboardDialogueStore(tmp_path / "dialogue.json")
+    fcc = _widget("fcc-feed-1", "fcc", "feed_flow")
+    hcu = _widget("hcu-feed-1", "hcu", "hcu_feed_flow")
+    add_plan = {
+        "action": "add_widgets",
+        "widgets": [fcc, hcu],
+        "read_only": True,
+        "requires_confirmation": False,
+    }
+    dialogue.remember(
+        "default",
+        "Βάλε feed flow στο FCC και HCU",
+        add_plan,
+        {"widgets": [fcc, hcu]},
+        "Έγινε.",
+        previous_widgets=[],
+    )
+
+    state = dialogue.get_state("default")
+    plan, message = contextual_plan(
+        "Διέγραψε αυτά που έβαλες",
+        default_site_model(),
+        state,
+        [fcc, hcu],
+    )
+
+    assert plan is not None
+    assert plan["action"] == "remove_widgets"
+    assert plan["target_ids"] == ["fcc-feed-1", "hcu-feed-1"]
+    assert "2" in str(message)
