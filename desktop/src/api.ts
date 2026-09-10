@@ -28,10 +28,10 @@ export type KnowledgeOverride = { id: string; subject: string; manual_value: str
 export type UnitKnowledge = { unit_key: string; knowledge_status: string; manuals: KnowledgeManual[]; revamps: KnowledgeRevamp[]; overrides: KnowledgeOverride[]; notes: unknown[]; updated_at: string; };
 export type ManualSearchItem = { storage_id?: string; chunk_id?: string; page?: number | null; text?: string; score?: number; [key: string]: unknown; };
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
   const isForm = init?.body instanceof FormData;
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       ...init,
@@ -45,20 +45,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     return response.json() as Promise<T>;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`Local backend request timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)} seconds.`);
+      throw new Error(`Local backend request timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
     }
     throw error;
   } finally {
     window.clearTimeout(timeout);
   }
-}
-
-function withHardDeadline<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  let timer = 0;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
-  });
-  return Promise.race([promise, deadline]).finally(() => window.clearTimeout(timer));
 }
 
 const dashboardCommandFlights = new Map<string, Promise<DashboardCommandResponse>>();
@@ -80,15 +72,10 @@ function dashboardCommand(command: string, workspace = "default"): Promise<Dashb
   if (existing) return existing;
 
   const commandId = nextDashboardCommandId();
-  const backendRequest = request<DashboardCommandResponse>("/api/v1/dashboard/command", {
+  const flight = request<DashboardCommandResponse>("/api/v1/dashboard/command", {
     method: "POST",
     body: JSON.stringify({ command: clean, workspace, command_id: commandId }),
-  });
-  const flight = withHardDeadline(
-    backendRequest,
-    DASHBOARD_COMMAND_DEADLINE_MS,
-    `Dashboard command did not finish within ${Math.round(DASHBOARD_COMMAND_DEADLINE_MS / 1000)} seconds. You can send another command now.`,
-  ).finally(() => {
+  }, DASHBOARD_COMMAND_DEADLINE_MS).finally(() => {
     if (dashboardCommandFlights.get(flightKey) === flight) dashboardCommandFlights.delete(flightKey);
   });
   dashboardCommandFlights.set(flightKey, flight);
