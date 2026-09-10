@@ -9,6 +9,7 @@ from .settings import get_settings
 class LocalAIError(RuntimeError):pass
 SYSTEM_PROMPT="""You are FCC Assistant, a local read-only process analysis assistant.
 Use only the process evidence supplied in the prompt. Never invent tag values, causes, alarms, limits, or operating events. Clearly separate observed facts from calculated results and possible engineering hypotheses. Do not recommend changing plant setpoints or controls. Current mode is analysis and reporting only."""
+_DASHBOARD_AGENT_TIMEOUT_SECONDS=12.0
 @dataclass(frozen=True)
 class LocalAIResponse:model:str;text:str
 def _is_local_url(url:str)->bool:
@@ -55,7 +56,19 @@ class LocalAIClient:
         if self.prefer_travis and system_prompt is None:
             try:return await self._generate_with_travis(prompt,context)
             except LocalAIError:pass
-        async with self._lock():return await self._generate_with_embedded(prompt,context,system_prompt=system_prompt,temperature=temperature)
+        # Dashboard commands are latency-sensitive and already have a deterministic
+        # fallback parser. Never let a slow local LLM hold the shared command gate
+        # long enough to block the next user command.
+        dashboard_agent=bool(system_prompt and "refinery dashboard copilot" in system_prompt.casefold())
+        request_timeout=min(float(self.timeout),_DASHBOARD_AGENT_TIMEOUT_SECONDS) if dashboard_agent else float(self.timeout)
+        try:
+            async with self._lock():
+                return await asyncio.wait_for(
+                    self._generate_with_embedded(prompt,context,system_prompt=system_prompt,temperature=temperature,request_timeout=request_timeout),
+                    timeout=request_timeout+1.0,
+                )
+        except TimeoutError as exc:
+            raise LocalAIError(f"Embedded local AI timed out after {request_timeout:.0f}s") from exc
     async def _generate_with_travis(self,prompt,context):
         if not self.travis_url or not _is_local_url(self.travis_url):raise LocalAIError("TRAVIS local bridge is not configured")
         body={"source":"fcc-assistant","mode":"read_only_process_analysis","question":prompt,"system_prompt":SYSTEM_PROMPT,"evidence":context or {},"data_policy":"local_only_no_external_process_data"}
@@ -65,11 +78,12 @@ class LocalAIClient:
         text=p.get("answer") if isinstance(p,dict) else None
         if not isinstance(text,str) or not text.strip():raise LocalAIError("TRAVIS returned an empty or invalid response")
         return LocalAIResponse(model=str(p.get("provider") or "TRAVIS"),text=text.strip())
-    async def _generate_with_embedded(self,prompt,context,*,system_prompt=None,temperature=0.1):
+    async def _generate_with_embedded(self,prompt,context,*,system_prompt=None,temperature=0.1,request_timeout:float|None=None):
         evidence="\n\nLOCAL STRUCTURED CONTEXT:\n"+json.dumps(context,ensure_ascii=False,separators=(",",":")) if context else ""
         body={"model":self.model,"stream":False,"temperature":max(0.0,min(float(temperature),1.0)),"messages":[{"role":"system","content":system_prompt or SYSTEM_PROMPT},{"role":"user","content":f"{prompt}{evidence}"}]}
+        timeout=float(request_timeout) if request_timeout is not None else float(self.timeout)
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as c:
+            async with httpx.AsyncClient(timeout=timeout) as c:
                 r=await c.post(f"{self.base_url}/v1/chat/completions",json=body)
                 if r.is_error:
                     detail=r.text.strip().replace("\n"," ")[:800]
