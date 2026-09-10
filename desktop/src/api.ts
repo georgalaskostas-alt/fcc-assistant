@@ -60,8 +60,12 @@ function nextDashboardCommandId(): string {
   return `dashboard-${Date.now()}-${dashboardCommandSequence}`;
 }
 
+function normalizeDashboardCommand(command: string): string {
+  return command.trim().replace(/[’‘ʼ´`]/g, "'");
+}
+
 function dashboardCommand(command: string, workspace = "default"): Promise<DashboardCommandResponse> {
-  const clean = command.trim();
+  const clean = normalizeDashboardCommand(command);
   const flightKey = `${workspace}\u0000${clean.toLocaleLowerCase()}`;
   const existing = dashboardCommandFlights.get(flightKey);
   if (existing) return existing;
