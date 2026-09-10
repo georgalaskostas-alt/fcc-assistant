@@ -5,12 +5,15 @@ def test_normalizes_greek_hydrocracker_pronunciation():
     result = normalize_transcript("βάλε τροφοδοσία στο χαιντρο κρακερ για οκτώ ώρες")
     assert "Hydrocracker" in result.normalized_text
     assert result.confidence > 0.6
+    assert result.response_language == "el"
 
 
 def test_normalizes_common_fcc_process_terms():
     result = normalize_transcript("δείξε θερμοκρασία αντίδρασης στο εφ σι σι και οξυγόνο regenerator")
     assert "FCC" in result.normalized_text
     assert "reactor temperature" in result.normalized_text
+    assert result.language == "mixed"
+    assert result.response_language == "el"
 
 
 def test_custom_site_term_is_preserved_and_can_raise_domain_context():
@@ -29,7 +32,7 @@ def test_medium_or_low_confidence_does_not_execute_blindly():
     assert result.execute_immediately is False
 
 
-def test_rejects_latin_only_whisper_hallucination_without_domain_context():
+def test_rejects_latin_only_whisper_hallucination_without_command_or_domain_context():
     result = normalize_transcript("The Lona Valo")
     assert result.raw_text == "The Lona Valo"
     assert result.normalized_text == ""
@@ -37,11 +40,19 @@ def test_rejects_latin_only_whisper_hallucination_without_domain_context():
     assert result.execute_immediately is False
 
 
-def test_allows_mixed_or_technical_english_when_it_has_refinery_context():
-    result = normalize_transcript("FCC feed flow")
+def test_allows_pure_english_command_and_answers_in_english():
+    result = normalize_transcript("Add a feed flow chart to FCC")
     assert "FCC" in result.normalized_text
     assert "feed flow" in result.normalized_text
     assert result.normalized_text != ""
+    assert result.language == "en"
+    assert result.response_language == "en"
+
+
+def test_greek_with_english_refinery_terms_remains_greek_interaction():
+    result = normalize_transcript("βάλε ένα feed flow chart στο FCC")
+    assert result.language == "mixed"
+    assert result.response_language == "el"
 
 
 def test_corrects_scc_to_fcc():
