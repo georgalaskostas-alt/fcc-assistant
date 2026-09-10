@@ -9,7 +9,7 @@ from .settings import get_settings
 class LocalAIError(RuntimeError):pass
 SYSTEM_PROMPT="""You are FCC Assistant, a local read-only process analysis assistant.
 Use only the process evidence supplied in the prompt. Never invent tag values, causes, alarms, limits, or operating events. Clearly separate observed facts from calculated results and possible engineering hypotheses. Do not recommend changing plant setpoints or controls. Current mode is analysis and reporting only."""
-_DASHBOARD_AGENT_TIMEOUT_SECONDS=12.0
+_DASHBOARD_AGENT_TIMEOUT_SECONDS=3.0
 @dataclass(frozen=True)
 class LocalAIResponse:model:str;text:str
 def _is_local_url(url:str)->bool:
@@ -65,7 +65,7 @@ class LocalAIClient:
             async with self._lock():
                 return await asyncio.wait_for(
                     self._generate_with_embedded(prompt,context,system_prompt=system_prompt,temperature=temperature,request_timeout=request_timeout),
-                    timeout=request_timeout+1.0,
+                    timeout=request_timeout+0.5,
                 )
         except TimeoutError as exc:
             raise LocalAIError(f"Embedded local AI timed out after {request_timeout:.0f}s") from exc
