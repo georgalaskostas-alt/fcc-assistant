@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 const API_BASE = "http://127.0.0.1:8765";
 const REQUEST_TIMEOUT_MS = 45_000;
+const DASHBOARD_COMMAND_DEADLINE_MS = 6_000;
 
 export type BackendRuntimeStatus = { listening: boolean; terminated: boolean; last_error: string | null; recent_output: string[]; port: number; };
 export type SystemCapabilities = { pi_web_api: string; local_ai: string; local_ai_runtime?: string; external_ai?: boolean; plant_write_access: boolean; features: string[]; };
@@ -52,6 +53,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
+function withHardDeadline<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer = 0;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, deadline]).finally(() => window.clearTimeout(timer));
+}
+
 const dashboardCommandFlights = new Map<string, Promise<DashboardCommandResponse>>();
 let dashboardCommandSequence = 0;
 
@@ -71,10 +80,15 @@ function dashboardCommand(command: string, workspace = "default"): Promise<Dashb
   if (existing) return existing;
 
   const commandId = nextDashboardCommandId();
-  const flight = request<DashboardCommandResponse>("/api/v1/dashboard/command", {
+  const backendRequest = request<DashboardCommandResponse>("/api/v1/dashboard/command", {
     method: "POST",
     body: JSON.stringify({ command: clean, workspace, command_id: commandId }),
-  }).finally(() => {
+  });
+  const flight = withHardDeadline(
+    backendRequest,
+    DASHBOARD_COMMAND_DEADLINE_MS,
+    `Dashboard command did not finish within ${Math.round(DASHBOARD_COMMAND_DEADLINE_MS / 1000)} seconds. You can send another command now.`,
+  ).finally(() => {
     if (dashboardCommandFlights.get(flightKey) === flight) dashboardCommandFlights.delete(flightKey);
   });
   dashboardCommandFlights.set(flightKey, flight);
