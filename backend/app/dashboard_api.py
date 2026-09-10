@@ -201,8 +201,15 @@ async def _execute_dashboard_command(request:DashboardCommandRequest)->dict[str,
         if pending is not None:state["pending_intent"]=pending
         action_context=dialogue.get_action_context(request.workspace)
         deterministic_update=_period_followup_plan(request.command,state,action_context,widgets,explicit)
+        command_action=_explicit_action(request.command)
         if deterministic_update is not None:
             plan,message=deterministic_update;route="verified-context-update";append_trace("command.context_resolved",{"command":request.command,"plan":plan,"reason":"explicit-period-followup","action_context":action_context})
+        elif command_action is not None:
+            # Explicit imperative dashboard commands are deterministic and should never
+            # wait on the local LLM. This keeps common operator interactions sub-second
+            # and leaves the LLM for genuinely conversational/ambiguous requests.
+            plan,message=_legacy_plan(request.command,site,state,widgets,aliases);route="deterministic-explicit-fastpath"
+            append_trace("command.fastpath",{"command":request.command,"explicit_action":command_action,"explicit_units":[u.key for u in explicit],"plan":plan})
         else:
             agent_result=await plan_with_local_agent(request.command,site,state,widgets)
             if agent_result is not None:plan,message=agent_result.plan,agent_result.message;route="local-llm"
