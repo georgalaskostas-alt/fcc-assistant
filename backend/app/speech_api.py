@@ -25,8 +25,13 @@ class VoiceTraceRequest(BaseModel):
 @router.get("/status")
 def speech_status() -> dict[str, object]:
     status = runtime_status()
-    return {**asdict(status), "engine": "whisper.cpp", "cloud": False, "audio_leaves_device": False,
-            "confidence_semantics": "command confidence after domain normalization; not acoustic posterior probability"}
+    return {
+        **asdict(status),
+        "engine": "whisper.cpp",
+        "cloud": False,
+        "audio_leaves_device": False,
+        "confidence_semantics": "command confidence after domain normalization; not acoustic posterior probability",
+    }
 
 
 @router.post("/trace")
@@ -49,7 +54,7 @@ def _unit_vocabulary() -> list[str]:
         if unit.key.casefold() == "vdu" or unit.name.casefold() == "vdu":
             terms.extend(["Vacuum Distillation", "vacuum unit", "μονάδα κενού", "μοναδα κενου"])
     terms.extend(DashboardDialogueStore().aliases().keys())
-    return list(dict.fromkeys(term.strip() for term in terms if term.strip()))[:32]
+    return list(dict.fromkeys(term.strip() for term in terms if term.strip()))[:48]
 
 
 def _recent_conversation_context(workspace: str = "default") -> str:
@@ -65,14 +70,16 @@ def _recent_conversation_context(workspace: str = "default") -> str:
         if isinstance(turn, dict):
             user = str(turn.get("user", "")).strip()
             if user:
-                recent.append(user[:180])
-    return " | ".join(recent)[:360]
+                recent.append(user[:160])
+    return " | ".join(recent)[:300]
 
 
 @router.post("/transcribe")
 async def speech_transcribe(
-    audio: UploadFile = File(...), scope: str = Form(default="all"),
-    terms_json: str = Form(default="[]"), mode: str = Form(default="final"),
+    audio: UploadFile = File(...),
+    scope: str = Form(default="all"),
+    terms_json: str = Form(default="[]"),
+    mode: str = Form(default="final"),
 ) -> dict[str, object]:
     request_started = perf_counter()
     try:
@@ -86,14 +93,20 @@ async def speech_transcribe(
         normalized_mode = "final"
     unit_terms = _unit_vocabulary()
     recent_context = _recent_conversation_context() if normalized_mode == "final" else ""
-    domain_terms = list(dict.fromkeys([*unit_terms, scope, *extra_terms]))[:40]
+    domain_terms = list(dict.fromkeys([*unit_terms, scope, *extra_terms]))[:48]
+
+    # Do not force Greek. The runtime is language=auto; this prompt teaches the
+    # decoder the bilingual refinery vocabulary while explicitly protecting the
+    # newest utterance from stale conversational context.
     prompt = (
-        "Ελληνική ομιλία με πιθανές αγγλικές τεχνικές λέξεις. Απόδωσε πιστά μόνο την τωρινή πρόταση. "
-        "Μην προσθέτεις μονάδα που δεν ακούστηκε. Διατήρησε FCC, HCU, Hydrocracker, feed flow, "
-        "reactor temperature, regenerator, riser, stripper. Πιθανοί όροι: " + ", ".join(domain_terms)
+        "Greek or English refinery speech; Greek sentences may contain English technical terms. "
+        "Transcribe ONLY the current utterance faithfully. Never add a unit, metric, number, time window, "
+        "action or reference that was not spoken now. Keep technical tokens such as FCC, HCU, Hydrocracker, "
+        "feed flow, reactor temperature, regenerator, riser, stripper, main fractionator. Domain terms: "
+        + ", ".join(domain_terms)
     )
-    if recent_context and normalized_mode == "final":
-        prompt += ". Πρόσφατο πλαίσιο μόνο για αντωνυμίες, όχι για προσθήκη πληροφορίας: " + recent_context
+    if recent_context:
+        prompt += ". Prior user wording is weak pronunciation context only and MUST NOT supply missing facts: " + recent_context
 
     try:
         read_started = perf_counter()
@@ -103,19 +116,17 @@ async def speech_transcribe(
             raise HTTPException(status_code=413, detail="Audio clip is too large")
 
         stt_started = perf_counter()
-        # whisper-cli is blocking/native work. Running it in a worker keeps the
-        # FastAPI loop responsive for health, diagnostics and UI requests.
-        raw = await asyncio.to_thread(
-            transcribe_wav, data, prompt=prompt, high_accuracy=normalized_mode == "final"
-        )
+        raw = await asyncio.to_thread(transcribe_wav, data, prompt=prompt, high_accuracy=False)
         stt_ms = round((perf_counter() - stt_started) * 1000, 1)
 
         normalize_started = perf_counter()
         decision = normalize_transcript(raw, extra_terms=list(dict.fromkeys([*unit_terms, *extra_terms])))
         normalize_ms = round((perf_counter() - normalize_started) * 1000, 1)
     except SpeechRuntimeError as exc:
-        append_trace("speech.error", {"mode": normalized_mode, "error": str(exc),
-                                      "elapsed_ms": round((perf_counter() - request_started) * 1000, 1)})
+        append_trace(
+            "speech.error",
+            {"mode": normalized_mode, "error": str(exc), "elapsed_ms": round((perf_counter() - request_started) * 1000, 1)},
+        )
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     finally:
         await audio.close()
@@ -123,18 +134,37 @@ async def speech_transcribe(
     total_ms = round((perf_counter() - request_started) * 1000, 1)
     timings = {"read_ms": read_ms, "stt_ms": stt_ms, "normalize_ms": normalize_ms, "total_ms": total_ms}
     result = {
-        "raw_text": decision.raw_text, "text": decision.normalized_text,
-        "confidence": decision.confidence, "confidence_level": decision.level,
+        "raw_text": decision.raw_text,
+        "text": decision.normalized_text,
+        "confidence": decision.confidence,
+        "confidence_level": decision.level,
         "execute_immediately": decision.execute_immediately,
-        "corrections": [asdict(item) for item in decision.corrections], "scope": scope,
-        "language": "el", "engine": "whisper.cpp", "mode": normalized_mode,
-        "local_only": True, "audio_retained": False, "audio_bytes": len(data), "timings": timings,
+        "corrections": [asdict(item) for item in decision.corrections],
+        "scope": scope,
+        "language": decision.language,
+        "response_language": decision.response_language,
+        "engine": "whisper.cpp",
+        "mode": normalized_mode,
+        "local_only": True,
+        "audio_retained": False,
+        "audio_bytes": len(data),
+        "timings": timings,
     }
     if normalized_mode == "final":
-        append_trace("speech.final", {
-            "raw_text": decision.raw_text, "normalized_text": decision.normalized_text,
-            "confidence": decision.confidence, "level": decision.level,
-            "corrections": [asdict(item) for item in decision.corrections], "scope": scope,
-            "audio_bytes": len(data), "timings": timings, "recent_context_used": bool(recent_context),
-        })
+        append_trace(
+            "speech.final",
+            {
+                "raw_text": decision.raw_text,
+                "normalized_text": decision.normalized_text,
+                "language": decision.language,
+                "response_language": decision.response_language,
+                "confidence": decision.confidence,
+                "level": decision.level,
+                "corrections": [asdict(item) for item in decision.corrections],
+                "scope": scope,
+                "audio_bytes": len(data),
+                "timings": timings,
+                "recent_context_used": bool(recent_context),
+            },
+        )
     return result
