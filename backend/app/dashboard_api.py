@@ -13,6 +13,7 @@ from .dashboard_dialogue import DashboardDialogueStore, contextual_plan, resolve
 from .dashboard_pending import DashboardPendingStore
 from .dashboard_store import DashboardStore
 from .diagnostic_trace import append_trace, clear_trace, recent_trace
+from .language import detect_user_language
 from .site_model import load_site_model, site_runtime_status
 
 router=APIRouter(prefix="/api/v1/dashboard",tags=["dashboard"])
@@ -67,7 +68,6 @@ def _validate_transaction(plan):
     if not steps or any(str(s.get("action","")) not in allowed for s in steps):raise DashboardCommandError("Δεν μπόρεσα να επαληθεύσω με ασφάλεια όλη τη σύνθετη εντολή. Δεν άλλαξα τίποτα.")
     return steps
 
-# Backward-compatible alias used by tests and the period-follow-up guard.
 _explicit_action=explicit_action
 
 def _metric_filter(text):
@@ -86,8 +86,6 @@ def _widget_matches_metric(widget,metric_filter):
 
 def _period_followup_plan(command,state,action_context,widgets,explicit_units):
     text=command.casefold().strip()
-    # A complete current-turn mutation is not a contextual period follow-up even if
-    # it contains a period (e.g. "Βάλε ... για 16 ώρες").
     if _explicit_action(text) in {"add","remove","restore","replace"}:return None
     match=re.search(r"(?<!\d)(\d{1,3})\s*(?:h|hr|hrs|hour|hours|ωρ(?:α|ες|ών)?|ωρες|ώρα|ώρες)(?!\w)",text,re.I)
     if not match:return None
@@ -110,7 +108,7 @@ def _period_followup_plan(command,state,action_context,widgets,explicit_units):
     if not unit_keys and not metric and not graph_words and not (plural_followup and (prior_mutation or prior_dialogue_mutation or bool(touched))):return None
     if not trends:return None
     ids=[str(w["id"]) for w in trends]
-    return {"action":"update_widgets","target_ids":ids,"period":period,"read_only":True,"requires_confirmation":False},f"Έγινε. Άλλαξα {len(ids)} γραφήματα σε {period}."
+    return {"action":"update_widgets","target_ids":ids,"period":period,"read_only":True,"requires_confirmation":False},None
 
 def _legacy_plan(command,site,state,widgets,aliases):
     plan,message=contextual_plan(command,site,state,widgets,learned_aliases=aliases)
@@ -118,9 +116,37 @@ def _legacy_plan(command,site,state,widgets,aliases):
     resolved=resolve_units(command,site,aliases);working=f"{command} {' '.join(u.key for u in resolved)}" if resolved else command
     return plan_dashboard_command(working,site,current_widgets=widgets),None
 
+def _widget_map(workspace):
+    raw=workspace.get("widgets") if isinstance(workspace,dict) else None
+    items=[x for x in raw if isinstance(x,dict)] if isinstance(raw,list) else []
+    return {str(w.get("id")):w for w in items if w.get("id")}
+
+def _verified_message(command,plan,before,after,original_message):
+    language=detect_user_language(command).response_language
+    before_map=_widget_map(before);after_map=_widget_map(after)
+    added=[w for key,w in after_map.items() if key not in before_map]
+    removed=[w for key,w in before_map.items() if key not in after_map]
+    changed=[w for key,w in after_map.items() if key in before_map and w!=before_map[key]]
+    action=str(plan.get("action",""))
+    if action in {"answer","clarify"}:return original_message
+    if added and not removed:
+        units=sorted({str(w.get("unit_key","")).upper() for w in added if w.get("unit_key")})
+        label=", ".join(units)
+        return (f"Added {len(added)} widget{'s' if len(added)!=1 else ''}{' in '+label if label else ''}." if language=="en" else f"Έγινε. Πρόσθεσα {len(added)} γράφημα{'τα' if len(added)!=1 else ''}{' σε '+label if label else ''}.")
+    if removed and not added:
+        return (f"Removed {len(removed)} widget{'s' if len(removed)!=1 else ''}." if language=="en" else f"Έγινε. Αφαίρεσα {len(removed)} γράφημα{'τα' if len(removed)!=1 else ''}.")
+    if changed and not added and not removed:
+        periods=sorted({str(w.get("period")) for w in changed if w.get("period")})
+        suffix=f" to {periods[0]}" if language=="en" and len(periods)==1 else f" σε {periods[0]}" if language!="en" and len(periods)==1 else ""
+        return (f"Updated {len(changed)} widget{'s' if len(changed)!=1 else ''}{suffix}." if language=="en" else f"Έγινε. Ενημέρωσα {len(changed)} γράφημα{'τα' if len(changed)!=1 else ''}{suffix}.")
+    if added or removed or changed:
+        return (f"Done. Verified workspace changes: +{len(added)} / -{len(removed)} / updated {len(changed)}." if language=="en" else f"Έγινε. Επιβεβαίωσα τις αλλαγές: +{len(added)} / -{len(removed)} / ενημερώθηκαν {len(changed)}.")
+    return ("The command produced no workspace change." if language=="en" else "Η εντολή δεν προκάλεσε αλλαγή στο workspace.")
+
 def _safe_failure(request,current,widgets,dialogue,pending_store,route,exc):
     append_trace("command.error",{"command":request.command,"command_id":request.command_id,"route":route,"error_type":type(exc).__name__,"error":str(exc),"traceback":"".join(traceback.format_exception(type(exc),exc,exc.__traceback__))[-6000:]})
-    message="Δεν ολοκληρώθηκε η ενέργεια λόγω τοπικού σφάλματος. Δεν άλλαξα τίποτα."
+    english=detect_user_language(request.command).response_language=="en"
+    message="The action failed locally. I changed nothing." if english else "Δεν ολοκληρώθηκε η ενέργεια λόγω τοπικού σφάλματος. Δεν άλλαξα τίποτα."
     plan={"action":"clarify","read_only":True,"requires_confirmation":False,"needs_clarification":True}
     try:dialogue.remember(request.workspace,request.command,plan,current,message,previous_widgets=widgets)
     except Exception as remember_exc:append_trace("command.error.remember",{"command_id":request.command_id,"error_type":type(remember_exc).__name__,"error":str(remember_exc)})
@@ -155,7 +181,7 @@ async def _execute_dashboard_command(request:DashboardCommandRequest)->dict[str,
     store=DashboardStore();dialogue=DashboardDialogueStore();pending_store=DashboardPendingStore();current=store.get(request.workspace);raw=current.get("widgets");widgets=[dict(x) for x in raw if isinstance(x,dict)] if isinstance(raw,list) else [];route="unknown"
     try:
         site=load_site_model();aliases=dialogue.aliases();explicit=resolve_units(request.command,site,aliases);pending=pending_store.get(request.workspace)
-        append_trace("command.received",{"command":request.command,"workspace":request.workspace,"command_id":request.command_id,"explicit_units":[u.key for u in explicit],"pending_intent":pending,"widgets_before":[{"id":w.get("id"),"unit_key":w.get("unit_key"),"tag_keys":w.get("tag_keys"),"type":w.get("type"),"period":w.get("period")} for w in widgets]})
+        append_trace("command.received",{"command":request.command,"workspace":request.workspace,"command_id":request.command_id,"language":detect_user_language(request.command).detected,"explicit_units":[u.key for u in explicit],"pending_intent":pending,"widgets_before":[{"id":w.get("id"),"unit_key":w.get("unit_key"),"tag_keys":w.get("tag_keys"),"type":w.get("type"),"period":w.get("period")} for w in widgets]})
         if len(explicit)==1:dialogue.remember_requested_unit(request.workspace,explicit[0].key)
         state=dialogue.get_state(request.workspace)
         if pending is not None:state["pending_intent"]=pending
@@ -170,13 +196,23 @@ async def _execute_dashboard_command(request:DashboardCommandRequest)->dict[str,
 
         explicit_unit_keys={u.key.casefold() for u in explicit}
         conflicts=conflicts_with_current_turn(request.command,plan,explicit_unit_keys,widgets)
-        if conflicts:
-            append_trace("command.constraint_rejected",{"command":request.command,"route":route,"plan":plan,"conflicts":conflicts,"explicit_units":sorted(explicit_unit_keys)})
-            raise DashboardCommandError("Η προτεινόμενη ενέργεια δεν συμφωνεί με αυτό που ζήτησες τώρα. Δεν άλλαξα τίποτα.")
+        if conflicts and route=="local-llm":
+            append_trace("command.constraint_rejected",{"command":request.command,"route":route,"plan":plan,"conflicts":conflicts,"explicit_units":sorted(explicit_unit_keys),"recovery":"deterministic-replan"})
+            fallback_plan,fallback_message=_legacy_plan(request.command,site,state,widgets,aliases)
+            fallback_conflicts=conflicts_with_current_turn(request.command,fallback_plan,explicit_unit_keys,widgets)
+            if not fallback_conflicts:
+                plan,message=fallback_plan,fallback_message;route="constraint-recovered-fallback"
+                append_trace("command.constraint_recovered",{"command":request.command,"plan":plan,"explicit_units":sorted(explicit_unit_keys)})
+            else:
+                conflicts=fallback_conflicts
+        if conflicts_with_current_turn(request.command,plan,explicit_unit_keys,widgets):
+            append_trace("command.constraint_blocked",{"command":request.command,"route":route,"plan":plan,"conflicts":conflicts_with_current_turn(request.command,plan,explicit_unit_keys,widgets)})
+            english=detect_user_language(request.command).response_language=="en"
+            raise DashboardCommandError("The proposed action conflicts with your current instruction. I changed nothing." if english else "Η προτεινόμενη ενέργεια δεν συμφωνεί με αυτό που ζήτησες τώρα. Δεν άλλαξα τίποτα.")
 
         _validate_unit_intent(request.command,site,aliases,plan);steps=_validate_transaction(plan) if str(plan.get("action",""))=="transaction" else []
     except DashboardCommandError as exc:
-        message=str(exc);plan={"action":"clarify","read_only":True,"requires_confirmation":False,"needs_clarification":True};dialogue.remember(request.workspace,request.command,plan,current,message,previous_widgets=widgets);append_trace("command.rejected",{"command":request.command,"route":route,"message":message,"pending_intent":pending_store.get(request.workspace)});return {"plan":plan,"workspace":current,"message":message,"needs_clarification":True,"agent":route,"site":site_runtime_status()}
+        message=str(exc);plan={"action":"clarify","read_only":True,"requires_confirmation":False,"needs_clarification":True};dialogue.remember(request.workspace,request.command,plan,current,message,previous_widgets=widgets);append_trace("command.rejected",{"command":request.command,"route":route,"message":message,"pending_intent":pending_store.get(request.workspace)});return {"plan":plan,"workspace":current,"message":message,"needs_clarification":True,"agent":route,"language":detect_user_language(request.command).response_language,"site":site_runtime_status()}
     except Exception as exc:return _safe_failure(request,current,widgets,dialogue,pending_store,route,exc)
     action=str(plan.get("action",""))
     try:
@@ -188,6 +224,7 @@ async def _execute_dashboard_command(request:DashboardCommandRequest)->dict[str,
             workspace=store.apply_transaction(request.workspace,steps) if action=="transaction" else store.apply_plan(request.workspace,plan)
             if action!="answer":pending_store.clear(request.workspace)
     except Exception as exc:return _safe_failure(request,current,widgets,dialogue,pending_store,route,exc)
+    message=_verified_message(request.command,plan,current,workspace,message)
     append_trace("command.executed",{"command":request.command,"route":route,"plan":plan,"message":message,"pending_after":pending_store.get(request.workspace),"widgets_after":[{"id":w.get("id"),"unit_key":w.get("unit_key"),"tag_keys":w.get("tag_keys"),"type":w.get("type"),"period":w.get("period")} for w in (workspace.get("widgets") or []) if isinstance(w,dict)]})
     dialogue.remember(request.workspace,request.command,plan,workspace,message,previous_widgets=widgets)
-    return {"plan":plan,"workspace":workspace,"message":message,"needs_clarification":bool(plan.get("needs_clarification",False)),"agent":route,"pending_intent":pending_store.get(request.workspace),"site":site_runtime_status()}
+    return {"plan":plan,"workspace":workspace,"message":message,"needs_clarification":bool(plan.get("needs_clarification",False)),"agent":route,"language":detect_user_language(request.command).response_language,"pending_intent":pending_store.get(request.workspace),"site":site_runtime_status()}
