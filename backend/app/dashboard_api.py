@@ -96,19 +96,33 @@ def _period_followup_plan(command,state,action_context,widgets,explicit_units):
     if unit_keys:trends=[w for w in trends if str(w.get("unit_key","")).casefold() in unit_keys]
     graph_words=any(x in text for x in ("διάγραμ","διαγραμ","γράφημ","γραφημ","trend","chart"))
     plural_followup=any(x in text for x in ("τελικά τα","τελικα τα","τα θέλω","τα θελω","κάν' τα","καν' τα","κάντα","καντα","και τα δύο","και τα δυο","και στις δύο","και στις δυο","στις δύο","στις δυο","both"))
+    singular_followup=any(x in text for x in ("κάν' το","καν' το","κάν το","καν το","κάντο","καντο","άλλαξέ το","αλλαξε το","άλλαξέτο","αλλαξετο","make it","change it","set it"))
     metric=_metric_filter(text)
     if metric:trends=[w for w in trends if _widget_matches_metric(w,metric)]
     touched_raw=action_context.get("last_touched_widget_ids") if isinstance(action_context,dict) else None
     touched={str(v) for v in touched_raw} if isinstance(touched_raw,list) else set()
-    if not metric and not unit_keys and plural_followup and touched:
-        touched_trends=[w for w in trends if str(w.get("id")) in touched]
-        if touched_trends:trends=touched_trends
+    touched_trends=[w for w in trends if str(w.get("id")) in touched] if touched else []
+    last_widget=state.get("last_widget") if isinstance(state,dict) else None
+    last_widget_id=str(last_widget.get("id")) if isinstance(last_widget,dict) and last_widget.get("id") else ""
+    if not metric and not unit_keys:
+        if singular_followup:
+            if len(touched_trends)==1:trends=touched_trends
+            elif last_widget_id:
+                last_hits=[w for w in trends if str(w.get("id"))==last_widget_id]
+                if len(last_hits)==1:trends=last_hits
+        elif plural_followup and touched_trends:
+            trends=touched_trends
     prior_mutation=str(action_context.get("last_action","")).casefold() in {"transaction","add_widget","add_widgets","update_widgets","replace_widget"}
     prior_dialogue_mutation=str(state.get("last_action","")).casefold() in {"transaction","add_widget","add_widgets","update_widgets","replace_widget"}
-    if not unit_keys and not metric and not graph_words and not (plural_followup and (prior_mutation or prior_dialogue_mutation or bool(touched))):return None
+    contextual_followup=plural_followup or singular_followup
+    has_reference=bool(touched_trends) or bool(last_widget_id)
+    if not unit_keys and not metric and not graph_words and not (contextual_followup and (prior_mutation or prior_dialogue_mutation or has_reference)):return None
+    if singular_followup and not unit_keys and not metric and len(trends)!=1:return None
     if not trends:return None
     ids=[str(w["id"]) for w in trends]
-    return {"action":"update_widgets","target_ids":ids,"period":period,"read_only":True,"requires_confirmation":False},None
+    language=detect_user_language(command).response_language
+    message=(f"Updated {len(ids)} widget{'s' if len(ids)!=1 else ''} to {period}." if language=="en" else f"Έγινε. Ενημέρωσα {len(ids)} γράφημα{'τα' if len(ids)!=1 else ''} σε {period}.")
+    return {"action":"update_widgets","target_ids":ids,"period":period,"read_only":True,"requires_confirmation":False},message
 
 def _legacy_plan(command,site,state,widgets,aliases):
     plan,message=contextual_plan(command,site,state,widgets,learned_aliases=aliases)
