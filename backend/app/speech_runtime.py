@@ -40,7 +40,6 @@ def _candidate_model() -> str:
     if configured:
         return configured
     roots = [Path.home() / ".fcc-assistant" / "models", Path.cwd() / "models", Path.cwd() / "assets" / "models"]
-    # Prefer quantized turbo when present to reduce unified-memory pressure.
     names = ("ggml-large-v3-turbo-q5_0.bin", "ggml-large-v3-turbo.bin", "ggml-large-v3.bin")
     for root in roots:
         for name in names:
@@ -51,8 +50,10 @@ def _candidate_model() -> str:
 
 
 def _language() -> str:
-    configured = os.environ.get("FCC_STT_LANGUAGE", "el").strip().casefold()
-    return "el" if configured in {"", "auto"} else configured
+    # Auto is required for natural Greek/English switching. A deployment may
+    # still force a language explicitly with FCC_STT_LANGUAGE.
+    configured = os.environ.get("FCC_STT_LANGUAGE", "auto").strip().casefold()
+    return configured or "auto"
 
 
 def _int_env(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -68,8 +69,6 @@ def _threads() -> int:
 
 
 def _use_gpu() -> bool:
-    # Qwen already occupies Metal/unified memory. CPU STT is the conservative
-    # packaged-app default; capable workstations can opt in with FCC_STT_USE_GPU=1.
     return os.environ.get("FCC_STT_USE_GPU", "0").strip().casefold() in {"1", "true", "yes", "on"}
 
 
@@ -103,8 +102,6 @@ def transcribe_wav(data: bytes, *, prompt: str = "", high_accuracy: bool = False
         ]
         if not _use_gpu():
             command.append("-ng")
-        # Keep decoding light. The domain normalizer handles refinery aliases;
-        # beam search was causing unacceptable contention on the desktop target.
         if high_accuracy:
             command.extend(["--best-of", "2", "--temperature", "0"])
 
