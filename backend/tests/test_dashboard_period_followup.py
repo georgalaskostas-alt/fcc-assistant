@@ -18,7 +18,24 @@ def test_elliptical_plural_followup_updates_both_existing_trends():
     assert plan["action"]=="update_widgets"
     assert plan["period"]=="8h"
     assert set(plan["target_ids"])=={"hcu-feed-trend","fcc-feed-trend"}
-    assert "2" in message
+    assert message is not None and "2" in message
+
+
+def test_singular_followup_updates_only_last_touched_trend():
+    state={"last_action":"add_widget","last_widget":{"id":"fcc-feed-trend","type":"trend","unit_key":"fcc","period":"16h","title":"Feed Flow","tag_keys":["fcc_feed"]}}
+    action_context={"last_action":"add_widget","last_touched_widget_ids":["fcc-feed-trend"]}
+    result=_period_followup_plan("Κάν’ το 4 ώρες.",state,action_context,_widgets(),[])
+    assert result is not None
+    plan,message=result
+    assert plan["action"]=="update_widgets"
+    assert plan["period"]=="4h"
+    assert plan["target_ids"]==["fcc-feed-trend"]
+    assert message is not None and "1" in message
+
+
+def test_singular_followup_does_not_guess_when_reference_is_ambiguous():
+    action_context={"last_action":"transaction","last_touched_widget_ids":["hcu-feed-trend","fcc-feed-trend"]}
+    assert _period_followup_plan("Κάν' το 4 ώρες",{},action_context,_widgets(),[]) is None
 
 
 def test_period_followup_does_not_guess_without_context():
