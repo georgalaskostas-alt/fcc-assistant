@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 const API_BASE = "http://127.0.0.1:8765";
+const REQUEST_TIMEOUT_MS = 45_000;
 
 export type BackendRuntimeStatus = { listening: boolean; terminated: boolean; last_error: string | null; recent_output: string[]; port: number; };
 export type SystemCapabilities = { pi_web_api: string; local_ai: string; local_ai_runtime?: string; external_ai?: boolean; plant_write_access: boolean; features: string[]; };
@@ -28,12 +29,27 @@ export type ManualSearchItem = { storage_id?: string; chunk_id?: string; page?: 
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isForm = init?.body instanceof FormData;
-  const response = await fetch(`${API_BASE}${path}`, { ...init, headers: { ...(isForm ? {} : { "Content-Type": "application/json" }), ...(init?.headers ?? {}) } });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.detail ?? `${response.status} ${response.statusText}`);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: { ...(isForm ? {} : { "Content-Type": "application/json" }), ...(init?.headers ?? {}) },
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.detail ?? `${response.status} ${response.statusText}`);
+    }
+    return response.json() as Promise<T>;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`Local backend request timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)} seconds.`);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
   }
-  return response.json() as Promise<T>;
 }
 
 const dashboardCommandFlights = new Map<string, Promise<DashboardCommandResponse>>();
