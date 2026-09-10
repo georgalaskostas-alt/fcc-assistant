@@ -205,6 +205,25 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
             return {"action": "remove_widgets", "target_ids": ids, "read_only": True, "requires_confirmation": False}, f"Αφαίρεσα {len(ids)} γραφήματα από {scope_name}."
         return {"action": "answer", "read_only": True, "requires_confirmation": False}, "Δεν υπάρχουν γραφήματα για αφαίρεση."
 
+    # Resolve plural/singular references to the exact widgets changed by the previous
+    # dashboard mutation. This is deliberately deterministic: phrases such as
+    # "διέγραψε αυτά που έβαλες" must never go to the local LLM.
+    previous_batch_ref = any(token in text for token in (
+        "αυτά που έβαλες", "αυτα που εβαλες", "αυτά που βάλαμε", "αυτα που βαλαμε",
+        "ό,τι έβαλες", "ο,τι εβαλες", "ότι έβαλες", "οτι εβαλες",
+        "αυτά που πρόσθεσες", "αυτα που προσθεσες", "what you added", "those you added",
+    ))
+    if remove_intent and previous_batch_ref:
+        raw_context = state.get("last_action_context")
+        context = dict(raw_context) if isinstance(raw_context, dict) else {}
+        touched = context.get("last_touched_widget_ids")
+        existing_ids = {str(w.get("id")) for w in current_widgets if w.get("id")}
+        ids = [str(x) for x in touched if str(x) in existing_ids] if isinstance(touched, list) else []
+        if ids:
+            if len(ids) == 1:
+                return {"action": "remove_widget", "target_id": ids[0], "read_only": True, "requires_confirmation": False}, "Αφαίρεσα το γράφημα που πρόσθεσα πριν."
+            return {"action": "remove_widgets", "target_ids": ids, "read_only": True, "requires_confirmation": False}, f"Αφαίρεσα τα {len(ids)} γραφήματα που πρόσθεσα πριν."
+
     asks_where = any(token in text for token in ("πού", "που", "σε ποια μονάδα", "σε ποια μοναδα", "where")) and any(token in text for token in ("τελευτα", "γράφημα", "γραφημα", "διάγραμμα", "διαγραμμα", "widget"))
     if asks_where and last_widget:
         unit = site.find_unit(str(last_widget.get("unit_key", ""))); unit_name = unit.name if unit else str(last_widget.get("unit_key", "")).upper(); title = str(last_widget.get("title", "το τελευταίο γράφημα"))
