@@ -3,11 +3,16 @@ from __future__ import annotations
 import re
 
 
+def _has_word(text: str, *words: str) -> bool:
+    return any(re.search(rf"(?<!\w){re.escape(word)}(?!\w)", text) for word in words)
+
+
 def explicit_action(command: str) -> str | None:
     text = command.casefold()
 
-    # Restore must be detected before add because Greek forms such as
-    # "ξαναβάλε" contain the add verb "βάλε" as a substring.
+    # Detect actual imperative/action words, not substrings inside references such as
+    # "που μόλις έβαλες". The old substring matching treated "έβαλες" as "βάλε",
+    # causing a clarification target to be routed as a fresh ADD command.
     if (
         re.search(r"\b(restore|bring back)\b", text)
         or any(
@@ -24,15 +29,33 @@ def explicit_action(command: str) -> str | None:
         or re.search(r"\b(βάλε|βαλε)\b.*\b(πίσω|πισω)\b", text)
     ):
         return "restore"
-    if re.search(r"\b(add|create|show|put)\b", text) or any(
-        x in text for x in ("βάλε", "βαλε", "πρόσθε", "προσθε", "δημιούργ", "δημιουργ")
+    if re.search(r"\b(add|create|show|put)\b", text) or _has_word(
+        text,
+        "βάλε",
+        "βαλε",
+        "πρόσθεσε",
+        "προσθεσε",
+        "δημιούργησε",
+        "δημιουργησε",
     ):
         return "add"
-    if re.search(r"\b(remove|delete|hide)\b", text) or any(
-        x in text for x in ("αφαίρε", "αφαιρε", "σβή", "σβη", "διέγρα", "διεγρα")
+    if re.search(r"\b(remove|delete|hide)\b", text) or _has_word(
+        text,
+        "αφαίρεσε",
+        "αφαιρεσε",
+        "βγάλε",
+        "βγαλε",
+        "σβήσε",
+        "σβησε",
+        "διέγραψε",
+        "διεγραψε",
     ):
         return "remove"
-    if re.search(r"\b(replace|swap)\b", text) or "αντικατάστ" in text or "αντικαταστ" in text:
+    if re.search(r"\b(replace|swap)\b", text) or _has_word(
+        text,
+        "αντικατάστησε",
+        "αντικαταστησε",
+    ):
         return "replace"
     return None
 
