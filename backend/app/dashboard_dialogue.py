@@ -205,13 +205,13 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
             return {"action": "remove_widgets", "target_ids": ids, "read_only": True, "requires_confirmation": False}, f"Αφαίρεσα {len(ids)} γραφήματα από {scope_name}."
         return {"action": "answer", "read_only": True, "requires_confirmation": False}, "Δεν υπάρχουν γραφήματα για αφαίρεση."
 
-    # Resolve plural/singular references to the exact widgets changed by the previous
-    # dashboard mutation. This is deliberately deterministic: phrases such as
-    # "διέγραψε αυτά που έβαλες" must never go to the local LLM.
+    # Resolve references to the exact widgets changed by the previous mutation.
     previous_batch_ref = any(token in text for token in (
-        "αυτά που έβαλες", "αυτα που εβαλες", "αυτά που βάλαμε", "αυτα που βαλαμε",
-        "ό,τι έβαλες", "ο,τι εβαλες", "ότι έβαλες", "οτι εβαλες",
-        "αυτά που πρόσθεσες", "αυτα που προσθεσες", "what you added", "those you added",
+        "αυτά που έβαλες", "αυτα που εβαλες", "αυτό που έβαλες", "αυτο που εβαλες",
+        "αυτό που έβαλε", "αυτο που εβαλε", "αυτά που βάλαμε", "αυτα που βαλαμε",
+        "που μόλις έβαλες", "που μολις εβαλες", "ό,τι έβαλες", "ο,τι εβαλες",
+        "ότι έβαλες", "οτι εβαλες", "αυτά που πρόσθεσες", "αυτα που προσθεσες",
+        "what you added", "that you added", "those you added",
     ))
     if remove_intent and previous_batch_ref:
         raw_context = state.get("last_action_context")
@@ -224,14 +224,19 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
                 return {"action": "remove_widget", "target_id": ids[0], "read_only": True, "requires_confirmation": False}, "Αφαίρεσα το γράφημα που πρόσθεσα πριν."
             return {"action": "remove_widgets", "target_ids": ids, "read_only": True, "requires_confirmation": False}, f"Αφαίρεσα τα {len(ids)} γραφήματα που πρόσθεσα πριν."
 
-    asks_where = any(token in text for token in ("πού", "που", "σε ποια μονάδα", "σε ποια μοναδα", "where")) and any(token in text for token in ("τελευτα", "γράφημα", "γραφημα", "διάγραμμα", "διαγραμμα", "widget"))
+    # Bare "που" is a relative pronoun as well as an unaccented spelling of "πού".
+    # Do not treat every "γράφημα που ..." phrase as a location question.
+    asks_where = any(token in text for token in ("πού", "σε ποια μονάδα", "σε ποια μοναδα", "where")) and any(token in text for token in ("τελευτα", "γράφημα", "γραφημα", "διάγραμμα", "διαγραμμα", "widget"))
     if asks_where and last_widget:
         unit = site.find_unit(str(last_widget.get("unit_key", ""))); unit_name = unit.name if unit else str(last_widget.get("unit_key", "")).upper(); title = str(last_widget.get("title", "το τελευταίο γράφημα"))
         return {"action": "answer", "read_only": True, "requires_confirmation": False}, f"Το τελευταίο γράφημα, {title}, βρίσκεται στη μονάδα {unit_name}."
 
-    # Avoid generic tokens such as bare "το": they match ordinary Greek sentences and were
-    # incorrectly converting global commands into "remove the last widget".
-    refers_previous = any(token in text for token in ("το τελευταίο", "το τελευταιο", "που βάλαμε", "που βαλαμε", "αυτό", "αυτο", "το γράφημα", "το γραφημα", "αυτό που έβαλες", "αυτο που εβαλες", "εκείνο", "εκεινο"))
+    refers_previous = any(token in text for token in (
+        "το τελευταίο", "το τελευταιο", "που βάλαμε", "που βαλαμε", "αυτό", "αυτο",
+        "το γράφημα", "το γραφημα", "αυτό που έβαλες", "αυτο που εβαλες",
+        "αυτό που έβαλε", "αυτο που εβαλε", "που μόλις έβαλες", "που μολις εβαλες",
+        "εκείνο", "εκεινο",
+    ))
     move_intent = any(token in text for token in ("βάλε", "βαλε", "μετέφερε", "μεταφερε", "πήγαιν", "πηγαιν", "άλλαξ", "αλλαξ", "move", "change")); correction = any(token in text for token in ("όχι", "οχι", "εννοώ", "εννοω", "λάθος", "λαθος", "έκανες λάθος", "εκανες λαθος", "διόρθ", "διορθ"))
     target: ProcessUnit | None = units[-1] if units else None
     if correction and target is None:
