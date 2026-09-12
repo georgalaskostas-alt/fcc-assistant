@@ -188,10 +188,22 @@ def _retarget_widget(widget: dict[str, object], target: ProcessUnit, site: SiteM
 def contextual_plan(command: str, site: SiteModel, state: dict[str, object], current_widgets: list[dict[str, object]], learned_aliases: dict[str, str] | None = None) -> tuple[dict[str, object] | None, str | None]:
     text = command.strip().casefold(); last_widget = state.get("last_widget") if isinstance(state.get("last_widget"), dict) else None; units = resolve_units(text, site, learned_aliases)
 
-    restore_intent = any(token in text for token in ("βάλε τα πάλι", "βαλε τα παλι", "βάλτα πάλι", "βαλτα παλι", "φέρε τα πίσω", "φερε τα πισω", "επαναφέρε", "επαναφερε", "restore", "undo"))
+    restore_intent = any(token in text for token in (
+        "βάλε τα πάλι", "βαλε τα παλι", "βάλτα πάλι", "βαλτα παλι",
+        "βάλε το πάλι", "βαλε το παλι", "βάλ' το πάλι", "βαλ' το παλι", "βάλτο πάλι", "βαλτο παλι",
+        "φέρε τα πίσω", "φερε τα πισω", "φέρ' το πίσω", "φερ' το πισω", "φέρε το πίσω", "φερε το πισω",
+        "επαναφέρε", "επαναφερε", "επανέφερέ το", "επανεφερε το", "restore", "undo",
+    ))
     if restore_intent:
         removed = state.get("last_removed_widgets"); widgets = [dict(w) for w in removed if isinstance(w, dict)] if isinstance(removed, list) else []
-        if widgets: return {"action": "add_widgets", "widgets": widgets, "read_only": True, "requires_confirmation": False}, f"Επανέφερα τα {len(widgets)} γραφήματα που αφαίρεσα πριν."
+        if widgets:
+            existing_ids = {str(w.get("id")) for w in current_widgets if w.get("id")}
+            widgets = [w for w in widgets if str(w.get("id", "")) not in existing_ids]
+            if widgets:
+                if len(widgets) == 1:
+                    return {"action": "add_widget", "widget": widgets[0], "read_only": True, "requires_confirmation": False}, "Επανέφερα το γράφημα που αφαίρεσα πριν."
+                return {"action": "add_widgets", "widgets": widgets, "read_only": True, "requires_confirmation": False}, f"Επανέφερα τα {len(widgets)} γραφήματα που αφαίρεσα πριν."
+            return {"action": "answer", "read_only": True, "requires_confirmation": False}, "Το γράφημα που αφαίρεσα πριν έχει ήδη επανέλθει."
 
     remove_intent = any(token in text for token in ("αφαίρε", "αφαιρε", "βγάλε", "βγαλε", "διέγρα", "διεγρα", "remove", "delete"))
     graph_intent = any(token in text for token in ("γράφημα", "γραφημα", "διαγράμ", "διαγραμ", "trend", "chart"))
@@ -229,7 +241,7 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
     asks_where = any(token in text for token in ("πού", "σε ποια μονάδα", "σε ποια μοναδα", "where")) and any(token in text for token in ("τελευτα", "γράφημα", "γραφημα", "διάγραμμα", "διαγραμμα", "widget"))
     if asks_where and last_widget:
         unit = site.find_unit(str(last_widget.get("unit_key", ""))); unit_name = unit.name if unit else str(last_widget.get("unit_key", "")).upper(); title = str(last_widget.get("title", "το τελευταίο γράφημα"))
-        return {"action": "answer", "read_only": True, "requires_confirmation": False}, f"Το τελευταίο γράφημα, {title}, βρίσκεται στη μονάδα {unit_name}."
+        return {"action": "answer", "read_only": True,"requires_confirmation": False}, f"Το τελευταίο γράφημα, {title}, βρίσκεται στη μονάδα {unit_name}."
 
     refers_previous = any(token in text for token in (
         "το τελευταίο", "το τελευταιο", "που βάλαμε", "που βαλαμε", "αυτό", "αυτο",
