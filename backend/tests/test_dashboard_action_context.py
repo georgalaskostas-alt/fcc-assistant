@@ -110,3 +110,50 @@ def test_delete_what_you_added_resolves_exact_previous_batch(tmp_path: Path):
     assert plan["action"] == "remove_widgets"
     assert plan["target_ids"] == ["fcc-feed-1", "hcu-feed-1"]
     assert "2" in str(message)
+
+
+def test_plural_move_uses_persisted_touched_widgets_after_restart(tmp_path: Path):
+    dialogue_path = tmp_path / "dialogue.json"
+    dialogue = DashboardDialogueStore(dialogue_path)
+    fcc = _widget("fcc-feed-1", "fcc", "feed_flow", "4h")
+    add_plan = {"action": "add_widget", "widget": fcc, "read_only": True, "requires_confirmation": False}
+    dialogue.remember("default", "Βάλε feed flow στο FCC", add_plan, {"widgets": [fcc]}, "Έγινε.", previous_widgets=[])
+
+    # New store instance simulates reopening the application. Context must come from disk.
+    reopened = DashboardDialogueStore(dialogue_path)
+    state = reopened.get_state("default")
+    plan, message = contextual_plan(
+        "Μετέφερε τα στην μονάδα HCU",
+        default_site_model(),
+        state,
+        [fcc],
+    )
+
+    assert plan is not None
+    assert plan["action"] == "replace_widget"
+    replacement = plan["widget"]
+    assert isinstance(replacement, dict)
+    assert replacement["unit_key"] == "hcu"
+    assert replacement["period"] == "4h"
+    assert "HCU" in str(message).upper()
+
+
+def test_move_all_variables_builds_atomic_transaction():
+    site = default_site_model()
+    fcc_feed = _widget("fcc-feed-1", "fcc", "feed_flow", "4h")
+    fcc_feed_kpi = {**fcc_feed, "id": "fcc-feed-kpi", "type": "kpi"}
+
+    plan, _ = contextual_plan(
+        "Μετέφερε όλες τις μεταβλητές στην μονάδα HCU",
+        site,
+        {},
+        [fcc_feed, fcc_feed_kpi],
+    )
+
+    assert plan is not None
+    assert plan["action"] == "transaction"
+    steps = plan["steps"]
+    assert isinstance(steps, list)
+    assert len(steps) == 2
+    assert all(step["action"] == "replace_widget" for step in steps)
+    assert all(step["widget"]["unit_key"] == "hcu" for step in steps)
