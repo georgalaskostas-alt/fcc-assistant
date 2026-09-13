@@ -51,10 +51,20 @@ def explicit_action(command: str) -> str | None:
         "διεγραψε",
     ):
         return "remove"
-    if re.search(r"\b(replace|swap)\b", text) or _has_word(
-        text,
-        "αντικατάστησε",
-        "αντικαταστησε",
+    if (
+        re.search(r"\b(replace|swap|move)\b", text)
+        or _has_word(text, "αντικατάστησε", "αντικαταστησε")
+        or any(
+            token in text
+            for token in (
+                "μετέφερε",
+                "μεταφερε",
+                "μετακίνησε",
+                "μετακινησε",
+                "πήγαινέ",
+                "πηγαινε",
+            )
+        )
     ):
         return "replace"
     return None
@@ -86,6 +96,7 @@ def target_unit_keys(plan: dict[str, object], widgets: list[dict[str, object]]) 
     by_id = {str(w.get("id")): str(w.get("unit_key", "")).casefold() for w in widgets if w.get("id")}
     units: set[str] = set()
     for step in _steps(plan):
+        action = str(step.get("action", "")).casefold()
         widget = step.get("widget")
         if isinstance(widget, dict) and widget.get("unit_key"):
             units.add(str(widget["unit_key"]).casefold())
@@ -96,8 +107,11 @@ def target_unit_keys(plan: dict[str, object], widgets: list[dict[str, object]]) 
                 for w in raw_widgets
                 if isinstance(w, dict) and w.get("unit_key")
             )
+        # For a replacement/move, target_id identifies the SOURCE widget. The desired
+        # unit is carried by the replacement widget above, so including the old unit
+        # would falsely conflict with commands such as "μετέφερέ το στο HCU".
         target_id = step.get("target_id")
-        if target_id is not None and str(target_id) in by_id:
+        if action != "replace_widget" and target_id is not None and str(target_id) in by_id:
             units.add(by_id[str(target_id)])
         target_ids = step.get("target_ids")
         if isinstance(target_ids, list):
