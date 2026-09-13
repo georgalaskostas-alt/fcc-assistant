@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import json
 from pathlib import Path
+import re
 
 from .dashboard_config import DashboardWidget, WidgetLayout
 from .site_model import ProcessUnit, SiteModel
@@ -185,6 +186,93 @@ def _retarget_widget(widget: dict[str, object], target: ProcessUnit, site: SiteM
     return asdict(DashboardWidget(id=f"{target.key}-{widget_type}-{suffix}", type=widget_type, title=title, unit_key=target.key, tag_keys=tuple(target_tags), period=str(widget.get("period", "8h")), layout=layout))  # type: ignore[arg-type]
 
 
+def _move_plan(
+    text: str,
+    target: ProcessUnit,
+    site: SiteModel,
+    state: dict[str, object],
+    current_widgets: list[dict[str, object]],
+) -> tuple[dict[str, object] | None, str | None]:
+    move_intent = any(token in text for token in ("μετέφερε", "μεταφερε", "μετακίνησε", "μετακινησε", "πήγαιν", "πηγαιν", "move"))
+    if not move_intent:
+        return None, None
+
+    all_variables = any(token in text for token in (
+        "όλες τις μεταβλητές", "ολες τις μεταβλητες", "όλα τα γραφήματα", "ολα τα γραφηματα",
+        "όλα τα διαγράμματα", "ολα τα διαγραμματα", "όλα", "ολα", "everything", "all variables", "all widgets",
+    ))
+    plural_reference = all_variables or any(token in text for token in (
+        "μετέφερε τα", "μεταφερε τα", "μετακίνησε τα", "μετακινησε τα", "πήγαινέ τα", "πηγαινε τα", "move them",
+    ))
+    singular_reference = any(token in text for token in (
+        "μετέφερέ το", "μετεφερε το", "μεταφερε το", "μετακίνησέ το", "μετακινησε το",
+        "πήγαινέ το", "πηγαινε το", "αυτό", "αυτο", "το τελευταίο", "το τελευταιο", "move it",
+    ))
+
+    by_id = {str(w.get("id")): w for w in current_widgets if w.get("id")}
+    candidates: list[dict[str, object]] = []
+
+    if all_variables:
+        candidates = [w for w in current_widgets if str(w.get("unit_key", "")).casefold() != target.key.casefold()]
+    elif plural_reference:
+        raw_context = state.get("last_action_context")
+        context = dict(raw_context) if isinstance(raw_context, dict) else {}
+        touched = context.get("last_touched_widget_ids")
+        if isinstance(touched, list):
+            candidates = [by_id[str(widget_id)] for widget_id in touched if str(widget_id) in by_id and str(by_id[str(widget_id)].get("unit_key", "")).casefold() != target.key.casefold()]
+        if not candidates:
+            remaining = [w for w in current_widgets if str(w.get("unit_key", "")).casefold() != target.key.casefold()]
+            source_units = {str(w.get("unit_key", "")).casefold() for w in remaining if w.get("unit_key")}
+            if len(source_units) == 1:
+                candidates = remaining
+            elif len(source_units) > 1:
+                return {
+                    "action": "clarify", "read_only": True, "requires_confirmation": False, "needs_clarification": True
+                }, "Υπάρχουν γραφήματα από περισσότερες από μία μονάδες. Πες μου ποια μονάδα προέλευσης θέλεις να μεταφέρω στο HCU." if target.key.casefold() == "hcu" else f"Υπάρχουν γραφήματα από περισσότερες από μία μονάδες. Πες μου ποια μονάδα προέλευσης θέλεις να μεταφέρω στη {target.name}."
+    elif singular_reference:
+        last_widget = state.get("last_widget") if isinstance(state.get("last_widget"), dict) else None
+        if isinstance(last_widget, dict) and str(last_widget.get("id", "")) in by_id:
+            candidate = by_id[str(last_widget.get("id"))]
+            if str(candidate.get("unit_key", "")).casefold() != target.key.casefold(): candidates = [candidate]
+
+    if not candidates:
+        return {
+            "action": "clarify", "read_only": True, "requires_confirmation": False, "needs_clarification": True
+        }, "Δεν βρήκα ποια γραφήματα θέλεις να μεταφέρω. Πες μου π.χ. «μετέφερε όλα τα γραφήματα στο HCU» ή «μετέφερε το τελευταίο στο HCU»."
+
+    steps: list[dict[str, object]] = []
+    unsupported: list[str] = []
+    for widget in candidates:
+        replacement = _retarget_widget(widget, target, site)
+        if replacement is None:
+            unsupported.append(str(widget.get("title") or widget.get("id") or "widget"))
+            continue
+        steps.append({
+            "action": "replace_widget",
+            "target_id": str(widget.get("id")),
+            "widget": replacement,
+            "read_only": True,
+            "requires_confirmation": False,
+        })
+
+    if unsupported:
+        joined = ", ".join(unsupported[:4])
+        suffix = "…" if len(unsupported) > 4 else ""
+        return {
+            "action": "clarify", "read_only": True, "requires_confirmation": False, "needs_clarification": True
+        }, f"Δεν μπορώ να κάνω ασφαλή αντιστοίχιση όλων των μεταβλητών στη {target.name}. Δεν μετέφερα τίποτα. Χωρίς αντιστοίχιση: {joined}{suffix}."
+    if not steps:
+        return {"action": "answer", "read_only": True, "requires_confirmation": False}, f"Τα επιλεγμένα γραφήματα βρίσκονται ήδη στη μονάδα {target.name}."
+    if len(steps) == 1:
+        return steps[0], f"Μετέφερα το γράφημα στη μονάδα {target.name}."
+    return {
+        "action": "transaction",
+        "steps": steps,
+        "read_only": True,
+        "requires_confirmation": False,
+    }, f"Μετέφερα τα {len(steps)} γραφήματα στη μονάδα {target.name}."
+
+
 def contextual_plan(command: str, site: SiteModel, state: dict[str, object], current_widgets: list[dict[str, object]], learned_aliases: dict[str, str] | None = None) -> tuple[dict[str, object] | None, str | None]:
     text = command.strip().casefold(); last_widget = state.get("last_widget") if isinstance(state.get("last_widget"), dict) else None; units = resolve_units(text, site, learned_aliases)
 
@@ -205,6 +293,15 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
                 return {"action": "add_widgets", "widgets": widgets, "read_only": True, "requires_confirmation": False}, f"Επανέφερα τα {len(widgets)} γραφήματα που αφαίρεσα πριν."
             return {"action": "answer", "read_only": True, "requires_confirmation": False}, "Το γράφημα που αφαίρεσα πριν έχει ήδη επανέλθει."
 
+    # Handle unit-to-unit moves deterministically. Prefer the persisted action context;
+    # after an app restart, fall back to the current workspace only when all source
+    # widgets come from one unit, avoiding the old clarification loop.
+    move_target = units[-1] if units else None
+    if move_target is not None:
+        move_plan, move_message = _move_plan(text, move_target, site, state, current_widgets)
+        if move_plan is not None:
+            return move_plan, move_message
+
     remove_intent = any(token in text for token in ("αφαίρε", "αφαιρε", "βγάλε", "βγαλε", "διέγρα", "διεγρα", "remove", "delete"))
     graph_intent = any(token in text for token in ("γράφημα", "γραφημα", "διαγράμ", "διαγραμ", "trend", "chart"))
     global_scope = any(token in text for token in ("από παντού", "απο παντου", "σε όλες τις μονάδες", "σε ολες τις μοναδες", "και από τις δυο μονάδες", "και απο τις δυο μοναδες", "και από τις δύο μονάδες", "και απο τις δυο μοναδες", "όπου υπάρχουν", "οπου υπαρχουν", "παντού", "παντου", "everywhere", "all units"))
@@ -217,7 +314,6 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
             return {"action": "remove_widgets", "target_ids": ids, "read_only": True, "requires_confirmation": False}, f"Αφαίρεσα {len(ids)} γραφήματα από {scope_name}."
         return {"action": "answer", "read_only": True, "requires_confirmation": False}, "Δεν υπάρχουν γραφήματα για αφαίρεση."
 
-    # Resolve references to the exact widgets changed by the previous mutation.
     previous_batch_ref = any(token in text for token in (
         "αυτά που έβαλες", "αυτα που εβαλες", "αυτό που έβαλες", "αυτο που εβαλες",
         "αυτό που έβαλε", "αυτο που εβαλε", "αυτά που βάλαμε", "αυτα που βαλαμε",
@@ -236,12 +332,10 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
                 return {"action": "remove_widget", "target_id": ids[0], "read_only": True, "requires_confirmation": False}, "Αφαίρεσα το γράφημα που πρόσθεσα πριν."
             return {"action": "remove_widgets", "target_ids": ids, "read_only": True, "requires_confirmation": False}, f"Αφαίρεσα τα {len(ids)} γραφήματα που πρόσθεσα πριν."
 
-    # Bare "που" is a relative pronoun as well as an unaccented spelling of "πού".
-    # Do not treat every "γράφημα που ..." phrase as a location question.
     asks_where = any(token in text for token in ("πού", "σε ποια μονάδα", "σε ποια μοναδα", "where")) and any(token in text for token in ("τελευτα", "γράφημα", "γραφημα", "διάγραμμα", "διαγραμμα", "widget"))
     if asks_where and last_widget:
         unit = site.find_unit(str(last_widget.get("unit_key", ""))); unit_name = unit.name if unit else str(last_widget.get("unit_key", "")).upper(); title = str(last_widget.get("title", "το τελευταίο γράφημα"))
-        return {"action": "answer", "read_only": True,"requires_confirmation": False}, f"Το τελευταίο γράφημα, {title}, βρίσκεται στη μονάδα {unit_name}."
+        return {"action": "answer", "read_only": True, "requires_confirmation": False}, f"Το τελευταίο γράφημα, {title}, βρίσκεται στη μονάδα {unit_name}."
 
     refers_previous = any(token in text for token in (
         "το τελευταίο", "το τελευταιο", "που βάλαμε", "που βαλαμε", "αυτό", "αυτο",
