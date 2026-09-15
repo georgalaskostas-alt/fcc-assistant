@@ -2,40 +2,18 @@ import { useState } from "react";
 import { AlertTriangle, CheckCircle2, FlaskConical, Search, ShieldCheck } from "lucide-react";
 import { api, InvestigationResponse, InvestigationRun } from "./api";
 import "./InvestigationWorkspace.css";
-
-function StepList({ run, title }: { run: InvestigationRun | null; title: string }) {
-  if (!run) return null;
-  return <section className="investigation-block"><h4>{title}</h4><div className="investigation-steps">{run.executions.map((item) => <div className="investigation-step" key={item.step.id}><span className={`step-dot ${item.status}`} /> <div><strong>{item.step.description || item.step.tool_name}</strong><small>{item.step.tool_name} · {item.status}{item.error ? ` · ${item.error}` : ""}</small></div></div>)}</div></section>;
-}
-
+function StepList({ run, title }: { run: InvestigationRun | null; title: string }) { if (!run) return null; return <section className="investigation-block"><h4>{title}</h4><div className="investigation-steps">{run.executions.map((item) => <div className="investigation-step" key={item.step.id}><span className={`step-dot ${item.status}`} /><div><strong>{item.step.description || item.step.tool_name}</strong><small>{item.step.tool_name} · {item.status}{item.error ? ` · ${item.error}` : ""}</small></div></div>)}</div></section>; }
 export function InvestigationWorkspace({ unitKey, unitName }: { unitKey: string; unitName: string }) {
-  const [goal, setGoal] = useState("Γιατί ανέβηκε το ΔP του regenerator χθες;");
-  const [result, setResult] = useState<InvestigationResponse | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const canRun = unitKey !== "all" && goal.trim().length >= 3;
-
-  async function run() {
-    if (!canRun) return;
-    setBusy(true); setError(null); setResult(null);
-    try { setResult(await api.runInvestigation(goal.trim(), unitKey)); }
-    catch (err) { setError(err instanceof Error ? err.message : "Investigation failed"); }
-    finally { setBusy(false); }
-  }
-
-  const synthesis = result?.synthesis;
-  return <section className="investigation-workspace">
-    <div className="investigation-hero"><div><span className="eyebrow">AUTONOMOUS ENGINEERING INVESTIGATION</span><h1>Investigation workspace</h1><p>Goal-driven, source-grounded analysis for {unitName}. The process interface remains read-only.</p></div><span className="readonly-pill"><ShieldCheck size={15}/> Governed · Read-only</span></div>
-    {unitKey === "all" && <div className="investigation-notice"><AlertTriangle size={18}/> Select a unit before starting a detailed engineering investigation.</div>}
-    <div className="investigation-composer"><FlaskConical size={22}/><textarea value={goal} onChange={(e)=>setGoal(e.target.value)} placeholder="Describe the engineering question or abnormal behavior…"/><button className="primary-button" disabled={!canRun || busy} onClick={()=>void run()}>{busy ? "Investigating…" : "Run investigation"}</button></div>
-    {error && <div className="error-banner">{error}</div>}
-    {result && <>
-      <div className="investigation-summary"><article><Search size={18}/><span>Resolved tags</span><strong>{synthesis?.resolved_tags?.length ?? 0}</strong></article><article><CheckCircle2 size={18}/><span>Evidence items</span><strong>{synthesis?.evidence_count ?? result.discovery.evidence.length}</strong></article><article><ShieldCheck size={18}/><span>Process writes</span><strong>{result.read_only_process_access ? "Disabled" : "Unknown"}</strong></article></div>
-      {synthesis?.time_window && <div className="investigation-window"><strong>Analysis window</strong><span>{synthesis.time_window.start} → {synthesis.time_window.end}</span></div>}
-      <StepList run={result.discovery} title="1 · Discovery"/><StepList run={result.analysis} title="2 · Historian evidence"/>
-      {!!synthesis?.resolved_tags?.length && <section className="investigation-block"><h4>Resolved historian tags</h4><div className="tag-chip-row">{synthesis.resolved_tags.map(tag=><span className="tag-chip" key={tag}>{tag}</span>)}</div></section>}
-      <section className="investigation-block"><h4>Evidence & provenance</h4><div className="evidence-grid">{[...(synthesis?.discovery_evidence ?? []), ...(synthesis?.evidence_package ?? [])].map((item,index)=><article key={String(item.evidence_id ?? index)}><strong>{String(item.evidence_id ?? item.tool ?? `evidence-${index+1}`)}</strong><pre>{JSON.stringify(item.provenance ?? {}, null, 2)}</pre></article>)}</div></section>
-      {!!synthesis?.limitations?.length && <section className="investigation-block limitation-block"><h4>Limitations</h4>{synthesis.limitations.map((item,index)=><p key={index}><AlertTriangle size={15}/>{item}</p>)}</section>}
-    </>}
-  </section>;
+ const[goal,setGoal]=useState("Γιατί ανέβηκε το ΔP του regenerator χθες;"),[result,setResult]=useState<InvestigationResponse|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null); const canRun=unitKey!=="all"&&goal.trim().length>=3;
+ async function run(){if(!canRun)return;setBusy(true);setError(null);setResult(null);try{setResult(await api.runInvestigation(goal.trim(),unitKey));}catch(err){setError(err instanceof Error?err.message:"Investigation failed");}finally{setBusy(false);}}
+ const synthesis=result?.synthesis; const simulated=result?.data_source?.mode==="simulated";
+ return <section className="investigation-workspace"><div className="investigation-hero"><div><span className="eyebrow">AUTONOMOUS ENGINEERING INVESTIGATION</span><h1>Investigation workspace</h1><p>Goal-driven, source-grounded analysis for {unitName}. The process interface remains read-only.</p></div><span className="readonly-pill"><ShieldCheck size={15}/> Governed · Read-only</span></div>
+ {unitKey==="all"&&<div className="investigation-notice"><AlertTriangle size={18}/> Select a unit before starting a detailed engineering investigation.</div>}
+ <div className="investigation-composer"><FlaskConical size={22}/><textarea value={goal} onChange={e=>setGoal(e.target.value)} placeholder="Describe the engineering question or abnormal behavior…"/><button className="primary-button" disabled={!canRun||busy} onClick={()=>void run()}>{busy?"Investigating…":"Run investigation"}</button></div>{error&&<div className="error-banner">{error}</div>}
+ {result&&<>{simulated&&<div className="investigation-notice simulated-evidence"><AlertTriangle size={18}/><div><strong>SIMULATED DEVELOPMENT DATA</strong><br/><span>This result is generated from the local deterministic simulator. It is not plant historian evidence and must not be used as an operational conclusion.</span></div></div>}
+ <div className="investigation-summary"><article><Search size={18}/><span>Resolved tags</span><strong>{synthesis?.resolved_tags?.length??0}</strong></article><article><CheckCircle2 size={18}/><span>Evidence items</span><strong>{synthesis?.evidence_count??result.discovery.evidence.length}</strong></article><article><ShieldCheck size={18}/><span>Data quality</span><strong>{result.data_source?.data_quality??"UNKNOWN"}</strong></article></div>
+ {synthesis?.time_window&&<div className="investigation-window"><strong>Analysis window</strong><span>{synthesis.time_window.start} → {synthesis.time_window.end}</span></div>}<StepList run={result.discovery} title="1 · Discovery"/><StepList run={result.analysis} title={simulated?"2 · Simulated process evidence":"2 · Historian evidence"}/>
+ {!!synthesis?.resolved_tags?.length&&<section className="investigation-block"><h4>Resolved process tags</h4><div className="tag-chip-row">{synthesis.resolved_tags.map(tag=><span className="tag-chip" key={tag}>{tag}</span>)}</div></section>}
+ <section className="investigation-block"><h4>Evidence & provenance</h4><div className="evidence-grid">{[...(synthesis?.discovery_evidence??[]),...(synthesis?.evidence_package??[])].map((item,index)=><article key={String(item.evidence_id??index)}><strong>{String(item.evidence_id??item.tool??`evidence-${index+1}`)}</strong><pre>{JSON.stringify(item.provenance??{},null,2)}</pre></article>)}</div></section>
+ {!!synthesis?.limitations?.length&&<section className="investigation-block limitation-block"><h4>Limitations</h4>{synthesis.limitations.map((item,index)=><p key={index}><AlertTriangle size={15}/>{item}</p>)}</section>}</>}</section>;
 }
