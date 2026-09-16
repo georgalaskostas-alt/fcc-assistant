@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from .agent_tools import ToolContext
 from .dynamic_investigation import DynamicInvestigator
 from .investigation_data_source import investigation_tag_service
+from .investigation_reasoning import reason_about_investigation
 from .refinery_model import AccessGrant, RefineryScope, ScopeKind, UnitScope, default_engineering_domains
 from .refinery_tools import build_refinery_tool_registry
 
@@ -20,27 +21,10 @@ class InvestigationRequest(BaseModel):
 
 
 def _local_context(user_id: str, unit_key: str) -> ToolContext:
-    """Phase-1 local identity adapter using the canonical ToolContext contract."""
     unit = unit_key.strip().casefold()
-    refinery = RefineryScope(
-        id="local-refinery",
-        name="Local Refinery",
-        standalone_units=(UnitScope(id=unit, name=unit.upper()),),
-    )
-    # Scope the development identity to the selected unit. This keeps the same
-    # server-side authorization path that enterprise RBAC will use later.
-    access = AccessGrant(
-        domains=default_engineering_domains(),
-        unit_ids=frozenset({unit}),
-    )
-    return ToolContext(
-        actor_id=user_id,
-        refinery=refinery,
-        access=access,
-        scope_kind=ScopeKind.UNIT,
-        scope_id=unit,
-        metadata={"identity_adapter": "phase1-local"},
-    )
+    refinery = RefineryScope(id="local-refinery", name="Local Refinery", standalone_units=(UnitScope(id=unit, name=unit.upper()),))
+    access = AccessGrant(domains=default_engineering_domains(), unit_ids=frozenset({unit}))
+    return ToolContext(actor_id=user_id, refinery=refinery, access=access, scope_kind=ScopeKind.UNIT, scope_id=unit, metadata={"identity_adapter": "phase1-local"})
 
 
 @router.post("/run")
@@ -49,11 +33,8 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
         tag_service, source = investigation_tag_service()
         registry = build_refinery_tool_registry(tag_service=tag_service)
         context = _local_context(request.user_id, request.unit_key)
-        result = await DynamicInvestigator(registry).investigate(
-            goal=request.goal,
-            unit_key=request.unit_key,
-            context=context,
-        )
+        result = await DynamicInvestigator(registry).investigate(goal=request.goal, unit_key=request.unit_key, context=context)
+        reasoning = await reason_about_investigation(goal=request.goal, synthesis=result.synthesis, data_source=source)
         return {
             "mode": "local",
             "data_source": source,
@@ -63,6 +44,7 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
             "discovery": result.discovery,
             "analysis": result.analysis,
             "synthesis": result.synthesis,
+            "reasoning": reasoning,
         }
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
