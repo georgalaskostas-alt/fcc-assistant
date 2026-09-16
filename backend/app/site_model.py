@@ -40,6 +40,7 @@ def default_site_model()->SiteModel:
     # Real tags still come exclusively from FCC_SITE_CONFIG when configured.
     return SiteModel("Refinery",(
         ProcessUnit("fcc","FCC",_common_tags()+(
+            UnitTag("regenerator_dp","Regenerator Differential Pressure","bar",("regenerator dp","regenerator ΔP","ΔP regenerator","dp regenerator","διαφορική πίεση regenerator","διαφορικη πιεση regenerator"),"regenerator_dp"),
             UnitTag("regenerator_temp","Regenerator Temperature","C",("regenerator temperature","θερμοκρασία regenerator","θερμοκρασια regenerator"),"regenerator_temperature"),
             UnitTag("regenerator_o2","Regenerator O2","%",("o2","οξυγόνο regenerator","οξυγονο regenerator"),"regenerator_o2"),
             UnitTag("fractionator_dp","Main Fractionator DP","bar",("fractionator dp","dp fractionator"),"fractionator_dp"),
