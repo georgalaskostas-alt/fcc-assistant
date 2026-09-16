@@ -68,6 +68,16 @@ class ToolResult:
     effect: ToolEffect
     provenance: dict[str, Any] = field(default_factory=dict)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Stable JSON-facing representation used by agent traces and APIs."""
+        return {
+            "tool_name": self.tool_name,
+            "ok": self.ok,
+            "data": self.data,
+            "effect": self.effect.value,
+            "provenance": dict(self.provenance),
+        }
+
 
 ToolHandler = Callable[[ToolContext, dict[str, Any]], Any | Awaitable[Any]]
 
@@ -104,53 +114,26 @@ class ToolRegistry:
         allowed = {parameter.name for parameter in definition.parameters}
         unknown = sorted(set(arguments) - allowed)
         if unknown:
-            raise ToolExecutionError(
-                f"Unknown argument(s) for {definition.name}: {', '.join(unknown)}"
-            )
-        missing = [
-            parameter.name
-            for parameter in definition.parameters
-            if parameter.required and parameter.name not in arguments
-        ]
+            raise ToolExecutionError(f"Unknown argument(s) for {definition.name}: {', '.join(unknown)}")
+        missing = [parameter.name for parameter in definition.parameters if parameter.required and parameter.name not in arguments]
         if missing:
-            raise ToolExecutionError(
-                f"Missing required argument(s) for {definition.name}: {', '.join(missing)}"
-            )
+            raise ToolExecutionError(f"Missing required argument(s) for {definition.name}: {', '.join(missing)}")
 
     @staticmethod
     def _authorize(definition: ToolDefinition, context: ToolContext) -> None:
         if not context.access.permits_domain(definition.domain):
-            raise ToolExecutionError(
-                f"Actor {context.actor_id} is not authorized for {definition.domain.value} data"
-            )
-        if definition.requires_scope and not context.access.permits_scope(
-            context.refinery,
-            scope_kind=context.scope_kind,
-            scope_id=context.scope_id,
-        ):
-            raise ToolExecutionError(
-                f"Actor {context.actor_id} is not authorized for {context.scope_kind.value} scope {context.scope_id}"
-            )
-
-        # Human approval is deliberately not represented as an agent-callable tool.
-        # This flag is reserved for future externally verified approval gates.
+            raise ToolExecutionError(f"Actor {context.actor_id} is not authorized for {definition.domain.value} data")
+        if definition.requires_scope and not context.access.permits_scope(context.refinery, scope_kind=context.scope_kind, scope_id=context.scope_id):
+            raise ToolExecutionError(f"Actor {context.actor_id} is not authorized for {context.scope_kind.value} scope {context.scope_id}")
         if definition.effect == ToolEffect.CONTROLLED_DOCUMENT_PROPOSAL:
             return
 
-    async def execute(
-        self,
-        name: str,
-        *,
-        context: ToolContext,
-        arguments: dict[str, Any],
-    ) -> ToolResult:
+    async def execute(self, name: str, *, context: ToolContext, arguments: dict[str, Any]) -> ToolResult:
         registered = self._tools.get(name)
         if registered is None:
             raise ToolExecutionError(f"Unknown tool: {name}")
-
         self._validate_arguments(registered.definition, arguments)
         self._authorize(registered.definition, context)
-
         try:
             value = registered.handler(context, dict(arguments))
             if inspect.isawaitable(value):
@@ -159,16 +142,4 @@ class ToolRegistry:
             raise
         except Exception as exc:
             raise ToolExecutionError(f"{name} failed: {exc}") from exc
-
-        return ToolResult(
-            tool_name=name,
-            ok=True,
-            data=value,
-            effect=registered.definition.effect,
-            provenance={
-                "actor_id": context.actor_id,
-                "domain": registered.definition.domain.value,
-                "scope_kind": context.scope_kind.value,
-                "scope_id": context.scope_id,
-            },
-        )
+        return ToolResult(tool_name=name, ok=True, data=value, effect=registered.definition.effect, provenance={"actor_id": context.actor_id, "domain": registered.definition.domain.value, "scope_kind": context.scope_kind.value, "scope_id": context.scope_id})
