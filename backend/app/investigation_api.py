@@ -5,6 +5,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .agent_tools import ToolContext
+from .build_identity import runtime_build_identity
+from .diagnostic_trace import append_trace
 from .dynamic_investigation import DynamicInvestigator
 from .engineering_claim_guard import claims_only_text, validate_engineering_narrative
 from .investigation_data_source import investigation_tag_service
@@ -53,6 +55,16 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
         registry = build_refinery_tool_registry(tag_service=tag_service)
         context = _local_context(request.user_id, request.unit_key)
         result = await DynamicInvestigator(registry).investigate(goal=request.goal, unit_key=request.unit_key, context=context)
+
+        time_window = result.synthesis.get("time_window") if isinstance(result.synthesis, dict) else None
+        build = runtime_build_identity()
+        append_trace("investigation.window_resolved", {
+            "goal": request.goal,
+            "unit_key": request.unit_key.casefold(),
+            "time_window": time_window,
+            "backend_build": build,
+        })
+
         reasoning = await reason_about_investigation(goal=request.goal, synthesis=result.synthesis, data_source=source)
 
         # A prompt is not a safety boundary. Re-check the final generated text
@@ -68,6 +80,7 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
 
         return {
             "mode": "local",
+            "backend_build": build,
             "data_source": source,
             "read_only_process_access": True,
             "goal": request.goal,
