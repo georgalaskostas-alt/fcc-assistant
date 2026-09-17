@@ -77,6 +77,31 @@ def build_deterministic_analytics(synthesis: dict[str, Any]) -> dict[str, Any]:
     return {"evidence_labels": evidence_labels, "summaries": summaries, "deviations": deviations, "correlations": correlations, "trends": trends}
 
 
+def build_structured_claims(analytics: dict[str, Any], *, data_quality: str | None = None) -> list[dict[str, Any]]:
+    """Create machine-checkable claims only from deterministic analytics.
+
+    Mechanistic hypotheses are intentionally not manufactured here. A future
+    hypothesis may be admitted only when its evidence/required-evidence contract
+    is explicit and validated separately.
+    """
+    claims: list[dict[str, Any]] = []
+    evidence_status = "simulated" if data_quality == "SIMULATED" else "measured"
+    for tag, summary in analytics.get("summaries", {}).items():
+        if not isinstance(summary, dict) or not summary.get("count"): continue
+        evidence_id = str(summary.get("evidence_id") or "")
+        start, end, delta = summary.get("first"), summary.get("last"), summary.get("delta")
+        statement = f"{tag}: {summary.get('count')} samples; mean={summary.get('mean')}, min={summary.get('min')}, max={summary.get('max')}"
+        if start is not None and end is not None: statement += f", first={start}, last={end}"
+        if delta is not None: statement += f", delta={delta}"
+        claims.append({"id": f"observation:{tag}", "type": "measured_fact", "statement": statement, "evidence_ids": [evidence_id] if evidence_id else [], "evidence_status": evidence_status, "confidence": "high", "required_evidence": []})
+    for index, item in enumerate(analytics.get("correlations", [])):
+        if not isinstance(item, dict) or item.get("r") is None: continue
+        left, right, r = item.get("left"), item.get("right"), item.get("r")
+        refs = [str(value) for value in (item.get("left_evidence_id"), item.get("right_evidence_id")) if value]
+        claims.append({"id": f"association:{index}", "type": "association", "statement": f"{left} and {right} are associated in the analyzed window (Pearson r={r}); this does not establish causation.", "evidence_ids": refs, "evidence_status": evidence_status, "confidence": "high", "required_evidence": ["Independent process/event evidence is required before making a causal claim."]})
+    return claims
+
+
 def _compact_provenance(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict): return {}
     keep = ("source", "mode", "data_quality", "unit", "unit_key", "tag_key", "document_id", "revision", "page", "scope_kind", "scope_id")
@@ -128,13 +153,14 @@ def _validated_fallback(*, analytics: dict[str, Any], data_source: dict[str, Any
 
 async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], data_source: dict[str, Any]) -> dict[str, Any]:
     analytics = build_deterministic_analytics(synthesis)
-    if not synthesis.get("ready_for_reasoning"): return {"available": False, "model": None, "text": "Insufficient source-grounded evidence for engineering reasoning.", "analytics": analytics, "validation": {"valid": True, "violations": []}}
+    claims = build_structured_claims(analytics, data_quality=str(data_source.get("data_quality") or ""))
+    if not synthesis.get("ready_for_reasoning"): return {"available": False, "model": None, "text": "Insufficient source-grounded evidence for engineering reasoning.", "analytics": analytics, "claims": claims, "validation": {"valid": True, "violations": []}}
     context = _reasoning_context(goal=goal, synthesis=synthesis, data_source=data_source, analytics=analytics)
     try:
         response = await LocalAIClient().generate("Produce a concise evidence-grounded engineering assessment. Report measured observations first. Treat correlations only as associations. Put possible mechanisms only under hypotheses and state what additional evidence would validate or reject each hypothesis.", context, system_prompt=INVESTIGATION_SYSTEM_PROMPT, temperature=0.05)
         validation = validate_reasoning_text(response.text)
         if not validation["valid"]:
-            return {"available": False, "model": response.model, "text": _validated_fallback(analytics=analytics, data_source=data_source), "analytics": analytics, "validation": validation}
-        return {"available": True, "model": response.model, "text": response.text, "analytics": analytics, "validation": validation}
+            return {"available": False, "model": response.model, "text": _validated_fallback(analytics=analytics, data_source=data_source), "analytics": analytics, "claims": claims, "validation": validation}
+        return {"available": True, "model": response.model, "text": response.text, "analytics": analytics, "claims": claims, "validation": validation}
     except LocalAIError as exc:
-        return {"available": False, "model": None, "text": f"Local reasoning model unavailable: {exc}", "analytics": analytics, "validation": {"valid": True, "violations": []}}
+        return {"available": False, "model": None, "text": f"Local reasoning model unavailable: {exc}", "analytics": analytics, "claims": claims, "validation": {"valid": True, "violations": []}}
