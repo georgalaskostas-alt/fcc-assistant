@@ -1,17 +1,17 @@
 """Evidence-grounded engineering reasoning for autonomous investigations."""
 from __future__ import annotations
 
+import re
 from itertools import combinations
 from typing import Any
 
 from .local_ai import LocalAIClient, LocalAIError
-from .process_analytics import detect_deviation, extract_series, pearson, summarize_series
+from .process_analytics import detect_deviation, pearson, summarize_series
 
 INVESTIGATION_SYSTEM_PROMPT = """You are the local refinery engineering reasoning layer.
 Use ONLY the supplied investigation evidence and deterministic analytics.
 Never invent measurements, alarms, limits, documents, causal mechanisms or plant events.
 Separate: Observations, Deterministic analytics, Engineering hypotheses, Recommended checks, Limitations.
-Cite supplied evidence IDs in square brackets for evidence-backed statements.
 Correlation is association, never proof or evidence of causation. Never say a correlated variable caused, drove, explains, likely caused, likely drove, or is likely linked to another variable unless independent source evidence explicitly supports that causal statement. Use wording such as 'moved together', 'was associated with', or 'is a hypothesis requiring validation'.
 Do not claim statistical significance unless a significance test and its result are explicitly supplied.
 Do not infer that the event in the user's question occurred merely because the user asked about it; describe only measured changes present in evidence.
@@ -19,24 +19,26 @@ Do not recommend changing DCS/PLC/SIS setpoints, valves, controller parameters o
 Process access is read-only. If data_quality is SIMULATED, prominently state that this is a development demonstration, not an operational plant conclusion.
 Respond in the same language as the user's goal."""
 
+CAUSAL_PATTERNS = (
+    re.compile(r"\b(caus(?:e|ed|es|ing)|drove|driven|drives|explains?|responsible for|resulted in|led to|triggered)\b", re.I),
+    re.compile(r"\b(likely|probably|probably)\s+(?:caused|drove|explains?|triggered|led to)\b", re.I),
+)
+SIGNIFICANCE_PATTERN = re.compile(r"\b(statistically significant|statistical significance|significant deviation(?:s)?)\b", re.I)
+CONTROL_ACTION_PATTERN = re.compile(r"\b(change|adjust|increase|decrease|raise|lower|open|close|move|set)\b.{0,45}\b(setpoint|valve|controller|output|dcs|plc|sis)\b", re.I)
+
 
 def _history_payload(item: dict[str, Any]) -> Any:
     data = item.get("data")
-    if isinstance(data, dict) and "data" in data:
-        return data["data"]
+    if isinstance(data, dict) and "data" in data: return data["data"]
     return data
 
 
 def _tag_from_history_item(item: dict[str, Any]) -> str | None:
-    description = str(item.get("description") or "")
-    marker = "historian evidence for "
-    lowered = description.casefold()
+    description = str(item.get("description") or ""); marker = "historian evidence for "; lowered = description.casefold()
     if marker in lowered:
-        start = lowered.index(marker) + len(marker)
-        return description[start:].strip().rstrip(".") or None
+        start = lowered.index(marker) + len(marker); return description[start:].strip().rstrip(".") or None
     provenance = item.get("provenance")
-    if isinstance(provenance, dict) and provenance.get("tag_key"):
-        return str(provenance["tag_key"])
+    if isinstance(provenance, dict) and provenance.get("tag_key"): return str(provenance["tag_key"])
     return None
 
 
@@ -59,26 +61,19 @@ def _trend_points(payload: Any, *, max_points: int = 120) -> list[dict[str, Any]
         except (TypeError, ValueError): continue
         points.append({"x": str(timestamp) if timestamp is not None else str(index), "y": numeric})
     if len(points) <= max_points: return points
-    stride = max(1, (len(points) - 1) // (max_points - 1))
-    sampled = points[::stride]
+    stride = max(1, (len(points) - 1) // (max_points - 1)); sampled = points[::stride]
     if sampled[-1] != points[-1]: sampled.append(points[-1])
     return sampled[:max_points]
 
 
 def build_deterministic_analytics(synthesis: dict[str, Any]) -> dict[str, Any]:
     histories = [item for item in synthesis.get("evidence_package", []) if item.get("tool") == "get_history"]
-    summaries: dict[str, Any] = {}; deviations: dict[str, Any] = {}; trends: dict[str, Any] = {}
-    series: list[tuple[str, str, Any]] = []; evidence_labels: dict[str, str] = {}
+    summaries: dict[str, Any] = {}; deviations: dict[str, Any] = {}; trends: dict[str, Any] = {}; series: list[tuple[str, str, Any]] = []; evidence_labels: dict[str, str] = {}
     for item in histories:
-        evidence_id = str(item.get("evidence_id", "history")); tag_key = _tag_from_history_item(item) or evidence_id
-        evidence_labels[evidence_id] = tag_key; payload = _history_payload(item)
-        summaries[tag_key] = {"evidence_id": evidence_id, **summarize_series(payload)}
-        deviations[tag_key] = {"evidence_id": evidence_id, **detect_deviation(payload)}
-        trends[tag_key] = {"evidence_id": evidence_id, "points": _trend_points(payload)}
-        series.append((evidence_id, tag_key, payload))
+        evidence_id = str(item.get("evidence_id", "history")); tag_key = _tag_from_history_item(item) or evidence_id; evidence_labels[evidence_id] = tag_key; payload = _history_payload(item)
+        summaries[tag_key] = {"evidence_id": evidence_id, **summarize_series(payload)}; deviations[tag_key] = {"evidence_id": evidence_id, **detect_deviation(payload)}; trends[tag_key] = {"evidence_id": evidence_id, "points": _trend_points(payload)}; series.append((evidence_id, tag_key, payload))
     correlations = []
-    for (left_id, left_tag, left), (right_id, right_tag, right) in combinations(series, 2):
-        correlations.append({"left": left_tag, "right": right_tag, "left_evidence_id": left_id, "right_evidence_id": right_id, **pearson(left, right)})
+    for (left_id, left_tag, left), (right_id, right_tag, right) in combinations(series, 2): correlations.append({"left": left_tag, "right": right_tag, "left_evidence_id": left_id, "right_evidence_id": right_id, **pearson(left, right)})
     return {"evidence_labels": evidence_labels, "summaries": summaries, "deviations": deviations, "correlations": correlations, "trends": trends}
 
 
@@ -92,8 +87,7 @@ def _compact_discovery(item: dict[str, Any]) -> dict[str, Any]:
     data = item.get("data"); compact_data: Any = None
     if item.get("tool") == "search_archive":
         rows = data.get("hits", data.get("items", [])) if isinstance(data, dict) else data
-        if isinstance(rows, list):
-            compact_data = [{key: row[key] for key in ("document_id", "title", "revision", "document_type", "page", "text", "score") if key in row} for row in rows[:6] if isinstance(row, dict)]
+        if isinstance(rows, list): compact_data = [{key: row[key] for key in ("document_id", "title", "revision", "document_type", "page", "text", "score") if key in row} for row in rows[:6] if isinstance(row, dict)]
     elif item.get("tool") == "search_tags":
         rows = data.get("hits", data.get("tags", [])) if isinstance(data, dict) else data
         if isinstance(rows, list): compact_data = [{key: row[key] for key in ("key", "tag_key", "name", "label", "semantic_key", "unit", "unit_key") if key in row} for row in rows[:8] if isinstance(row, dict)]
@@ -101,20 +95,46 @@ def _compact_discovery(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _reasoning_context(*, goal: str, synthesis: dict[str, Any], data_source: dict[str, Any], analytics: dict[str, Any]) -> dict[str, Any]:
-    discovery = [_compact_discovery(item) for item in synthesis.get("discovery_evidence", []) if isinstance(item, dict)]
-    # Trend points are for visual evidence in the UI; the LLM receives deterministic
-    # summaries/correlations instead of repeated samples to protect its context window.
-    llm_analytics = {key: value for key, value in analytics.items() if key != "trends"}
+    discovery = [_compact_discovery(item) for item in synthesis.get("discovery_evidence", []) if isinstance(item, dict)]; llm_analytics = {key: value for key, value in analytics.items() if key != "trends"}
     return {"goal": goal, "data_source": {key: data_source.get(key) for key in ("mode", "data_quality", "source", "process_writes") if key in data_source}, "time_window": synthesis.get("time_window"), "resolved_tags": synthesis.get("resolved_tags", []), "deterministic_analytics": llm_analytics, "discovery_evidence": discovery, "limitations": synthesis.get("limitations", [])}
+
+
+def validate_reasoning_text(text: str) -> dict[str, Any]:
+    """Deterministic final gate: unsafe epistemic claims never reach the engineering UI."""
+    violations: list[dict[str, str]] = []
+    for line in text.splitlines():
+        clean = line.strip()
+        if not clean: continue
+        if any(pattern.search(clean) for pattern in CAUSAL_PATTERNS): violations.append({"type": "unsupported_causality", "text": clean})
+        if SIGNIFICANCE_PATTERN.search(clean): violations.append({"type": "unsupported_statistical_significance", "text": clean})
+        if CONTROL_ACTION_PATTERN.search(clean): violations.append({"type": "process_control_action", "text": clean})
+    return {"valid": not violations, "violations": violations}
+
+
+def _validated_fallback(*, analytics: dict[str, Any], data_source: dict[str, Any]) -> str:
+    summaries = analytics.get("summaries", {}); correlations = analytics.get("correlations", [])
+    lines = ["Engineering assessment withheld: the local reasoning model produced claims that failed deterministic evidence validation.", "", "Validated observations:"]
+    for tag, summary in summaries.items():
+        if not isinstance(summary, dict) or not summary.get("count"): continue
+        lines.append(f"- {tag}: n={summary.get('count')}, mean={summary.get('mean')}, min={summary.get('min')}, max={summary.get('max')}, delta={summary.get('delta')} [{summary.get('evidence_id')}]")
+    if correlations:
+        lines.extend(["", "Validated associations (correlation is not causation):"])
+        for item in correlations:
+            if item.get("r") is not None: lines.append(f"- {item.get('left')} ↔ {item.get('right')}: Pearson r={item.get('r')} [{item.get('left_evidence_id')}, {item.get('right_evidence_id')}]")
+    lines.extend(["", "No causal conclusion is asserted. Review the evidence, technical archive, alarms/events and operating context before forming a causal hypothesis."])
+    if data_source.get("data_quality") == "SIMULATED": lines.append("SIMULATED DEVELOPMENT DATA: this is not an operational plant conclusion.")
+    return "\n".join(lines)
 
 
 async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], data_source: dict[str, Any]) -> dict[str, Any]:
     analytics = build_deterministic_analytics(synthesis)
-    if not synthesis.get("ready_for_reasoning"):
-        return {"available": False, "model": None, "text": "Insufficient source-grounded evidence for engineering reasoning.", "analytics": analytics}
+    if not synthesis.get("ready_for_reasoning"): return {"available": False, "model": None, "text": "Insufficient source-grounded evidence for engineering reasoning.", "analytics": analytics, "validation": {"valid": True, "violations": []}}
     context = _reasoning_context(goal=goal, synthesis=synthesis, data_source=data_source, analytics=analytics)
     try:
         response = await LocalAIClient().generate("Produce a concise evidence-grounded engineering assessment. Report measured observations first. Treat correlations only as associations. Put possible mechanisms only under hypotheses and state what additional evidence would validate or reject each hypothesis.", context, system_prompt=INVESTIGATION_SYSTEM_PROMPT, temperature=0.05)
-        return {"available": True, "model": response.model, "text": response.text, "analytics": analytics}
+        validation = validate_reasoning_text(response.text)
+        if not validation["valid"]:
+            return {"available": False, "model": response.model, "text": _validated_fallback(analytics=analytics, data_source=data_source), "analytics": analytics, "validation": validation}
+        return {"available": True, "model": response.model, "text": response.text, "analytics": analytics, "validation": validation}
     except LocalAIError as exc:
-        return {"available": False, "model": None, "text": f"Local reasoning model unavailable: {exc}", "analytics": analytics}
+        return {"available": False, "model": None, "text": f"Local reasoning model unavailable: {exc}", "analytics": analytics, "validation": {"valid": True, "violations": []}}
