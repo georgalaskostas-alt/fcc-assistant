@@ -16,7 +16,6 @@ def _number(value: Any) -> float | None:
 def _rows(payload: Any) -> list[Any]:
     """Accept canonical, PI-style and simulator-style historian envelopes."""
     current = payload
-    # Tool adapters may wrap the historian response in one or more `data` envelopes.
     for _ in range(3):
         if not isinstance(current, dict): break
         nested = current.get("data")
@@ -37,7 +36,6 @@ def extract_series(payload: Any) -> list[float]:
     for row in _rows(payload):
         if isinstance(row, dict):
             value = row.get("value", row.get("Value"))
-            # PI values can themselves be objects; only numeric scalar values belong in analytics.
             if isinstance(value, dict): value = value.get("Value", value.get("value"))
         else:
             value = row
@@ -55,12 +53,19 @@ def summarize_series(payload: Any) -> dict[str, Any]:
 
 
 def pearson(left_payload: Any, right_payload: Any) -> dict[str, Any]:
+    """Return one canonical coefficient plus the legacy key during migration.
+
+    `r` is the application contract used by structured claims. `pearson_r` is
+    retained temporarily so older consumers do not break while the refinery
+    analytics contract converges.
+    """
     left, right = extract_series(left_payload), extract_series(right_payload); n = min(len(left), len(right))
     if n < 3: return {"available": False, "count": n, "reason": "At least three aligned samples are required"}
     left, right = left[:n], right[:n]; ml, mr = mean(left), mean(right)
     numerator = sum((a-ml)*(b-mr) for a,b in zip(left,right)); dl = sqrt(sum((a-ml)**2 for a in left)); dr = sqrt(sum((b-mr)**2 for b in right))
     if dl == 0 or dr == 0: return {"available": False, "count": n, "reason": "Constant series cannot be correlated"}
-    return {"available": True, "count": n, "pearson_r": numerator/(dl*dr), "warning": "Correlation is association, not proof of causation."}
+    coefficient = numerator/(dl*dr)
+    return {"available": True, "count": n, "r": coefficient, "pearson_r": coefficient, "warning": "Correlation is association, not proof of causation."}
 
 
 def detect_deviation(payload: Any, *, sigma: float = 3.0) -> dict[str, Any]:
