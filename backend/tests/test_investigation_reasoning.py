@@ -1,4 +1,4 @@
-from backend.app.investigation_reasoning import _reasoning_context, build_deterministic_analytics, validate_reasoning_text
+from backend.app.investigation_reasoning import _reasoning_context, build_deterministic_analytics, build_structured_claims, validate_reasoning_text
 
 
 def test_reasoning_context_does_not_include_raw_historian_arrays():
@@ -28,6 +28,26 @@ def test_correlations_use_semantic_tag_labels_and_keep_evidence_ids():
     correlation = build_deterministic_analytics(synthesis)["correlations"][0]
     assert correlation["left"] == "regenerator_dp"; assert correlation["right"] == "regenerator_temp"
     assert correlation["left_evidence_id"] == "get_history:history-0"; assert correlation["right_evidence_id"] == "get_history:history-1"
+
+
+def test_structured_claims_bind_facts_and_associations_to_evidence():
+    analytics = {
+        "summaries": {"regenerator_dp": {"evidence_id": "get_history:history-0", "count": 10, "mean": 0.75, "min": 0.70, "max": 0.84, "first": 0.72, "last": 0.84, "delta": 0.12}},
+        "correlations": [{"left": "regenerator_dp", "right": "regenerator_temp", "r": 0.968, "left_evidence_id": "get_history:history-0", "right_evidence_id": "get_history:history-1"}],
+    }
+    claims = build_structured_claims(analytics, data_quality="SIMULATED")
+    fact = claims[0]; association = claims[1]
+    assert fact["type"] == "measured_fact" and fact["evidence_ids"] == ["get_history:history-0"]
+    assert fact["evidence_status"] == "simulated" and fact["confidence"] == "high"
+    assert association["type"] == "association"
+    assert association["evidence_ids"] == ["get_history:history-0", "get_history:history-1"]
+    assert "does not establish causation" in association["statement"]
+    assert association["required_evidence"]
+
+
+def test_structured_claims_do_not_manufacture_mechanistic_hypotheses():
+    claims = build_structured_claims({"summaries": {}, "correlations": []}, data_quality="HISTORIAN")
+    assert claims == []
 
 
 def test_validator_rejects_unsupported_causal_claim():
