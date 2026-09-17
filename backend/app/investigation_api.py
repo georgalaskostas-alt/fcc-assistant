@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from .agent_tools import ToolContext
 from .dynamic_investigation import DynamicInvestigator
+from .engineering_claim_guard import claims_only_text, validate_engineering_narrative
 from .investigation_data_source import investigation_tag_service
 from .investigation_reasoning import reason_about_investigation
 from .refinery_model import AccessGrant, RefineryScope, ScopeKind, UnitScope, default_engineering_domains
@@ -27,6 +28,24 @@ def _local_context(user_id: str, unit_key: str) -> ToolContext:
     return ToolContext(actor_id=user_id, refinery=refinery, access=access, scope_kind=ScopeKind.UNIT, scope_id=unit, metadata={"identity_adapter": "phase1-local"})
 
 
+def _source_units(synthesis: dict[str, object]) -> set[str]:
+    """Only explicitly retrieved engineering units may appear in generated prose."""
+    allowed: set[str] = set()
+    evidence = synthesis.get("discovery_evidence")
+    if not isinstance(evidence, list): return allowed
+    for item in evidence:
+        if not isinstance(item, dict) or item.get("tool") != "search_tags": continue
+        data = item.get("data")
+        rows = data if isinstance(data, list) else data.get("hits", data.get("tags", [])) if isinstance(data, dict) else []
+        if not isinstance(rows, list): continue
+        for row in rows:
+            if not isinstance(row, dict): continue
+            for key in ("engineering_unit", "unit_of_measure", "uom"):
+                value = row.get(key)
+                if value: allowed.add(str(value).casefold())
+    return allowed
+
+
 @router.post("/run")
 async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
     try:
@@ -35,6 +54,18 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
         context = _local_context(request.user_id, request.unit_key)
         result = await DynamicInvestigator(registry).investigate(goal=request.goal, unit_key=request.unit_key, context=context)
         reasoning = await reason_about_investigation(goal=request.goal, synthesis=result.synthesis, data_source=source)
+
+        # A prompt is not a safety boundary. Re-check the final generated text
+        # against evidence actually returned by governed tools before display.
+        final_validation = validate_engineering_narrative(str(reasoning.get("text") or ""), allowed_units=_source_units(result.synthesis))
+        reasoning["final_validation"] = final_validation
+        if not final_validation["valid"]:
+            reasoning["available"] = False
+            reasoning["text"] = claims_only_text(
+                reasoning.get("claims", []) if isinstance(reasoning.get("claims"), list) else [],
+                simulated=source.get("data_quality") == "SIMULATED",
+            )
+
         return {
             "mode": "local",
             "data_source": source,
