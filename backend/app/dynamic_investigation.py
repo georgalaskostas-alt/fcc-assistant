@@ -44,6 +44,7 @@ class DynamicInvestigator:
             synthesis = discovery_synthesis
             synthesis["limitations"] = list(dict.fromkeys(synthesis["limitations"] + ["No historian tags were resolved; numerical causal analysis was not attempted."]))
             synthesis["ready_for_reasoning"] = False
+            synthesis["time_window"] = {"start": intent.start_time, "end": intent.end_time, "interpretation": intent.period_interpretation, "site_timezone": intent.site_timezone}
             return DynamicInvestigationResult(discovery=discovery.to_dict(), analysis=None, synthesis=synthesis)
 
         steps = tuple(AgentStep(id=f"history-{i}", tool_name="get_history",
@@ -54,16 +55,9 @@ class DynamicInvestigator:
         combined = synthesize_run(analysis).to_dict()
         combined["discovery_evidence"] = discovery_synthesis["evidence_package"]
         combined["resolved_tags"] = tag_keys
-        combined["time_window"] = {"start": intent.start_time, "end": intent.end_time}
+        combined["time_window"] = {"start": intent.start_time, "end": intent.end_time, "interpretation": intent.period_interpretation, "site_timezone": intent.site_timezone}
         combined["ready_for_reasoning"] = bool(analysis.evidence)
-        # Analysis-only synthesis cannot know that tag/archive discovery already ran.
-        # Keep only genuine execution failures from the analysis pass, then merge
-        # discovery limitations. This prevents contradictory UI warnings such as
-        # "tags were not resolved" while resolved_tags is populated.
-        synthetic_analysis_warnings = {
-            "Relevant historian tags were not resolved.",
-            "Approved technical-archive evidence was not retrieved.",
-        }
+        synthetic_analysis_warnings = {"Relevant historian tags were not resolved.", "Approved technical-archive evidence was not retrieved."}
         analysis_limits = [item for item in combined.get("limitations", []) if item not in synthetic_analysis_warnings]
         combined["limitations"] = list(dict.fromkeys([*discovery_synthesis.get("limitations", []), *analysis_limits]))
         return DynamicInvestigationResult(discovery=discovery.to_dict(), analysis=analysis.to_dict(), synthesis=combined)
