@@ -5,7 +5,7 @@ import uvicorn
 from app.desktop_server import app
 
 BACKEND_HOST = "127.0.0.1"
-BACKEND_PORT = 8765
+BACKEND_PORT = 18765
 
 
 def main() -> None:
