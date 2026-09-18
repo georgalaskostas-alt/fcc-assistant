@@ -34,9 +34,14 @@ fn main(){tauri::Builder::default().plugin(tauri_plugin_shell::init()).invoke_ha
     // Objective-C callback aborts the whole process. Keep the UI alive and expose
     // the condition through backend_runtime_status instead.
     if backend_is_listening(){
+        // A listener on the dedicated loopback port is normally the backend
+        // left alive during a Tauri dev rebuild/relaunch. Reuse it instead of
+        // presenting a fatal startup error. The frontend will still verify API
+        // readiness and surface a real backend failure if the listener is not
+        // the expected service.
         if let Ok(mut s)=diagnostics.lock(){
-            s.last_error=Some("FCC backend port 8765 is already in use. Close the previous FCC Assistant instance before reopening.".into());
-            s.recent_output.push("startup: backend port 8765 already occupied; sidecar was not spawned".into());
+            s.last_error=None;
+            s.recent_output.push("startup: backend already listening on 8765; reusing existing local backend".into());
         }
         app.manage(BackendProcess{child:Mutex::new(None),diagnostics});
         return Ok(());
