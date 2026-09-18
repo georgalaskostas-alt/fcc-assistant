@@ -57,7 +57,7 @@ class InvestigationPlanner:
         now_local = supplied_now.astimezone(self._site_tz)
         lowered = _search_text(text)
 
-        if "χθες" in lowered or "yesterday" in lowered:
+        # `_search_text` removes Greek diacritics, so match normalized Greek tokens.\n        if "χθες" in lowered or "yesterday" in lowered:
             day = now_local.date() - timedelta(days=1)
             start_local = datetime.combine(day, datetime.min.time(), tzinfo=self._site_tz)
             end_local = start_local + timedelta(days=1)
