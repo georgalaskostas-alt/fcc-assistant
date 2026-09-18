@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-const API_BASE = "http://127.0.0.1:8765";
+const API_BASE = "http://127.0.0.1:18765";
 const REQUEST_TIMEOUT_MS = 45_000;
 const DASHBOARD_COMMAND_DEADLINE_MS = 6_000;
 
