@@ -96,6 +96,14 @@ def main() -> int:
             "--name", "fcc-backend",
             "--paths", str(backend),
             "--collect-submodules", "app",
+            # Keep dynamically reached investigation modules explicit as a packaging guard.
+            # PyInstaller analysis can otherwise omit a newly added app module even though
+            # the source import works in development.
+            "--hidden-import", "app.investigation_planner",
+            "--hidden-import", "app.dynamic_investigation",
+            "--hidden-import", "app.investigation_service",
+            "--hidden-import", "app.agent_runtime",
+            "--hidden-import", "app.refinery_tools",
             "--distpath", str(dist),
             "--workpath", str(work),
             "--specpath", str(spec),
