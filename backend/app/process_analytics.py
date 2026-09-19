@@ -75,3 +75,51 @@ def detect_deviation(payload: Any, *, sigma: float = 3.0) -> dict[str, Any]:
     if sd == 0: return {"available": True, "count": len(values), "deviations": [], "mean": avg, "stdev": sd}
     deviations = [{"index": i, "value": value, "z_score": (value-avg)/sd} for i,value in enumerate(values) if abs((value-avg)/sd) >= sigma]
     return {"available": True, "count": len(values), "mean": avg, "stdev": sd, "sigma": sigma, "deviations": deviations}
+
+
+def temporal_profile(payload: Any) -> dict[str, Any]:
+    """Describe onset/change behavior without asserting causation."""
+    values = extract_series(payload)
+    n = len(values)
+    if n < 8:
+        return {"available": False, "count": n, "reason": "At least eight samples are required"}
+    q = max(2, n // 4)
+    early, late = values[:q], values[-q:]
+    early_mean, late_mean = mean(early), mean(late)
+    net = late_mean - early_mean
+    increments = [values[i] - values[i - 1] for i in range(1, n)]
+    max_rise_index = max(range(1, n), key=lambda i: increments[i - 1])
+    max_fall_index = min(range(1, n), key=lambda i: increments[i - 1])
+    total_range = max(values) - min(values)
+    threshold = max(total_range * 0.15, pstdev(values) * 0.5)
+    baseline = early_mean
+    onset_index = next((i for i, value in enumerate(values[q:], start=q) if abs(value - baseline) >= threshold), None)
+    direction = "increasing" if net > 0 else "decreasing" if net < 0 else "stable"
+    return {
+        "available": True, "count": n, "early_mean": early_mean, "late_mean": late_mean,
+        "change": net, "direction": direction, "onset_index": onset_index,
+        "max_rise_index": max_rise_index, "max_rise_step": increments[max_rise_index - 1],
+        "max_fall_index": max_fall_index, "max_fall_step": increments[max_fall_index - 1],
+    }
+
+
+def lagged_pearson(left_payload: Any, right_payload: Any, *, max_lag: int = 12) -> dict[str, Any]:
+    """Find strongest sample-lag association; lag is descriptive, not causal."""
+    left, right = extract_series(left_payload), extract_series(right_payload)
+    n = min(len(left), len(right))
+    if n < 8:
+        return {"available": False, "count": n, "reason": "At least eight aligned samples are required"}
+    left, right = left[:n], right[:n]
+    bound = min(max_lag, max(1, n // 4))
+    candidates: list[dict[str, Any]] = []
+    for lag in range(-bound, bound + 1):
+        if lag < 0: a, b = left[-lag:], right[:n + lag]
+        elif lag > 0: a, b = left[:n - lag], right[lag:]
+        else: a, b = left, right
+        result = pearson(a, b)
+        if result.get("available"):
+            candidates.append({"lag_samples": lag, "r": result["r"], "count": result["count"]})
+    if not candidates:
+        return {"available": False, "count": n, "reason": "No valid lagged association"}
+    strongest = max(candidates, key=lambda item: abs(float(item["r"])))
+    return {**strongest, "available": True, "warning": "Lagged association and temporal ordering do not establish causation."}
