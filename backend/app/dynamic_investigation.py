@@ -88,6 +88,25 @@ class DynamicInvestigator:
         archive_data = archive_execution.result.data if archive_execution and archive_execution.result else None
         archive_rows = archive_data if isinstance(archive_data, list) else archive_data.get("hits", archive_data.get("items", [])) if isinstance(archive_data, dict) else []
         combined["archive_evidence_useful"] = bool(archive_rows)
+        combined["archive_evidence"] = {
+            "attempted": True,
+            "count": len(archive_rows),
+            "items": archive_rows[:8],
+            "approved_only": True,
+        }
+        # Pull controlled metadata for the strongest archive hits so later
+        # reasoning can cite exact document/revision/source rather than merely
+        # knowing that a search succeeded.
+        archive_contexts: list[dict[str, Any]] = []
+        for index, row in enumerate(archive_rows[:4]):
+            record_id = row.get("record_id") if isinstance(row, dict) else None
+            if not record_id: continue
+            try:
+                context_result = await self.registry.execute("get_document_context", arguments={"record_id": str(record_id)}, context=context)
+                archive_contexts.append({"record_id": record_id, "context": context_result.data, "provenance": context_result.provenance})
+            except Exception as exc:
+                archive_contexts.append({"record_id": record_id, "error": str(exc)})
+        combined["archive_evidence"]["document_contexts"] = archive_contexts
         archive_limit = None if archive_rows else "Technical archive search executed but returned no usable approved evidence."
         # Adaptive evidence pass: use the governed tag-search tool to discover
         # additional related variables instead of relying on an FCC-specific list.
