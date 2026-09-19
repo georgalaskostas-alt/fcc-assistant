@@ -11,11 +11,19 @@ from .dynamic_investigation import DynamicInvestigator
 from .engineering_claim_guard import claims_only_text, validate_engineering_narrative
 from .investigation_data_source import investigation_tag_service
 from .investigation_reasoning import reason_about_investigation
+from .investigation_store import InvestigationStore
+from .investigation_service import InvestigationService
+from .investigation_continuation import continue_saved_investigation
 from .refinery_model import AccessGrant, RefineryScope, ScopeKind, UnitScope, default_engineering_domains
 from .refinery_tools import build_refinery_tool_registry
 
 router = APIRouter(prefix="/api/v1/investigations", tags=["investigations"])
 
+
+class InvestigationContinueRequest(BaseModel):
+    utterance: str = Field(min_length=2, max_length=4000)
+    unit_key: str = Field(min_length=1, max_length=80)
+    user_id: str = Field(default="local-engineer", min_length=1, max_length=200)
 
 class InvestigationRequest(BaseModel):
     goal: str = Field(min_length=3, max_length=4000)
@@ -90,5 +98,27 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
             "synthesis": result.synthesis,
             "reasoning": reasoning,
         }
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/saved")
+def list_saved_investigations(user_id: str = "local-engineer") -> dict[str, object]:
+    items = InvestigationStore().list(user_id=user_id)
+    return {"count": len(items), "items": [item.to_dict() for item in items], "local_only": True}
+
+@router.post("/continue")
+async def continue_investigation(request: InvestigationContinueRequest) -> dict[str, object]:
+    try:
+        tag_service, source = investigation_tag_service()
+        registry = build_refinery_tool_registry(tag_service=tag_service)
+        context = _local_context(request.user_id, request.unit_key)
+        service = InvestigationService(registry=registry, store=InvestigationStore())
+        result = await service.continue_from_conversation(
+            user_id=request.user_id, utterance=request.utterance, context=context,
+            data_source=source, unit_key=request.unit_key)
+        return {"mode":"local","data_source":source,"read_only_process_access":True,**result}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
