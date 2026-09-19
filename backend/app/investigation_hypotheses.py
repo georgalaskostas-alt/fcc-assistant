@@ -102,10 +102,22 @@ def evaluate_hypotheses(*, hypotheses: list[dict[str, Any]], synthesis: dict[str
         item["independent_evidence"] = independent
         matching = match_hypothesis_evidence(hypothesis=item, synthesis=synthesis)
         item["evidence_matches"] = matching["matches"]
+        item["supporting_independent_evidence"] = matching["supporting"]
+        item["contradicting_independent_evidence"] = matching["contradicting"]
+        item["insufficient_independent_evidence"] = matching["insufficient"]
         item["evidence_match_count"] = matching["match_count"]
         item["evidence_match_status"] = matching["interpretation"]
         item["missing_evidence"] = missing
-        item["evidence_status"] = "specific_independent_evidence_found" if matching["match_count"] else ("independent_evidence_available" if independent else "insufficient_independent_evidence")
+        if matching["supporting"] and matching["contradicting"]:
+            item["evidence_status"] = "mixed_independent_evidence"
+        elif matching["contradicting"]:
+            item["evidence_status"] = "contradicting_independent_evidence"
+        elif matching["supporting"]:
+            item["evidence_status"] = "supporting_independent_evidence"
+        elif matching["match_count"]:
+            item["evidence_status"] = "relevant_but_insufficient"
+        else:
+            item["evidence_status"] = "independent_evidence_available" if independent else "insufficient_independent_evidence"
         # Availability is not proof. A later evidence matcher must establish that
         # a source explicitly supports or contradicts the mechanism.
         item["causal_status"] = "not_established"
