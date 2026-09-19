@@ -6,7 +6,7 @@ from itertools import combinations
 from typing import Any
 
 from .local_ai import LocalAIClient, LocalAIError
-from .investigation_hypotheses import build_hypothesis_candidates, investigation_stop_decision
+from .investigation_hypotheses import build_hypothesis_candidates, evaluate_hypotheses, investigation_stop_decision
 from .process_analytics import detect_deviation, lagged_pearson, pearson, summarize_series, temporal_profile
 
 INVESTIGATION_SYSTEM_PROMPT = """You are the local refinery engineering reasoning layer.
@@ -162,7 +162,7 @@ def _validated_fallback(*, analytics: dict[str, Any], data_source: dict[str, Any
 async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], data_source: dict[str, Any]) -> dict[str, Any]:
     analytics = build_deterministic_analytics(synthesis)
     claims = build_structured_claims(analytics, data_quality=str(data_source.get("data_quality") or ""))
-    hypotheses = build_hypothesis_candidates(analytics)
+    hypotheses = evaluate_hypotheses(hypotheses=build_hypothesis_candidates(analytics), synthesis=synthesis)
     stop_decision = investigation_stop_decision(synthesis=synthesis, analytics=analytics, hypotheses=hypotheses)
     if not synthesis.get("ready_for_reasoning"): return {"available": False, "model": None, "text": "Insufficient source-grounded evidence for engineering reasoning.", "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "stop_decision": stop_decision, "validation": {"valid": True, "violations": []}}
     context = _reasoning_context(goal=goal, synthesis=synthesis, data_source=data_source, analytics=analytics)
