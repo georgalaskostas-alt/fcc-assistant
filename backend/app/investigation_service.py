@@ -14,6 +14,7 @@ from typing import Any
 from .agent_runtime import AgentPlan, AgentRuntime, AgentRun
 from .agent_tools import ToolContext, ToolRegistry
 from .investigation_store import EvidenceRecord, Investigation, InvestigationStore
+from .investigation_reference import resolve_investigation_reference
 
 
 class InvestigationServiceError(RuntimeError):
@@ -92,6 +93,13 @@ class InvestigationService:
             "evidence_count": synthesis.get("evidence_count", 0),
         }
         return self.store.save_checkpoint(investigation_id, trail=trail, resume_context=resume_context)
+
+    def resolve_and_resume(self, *, user_id: str, utterance: str, unit_key: str | None = None) -> dict[str, Any]:
+        resolved = resolve_investigation_reference(store=self.store, user_id=user_id, utterance=utterance, unit_key=unit_key)
+        if resolved["status"] != "resolved":
+            return resolved
+        investigation_id = str(resolved["investigation"]["id"])
+        return {"status": "resolved", "resolution": resolved["investigation"], "resume": self.resume_context(investigation_id)}
 
     def resume_context(self, investigation_id: str) -> dict[str, Any]:
         item = self.store.resume(investigation_id)
