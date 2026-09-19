@@ -6,7 +6,7 @@ from itertools import combinations
 from typing import Any
 
 from .local_ai import LocalAIClient, LocalAIError
-from .process_analytics import detect_deviation, pearson, summarize_series
+from .process_analytics import detect_deviation, lagged_pearson, pearson, summarize_series, temporal_profile
 
 INVESTIGATION_SYSTEM_PROMPT = """You are the local refinery engineering reasoning layer.
 Use ONLY the supplied investigation evidence and deterministic analytics.
@@ -68,13 +68,13 @@ def _trend_points(payload: Any, *, max_points: int = 120) -> list[dict[str, Any]
 
 def build_deterministic_analytics(synthesis: dict[str, Any]) -> dict[str, Any]:
     histories = [item for item in synthesis.get("evidence_package", []) if item.get("tool") == "get_history"]
-    summaries: dict[str, Any] = {}; deviations: dict[str, Any] = {}; trends: dict[str, Any] = {}; series: list[tuple[str, str, Any]] = []; evidence_labels: dict[str, str] = {}
+    summaries: dict[str, Any] = {}; deviations: dict[str, Any] = {}; temporal: dict[str, Any] = {}; trends: dict[str, Any] = {}; series: list[tuple[str, str, Any]] = []; evidence_labels: dict[str, str] = {}
     for item in histories:
         evidence_id = str(item.get("evidence_id", "history")); tag_key = _tag_from_history_item(item) or evidence_id; evidence_labels[evidence_id] = tag_key; payload = _history_payload(item)
-        summaries[tag_key] = {"evidence_id": evidence_id, **summarize_series(payload)}; deviations[tag_key] = {"evidence_id": evidence_id, **detect_deviation(payload)}; trends[tag_key] = {"evidence_id": evidence_id, "points": _trend_points(payload)}; series.append((evidence_id, tag_key, payload))
+        summaries[tag_key] = {"evidence_id": evidence_id, **summarize_series(payload)}; deviations[tag_key] = {"evidence_id": evidence_id, **detect_deviation(payload)}; temporal[tag_key] = {"evidence_id": evidence_id, **temporal_profile(payload)}; trends[tag_key] = {"evidence_id": evidence_id, "points": _trend_points(payload)}; series.append((evidence_id, tag_key, payload))
     correlations = []
-    for (left_id, left_tag, left), (right_id, right_tag, right) in combinations(series, 2): correlations.append({"left": left_tag, "right": right_tag, "left_evidence_id": left_id, "right_evidence_id": right_id, **pearson(left, right)})
-    return {"evidence_labels": evidence_labels, "summaries": summaries, "deviations": deviations, "correlations": correlations, "trends": trends}
+    for (left_id, left_tag, left), (right_id, right_tag, right) in combinations(series, 2): correlations.append({"left": left_tag, "right": right_tag, "left_evidence_id": left_id, "right_evidence_id": right_id, **pearson(left, right), "lagged": lagged_pearson(left, right)})
+    return {"evidence_labels": evidence_labels, "summaries": summaries, "deviations": deviations, "temporal": temporal, "correlations": correlations, "trends": trends}
 
 
 def build_structured_claims(analytics: dict[str, Any], *, data_quality: str | None = None) -> list[dict[str, Any]]:
@@ -138,7 +138,7 @@ def validate_reasoning_text(text: str) -> dict[str, Any]:
 
 def _validated_fallback(*, analytics: dict[str, Any], data_source: dict[str, Any]) -> str:
     summaries = analytics.get("summaries", {}); correlations = analytics.get("correlations", [])
-    lines = ["Engineering assessment withheld: the local reasoning model produced claims that failed deterministic evidence validation.", "", "Validated observations:"]
+    lines = ["Bounded engineering assessment: the model narrative was rejected by deterministic evidence validation, so only validated evidence is shown.", "", "Validated observations:"]
     for tag, summary in summaries.items():
         if not isinstance(summary, dict) or not summary.get("count"): continue
         lines.append(f"- {tag}: n={summary.get('count')}, mean={summary.get('mean')}, min={summary.get('min')}, max={summary.get('max')}, delta={summary.get('delta')} [{summary.get('evidence_id')}]")
@@ -146,7 +146,13 @@ def _validated_fallback(*, analytics: dict[str, Any], data_source: dict[str, Any
         lines.extend(["", "Validated associations (correlation is not causation):"])
         for item in correlations:
             if item.get("r") is not None: lines.append(f"- {item.get('left')} ↔ {item.get('right')}: Pearson r={item.get('r')} [{item.get('left_evidence_id')}, {item.get('right_evidence_id')}]")
-    lines.extend(["", "No causal conclusion is asserted. Review the evidence, technical archive, alarms/events and operating context before forming a causal hypothesis."])
+    temporal = analytics.get("temporal", {})
+    if temporal:
+        lines.extend(["", "Validated temporal observations:"])
+        for tag, item in temporal.items():
+            if isinstance(item, dict) and item.get("available"):
+                lines.append(f"- {tag}: {item.get('direction')}; early mean={item.get('early_mean')}, late mean={item.get('late_mean')}, onset sample={item.get('onset_index')} [{item.get('evidence_id')}]")
+    lines.extend(["", "Causal conclusion: not established by the available evidence.", "Next evidence required: alarms/events, operating context, relevant approved technical-archive guidance, and additional process variables identified by the unit semantic model."])
     if data_source.get("data_quality") == "SIMULATED": lines.append("SIMULATED DEVELOPMENT DATA: this is not an operational plant conclusion.")
     return "\n".join(lines)
 
