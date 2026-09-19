@@ -42,6 +42,8 @@ class Investigation:
     evidence: list[EvidenceRecord] = field(default_factory=list)
     artifacts: list[dict[str, Any]] = field(default_factory=list)
     conclusion: str | None = None
+    trail: dict[str, Any] = field(default_factory=dict)
+    resume_context: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -93,6 +95,8 @@ class InvestigationStore:
             evidence=[EvidenceRecord(**item) for item in (raw.get("evidence") or [])],
             artifacts=[dict(item) for item in (raw.get("artifacts") or []) if isinstance(item, dict)],
             conclusion=raw.get("conclusion"),
+            trail=dict(raw.get("trail") or {}),
+            resume_context=dict(raw.get("resume_context") or {}),
         )
 
     def create(self, *, goal: str, user_id: str, unit_key: str | None = None) -> Investigation:
@@ -145,6 +149,18 @@ class InvestigationStore:
     def add_artifact(self, investigation_id: str, artifact: dict[str, Any]) -> Investigation:
         item = self._require(investigation_id)
         item.artifacts.append(dict(artifact))
+        return self.update(item)
+
+    def save_checkpoint(self, investigation_id: str, *, trail: dict[str, Any], resume_context: dict[str, Any]) -> Investigation:
+        item = self._require(investigation_id)
+        item.trail = dict(trail)
+        item.resume_context = dict(resume_context)
+        item.status = InvestigationStatus.WAITING
+        return self.update(item)
+
+    def resume(self, investigation_id: str) -> Investigation:
+        item = self._require(investigation_id)
+        item.status = InvestigationStatus.RUNNING
         return self.update(item)
 
     def complete(self, investigation_id: str, *, conclusion: str) -> Investigation:
