@@ -22,7 +22,7 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
     for round_index in range(max(0, max_rounds)):
         analytics = build_deterministic_analytics(synthesis)
         hypotheses = evaluate_hypotheses(hypotheses=build_hypothesis_candidates(analytics), synthesis=synthesis)
-        plan = plan_follow_up(goal=goal, unit_key=unit_key, synthesis=synthesis, hypotheses=hypotheses, max_actions=3)
+        plan = plan_follow_up(goal=goal, unit_key=unit_key, synthesis=synthesis, hypotheses=hypotheses, max_actions=3, round_index=round_index)
         if not plan.get("needed"):
             stop_reason = "evidence_saturated"
             break
@@ -40,6 +40,11 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
             break
         synthesis["evidence_package"] = [*synthesis.get("evidence_package", []), *evidence]
         synthesis["evidence_count"] = len(synthesis["evidence_package"])
+        # Preserve the trail of what the autonomous loop learned. The next round
+        # can focus on a different unresolved hypothesis rather than blindly
+        # repeating the original user wording.
+        synthesis["last_autonomous_focus"] = plan.get("focus")
+        synthesis["autonomous_rounds_completed"] = round_index + 1
     return {"rounds": rounds, "rounds_completed": len(rounds), "stop_reason": stop_reason,
             "bounded_by": {"max_rounds": max_rounds, "max_actions_per_round": 3},
             "process_control_actions_allowed": False}
