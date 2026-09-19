@@ -51,6 +51,9 @@ def investigation_stop_decision(*, synthesis: dict[str, Any], analytics: dict[st
     event_info = synthesis.get("event_evidence") if isinstance(synthesis.get("event_evidence"), dict) else {}
     events_attempted = bool(event_info.get("attempted"))
     event_count = int(event_info.get("count") or 0)
+    similar_info = synthesis.get("similar_episodes") if isinstance(synthesis.get("similar_episodes"), dict) else {}
+    similar_attempted = bool(similar_info.get("attempted"))
+    similar_count = int(similar_info.get("count") or 0)
     unresolved = [h for h in hypotheses if h.get("causal_status") != "established"]
     reasons: list[str] = []
     if not archive_ok: reasons.append("approved_archive_evidence_missing")
@@ -58,11 +61,16 @@ def investigation_stop_decision(*, synthesis: dict[str, Any], analytics: dict[st
     if not additional: reasons.append("no_additional_process_variables_resolved")
     if not events_attempted: reasons.append("alarm_event_search_not_attempted")
     elif event_count == 0: reasons.append("no_relevant_alarm_event_evidence")
+    if not similar_attempted: reasons.append("historical_similarity_not_attempted")
+    elif similar_count == 0: reasons.append("no_similar_historical_episode_evidence")
     return {
         "stop": True,
         "reason": "evidence_boundary_reached",
         "reasons": list(dict.fromkeys(reasons)),
         "iterations_completed": 2 if adaptive.get("attempted") else 1,
-        "next_tools_needed": ["search_alarms_events"] if "alarm_event_search_not_attempted" in reasons else [],
+        "next_tools_needed": [
+            *([] if events_attempted else ["search_alarms_events"]),
+            *([] if similar_attempted else ["find_similar_episodes"]),
+        ],
         "safe_to_assert_causality": False,
     }
