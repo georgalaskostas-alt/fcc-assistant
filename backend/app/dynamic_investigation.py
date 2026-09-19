@@ -110,6 +110,24 @@ class DynamicInvestigator:
             combined["evidence_package"] = [*combined.get("evidence_package", []), *expansion_synthesis.get("evidence_package", [])]
             combined["evidence_count"] = len(combined["evidence_package"])
             tag_keys = [*tag_keys, *expansion_tags]
+        # Independent event evidence is a separate pass. The tool enforces the
+        # authorized unit scope and is read-only.
+        event_step = AgentStep(
+            id="search-events", tool_name="search_alarms_events",
+            arguments={"unit_key": unit_key, "start_time": intent.start_time, "end_time": intent.end_time, "query": goal, "limit": 100},
+            description="Search authorized alarms/events for independent event evidence.",
+        )
+        events_run = await self.runtime.execute(AgentPlan(goal=f"Alarm/event evidence for: {goal}", steps=(event_step,)), context=context, stop_on_error=False)
+        events_synthesis = synthesize_run(events_run).to_dict()
+        event_execution = events_run.executions.get("search-events")
+        event_data = event_execution.result.data if event_execution and event_execution.result else []
+        combined["event_evidence"] = {
+            "attempted": True,
+            "count": len(event_data) if isinstance(event_data, list) else 0,
+            "run": events_run.to_dict(),
+        }
+        combined["evidence_package"] = [*combined.get("evidence_package", []), *events_synthesis.get("evidence_package", [])]
+        combined["evidence_count"] = len(combined["evidence_package"])
         combined["resolved_tags"] = tag_keys
         combined["time_window"] = {"start": intent.start_time, "end": intent.end_time, "interpretation": intent.period_interpretation, "site_timezone": intent.site_timezone}
         combined["ready_for_reasoning"] = bool(analysis.evidence)
