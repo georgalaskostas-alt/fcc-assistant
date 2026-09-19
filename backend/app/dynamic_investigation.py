@@ -183,6 +183,7 @@ class DynamicInvestigator:
         combined["evidence_package"] = [*combined.get("evidence_package", []), *similar_synthesis.get("evidence_package", [])]
         combined["evidence_count"] = len(combined["evidence_package"])
         combined["resolved_tags"] = tag_keys
+        combined["unit_key"] = unit_key
         combined["time_window"] = {"start": intent.start_time, "end": intent.end_time, "interpretation": intent.period_interpretation, "site_timezone": intent.site_timezone}
         combined["ready_for_reasoning"] = bool(analysis.evidence)
         synthetic_analysis_warnings = {"Relevant historian tags were not resolved.", "Approved technical-archive evidence was not retrieved."}
