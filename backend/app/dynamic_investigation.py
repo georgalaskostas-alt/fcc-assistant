@@ -58,12 +58,17 @@ class DynamicInvestigator:
         archive_data = archive_execution.result.data if archive_execution and archive_execution.result else None
         archive_rows = archive_data if isinstance(archive_data, list) else archive_data.get("hits", archive_data.get("items", [])) if isinstance(archive_data, dict) else []
         combined["archive_evidence_useful"] = bool(archive_rows)
-        if not archive_rows:
-            combined.setdefault("limitations", []).append("Technical archive search executed but returned no usable approved evidence.")
+        archive_limit = None if archive_rows else "Technical archive search executed but returned no usable approved evidence."
         combined["resolved_tags"] = tag_keys
         combined["time_window"] = {"start": intent.start_time, "end": intent.end_time, "interpretation": intent.period_interpretation, "site_timezone": intent.site_timezone}
         combined["ready_for_reasoning"] = bool(analysis.evidence)
         synthetic_analysis_warnings = {"Relevant historian tags were not resolved.", "Approved technical-archive evidence was not retrieved."}
         analysis_limits = [item for item in combined.get("limitations", []) if item not in synthetic_analysis_warnings]
-        combined["limitations"] = list(dict.fromkeys([*combined.get("limitations", []), *discovery_synthesis.get("limitations", []), *analysis_limits]))
+        discovery_limits = [item for item in discovery_synthesis.get("limitations", []) if item != "Relevant historian tags were not resolved."]
+        if archive_rows:
+            discovery_limits = [item for item in discovery_limits if item != "Approved technical-archive evidence was not retrieved."]
+        limits = [*analysis_limits, *discovery_limits]
+        if archive_limit:
+            limits.append(archive_limit)
+        combined["limitations"] = list(dict.fromkeys(limits))
         return DynamicInvestigationResult(discovery=discovery.to_dict(), analysis=analysis.to_dict(), synthesis=combined)
