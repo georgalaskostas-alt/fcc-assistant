@@ -7,6 +7,10 @@ from .agent_runtime import AgentPlan, AgentRuntime, AgentStep
 from .agent_tools import ToolContext, ToolRegistry
 from .investigation_planner import InvestigationPlanner
 from .investigation_synthesis import synthesize_run
+from .investigation_followup import plan_follow_up
+from .investigation_followup_executor import execute_follow_up
+from .investigation_reasoning import build_deterministic_analytics
+from .investigation_hypotheses import build_hypothesis_candidates, evaluate_hypotheses
 
 
 @dataclass(frozen=True)
@@ -182,8 +186,23 @@ class DynamicInvestigator:
         }
         combined["evidence_package"] = [*combined.get("evidence_package", []), *similar_synthesis.get("evidence_package", [])]
         combined["evidence_count"] = len(combined["evidence_package"])
+        # One bounded autonomous second round: inspect current evidence gaps,
+        # choose only governed read-only tools, execute them, and merge the new evidence.
         combined["resolved_tags"] = tag_keys
         combined["unit_key"] = unit_key
+        provisional_analytics = build_deterministic_analytics(combined)
+        provisional_hypotheses = evaluate_hypotheses(
+            hypotheses=build_hypothesis_candidates(provisional_analytics), synthesis=combined)
+        follow_up_plan = plan_follow_up(goal=goal, unit_key=unit_key, synthesis=combined,
+                                        hypotheses=provisional_hypotheses, max_actions=3)
+        follow_up_run = await execute_follow_up(
+            registry=self.registry, context=context, goal=goal, plan=follow_up_plan,
+            time_window={"start": intent.start_time, "end": intent.end_time},
+            episode_context=episode_context)
+        combined["autonomous_follow_up"] = {"plan": follow_up_plan, **follow_up_run}
+        if follow_up_run.get("evidence_package"):
+            combined["evidence_package"] = [*combined.get("evidence_package", []), *follow_up_run["evidence_package"]]
+            combined["evidence_count"] = len(combined["evidence_package"])
         combined["time_window"] = {"start": intent.start_time, "end": intent.end_time, "interpretation": intent.period_interpretation, "site_timezone": intent.site_timezone}
         combined["ready_for_reasoning"] = bool(analysis.evidence)
         synthetic_analysis_warnings = {"Relevant historian tags were not resolved.", "Approved technical-archive evidence was not retrieved."}
