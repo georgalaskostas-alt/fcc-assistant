@@ -8,6 +8,7 @@ from typing import Any
 from .local_ai import LocalAIClient, LocalAIError
 from .investigation_hypotheses import build_hypothesis_candidates, evaluate_hypotheses, investigation_stop_decision
 from .investigation_followup import plan_follow_up
+from .investigation_trail import build_investigation_trail
 from .process_analytics import detect_deviation, lagged_pearson, pearson, summarize_series, temporal_profile
 
 INVESTIGATION_SYSTEM_PROMPT = """You are the local refinery engineering reasoning layer.
@@ -166,13 +167,14 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
     hypotheses = evaluate_hypotheses(hypotheses=build_hypothesis_candidates(analytics), synthesis=synthesis)
     stop_decision = investigation_stop_decision(synthesis=synthesis, analytics=analytics, hypotheses=hypotheses)
     follow_up = plan_follow_up(goal=goal, unit_key=str(synthesis.get('unit_key') or ''), synthesis=synthesis, hypotheses=hypotheses)
-    if not synthesis.get("ready_for_reasoning"): return {"available": False, "model": None, "text": "Insufficient source-grounded evidence for engineering reasoning.", "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "stop_decision": stop_decision, "follow_up": follow_up, "validation": {"valid": True, "violations": []}}
+    trail = build_investigation_trail(goal=goal, synthesis=synthesis, hypotheses=hypotheses)
+    if not synthesis.get("ready_for_reasoning"): return {"available": False, "model": None, "text": "Insufficient source-grounded evidence for engineering reasoning.", "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {"valid": True, "violations": []}}
     context = _reasoning_context(goal=goal, synthesis=synthesis, data_source=data_source, analytics=analytics)
     try:
         response = await LocalAIClient().generate("Produce a concise evidence-grounded engineering assessment. Report measured observations first. Treat correlations only as associations. Put possible mechanisms only under hypotheses and state what additional evidence would validate or reject each hypothesis.", context, system_prompt=INVESTIGATION_SYSTEM_PROMPT, temperature=0.05)
         validation = validate_reasoning_text(response.text)
         if not validation["valid"]:
-            return {"available": False, "model": response.model, "text": _validated_fallback(analytics=analytics, data_source=data_source), "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "stop_decision": stop_decision, "validation": validation}
-        return {"available": True, "model": response.model, "text": response.text, "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "stop_decision": stop_decision, "validation": validation}
+            return {"available": False, "model": response.model, "text": _validated_fallback(analytics=analytics, data_source=data_source), "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": validation}
+        return {"available": True, "model": response.model, "text": response.text, "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": validation}
     except LocalAIError as exc:
-        return {"available": False, "model": None, "text": f"Local reasoning model unavailable: {exc}", "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "stop_decision": stop_decision, "validation": {"valid": True, "violations": []}}
+        return {"available": False, "model": None, "text": f"Local reasoning model unavailable: {exc}", "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {"valid": True, "violations": []}}
