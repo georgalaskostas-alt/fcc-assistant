@@ -15,6 +15,7 @@ from .agent_runtime import AgentPlan, AgentRuntime, AgentRun
 from .agent_tools import ToolContext, ToolRegistry
 from .investigation_store import EvidenceRecord, Investigation, InvestigationStore
 from .investigation_reference import resolve_investigation_reference
+from .investigation_continuation import continue_saved_investigation
 
 
 class InvestigationServiceError(RuntimeError):
@@ -100,6 +101,16 @@ class InvestigationService:
             return resolved
         investigation_id = str(resolved["investigation"]["id"])
         return {"status": "resolved", "resolution": resolved["investigation"], "resume": self.resume_context(investigation_id)}
+
+    async def continue_from_conversation(self, *, user_id: str, utterance: str, context: ToolContext,
+                                         data_source: dict[str, Any], unit_key: str | None = None) -> dict[str, Any]:
+        resolved = resolve_investigation_reference(store=self.store, user_id=user_id, utterance=utterance, unit_key=unit_key)
+        if resolved["status"] != "resolved":
+            return resolved
+        result = await continue_saved_investigation(
+            registry=self.registry, store=self.store, investigation_id=str(resolved["investigation"]["id"]),
+            context=context, data_source=data_source)
+        return {"status": "continued", "resolution": resolved["investigation"], **result}
 
     def resume_context(self, investigation_id: str) -> dict[str, Any]:
         item = self.store.resume(investigation_id)
