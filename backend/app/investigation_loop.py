@@ -11,6 +11,7 @@ from .investigation_followup_executor import execute_follow_up
 from .investigation_reasoning import build_deterministic_analytics
 from .investigation_hypotheses import build_hypothesis_candidates, evaluate_hypotheses
 from .agent_tools import ToolContext, ToolRegistry
+from .investigation_evidence import merge_new_evidence
 
 async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolContext, goal: str,
                                        unit_key: str, synthesis: dict[str, Any],
@@ -34,12 +35,16 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
         result = await execute_follow_up(registry=registry, context=context, goal=goal, plan=plan,
                                          time_window=time_window, episode_context=episode_context)
         evidence = result.get("evidence_package") if isinstance(result.get("evidence_package"), list) else []
-        rounds.append({"round": round_index + 1, "plan": plan, **result, "new_evidence_count": len(evidence)})
-        if not evidence:
+        existing = synthesis.get("evidence_package") if isinstance(synthesis.get("evidence_package"), list) else []
+        merged, novel = merge_new_evidence(existing, evidence)
+        rounds.append({"round": round_index + 1, "plan": plan, **result,
+                       "returned_evidence_count": len(evidence), "new_evidence_count": len(novel),
+                       "new_evidence_ids": [item.get("stable_evidence_id") for item in novel]})
+        if not novel:
             stop_reason = "no_new_evidence"
             break
-        synthesis["evidence_package"] = [*synthesis.get("evidence_package", []), *evidence]
-        synthesis["evidence_count"] = len(synthesis["evidence_package"])
+        synthesis["evidence_package"] = merged
+        synthesis["evidence_count"] = len(merged)
         # Preserve the trail of what the autonomous loop learned. The next round
         # can focus on a different unresolved hypothesis rather than blindly
         # repeating the original user wording.
