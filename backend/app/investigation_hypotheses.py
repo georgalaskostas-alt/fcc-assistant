@@ -48,19 +48,21 @@ def investigation_stop_decision(*, synthesis: dict[str, Any], analytics: dict[st
     adaptive = synthesis.get("adaptive_evidence") if isinstance(synthesis.get("adaptive_evidence"), dict) else {}
     additional = adaptive.get("additional_tags") if isinstance(adaptive.get("additional_tags"), list) else []
     archive_ok = bool(synthesis.get("archive_evidence_useful"))
+    event_info = synthesis.get("event_evidence") if isinstance(synthesis.get("event_evidence"), dict) else {}
+    events_attempted = bool(event_info.get("attempted"))
+    event_count = int(event_info.get("count") or 0)
     unresolved = [h for h in hypotheses if h.get("causal_status") != "established"]
     reasons: list[str] = []
     if not archive_ok: reasons.append("approved_archive_evidence_missing")
     if unresolved: reasons.append("causal_hypotheses_unresolved")
     if not additional: reasons.append("no_additional_process_variables_resolved")
-    # Current tool catalog has no alarm/event retrieval contract yet. Stop safely
-    # rather than pretending that another identical loop can close the gap.
-    reasons.append("alarm_event_tool_not_available")
+    if not events_attempted: reasons.append("alarm_event_search_not_attempted")
+    elif event_count == 0: reasons.append("no_relevant_alarm_event_evidence")
     return {
         "stop": True,
         "reason": "evidence_boundary_reached",
         "reasons": list(dict.fromkeys(reasons)),
         "iterations_completed": 2 if adaptive.get("attempted") else 1,
-        "next_tools_needed": ["search_alarms_events"] if "alarm_event_tool_not_available" in reasons else [],
+        "next_tools_needed": ["search_alarms_events"] if "alarm_event_search_not_attempted" in reasons else [],
         "safe_to_assert_causality": False,
     }
