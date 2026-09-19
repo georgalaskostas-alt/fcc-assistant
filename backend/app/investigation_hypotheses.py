@@ -74,3 +74,35 @@ def investigation_stop_decision(*, synthesis: dict[str, Any], analytics: dict[st
         ],
         "safe_to_assert_causality": False,
     }
+
+
+def evaluate_hypotheses(*, hypotheses: list[dict[str, Any]], synthesis: dict[str, Any]) -> list[dict[str, Any]]:
+    """Attach independent evidence availability without turning association into causality."""
+    archive = synthesis.get("archive_evidence") if isinstance(synthesis.get("archive_evidence"), dict) else {}
+    events = synthesis.get("event_evidence") if isinstance(synthesis.get("event_evidence"), dict) else {}
+    similar = synthesis.get("similar_episodes") if isinstance(synthesis.get("similar_episodes"), dict) else {}
+    archive_items = archive.get("items") if isinstance(archive.get("items"), list) else []
+    similar_items = similar.get("items") if isinstance(similar.get("items"), list) else []
+    event_count = int(events.get("count") or 0)
+    evaluated: list[dict[str, Any]] = []
+    for source in hypotheses:
+        item = dict(source)
+        independent: list[dict[str, Any]] = []
+        if archive_items:
+            independent.append({"type": "approved_archive", "count": len(archive_items), "status": "available_for_review"})
+        if event_count:
+            independent.append({"type": "alarms_events", "count": event_count, "status": "available_for_review"})
+        if similar_items:
+            independent.append({"type": "historical_episodes", "count": len(similar_items), "status": "available_for_comparison"})
+        missing: list[str] = []
+        if not archive_items: missing.append("Approved technical-archive evidence")
+        if not event_count: missing.append("Relevant alarms/events")
+        if not similar_items: missing.append("Comparable historical episodes")
+        item["independent_evidence"] = independent
+        item["missing_evidence"] = missing
+        item["evidence_status"] = "independent_evidence_available" if independent else "insufficient_independent_evidence"
+        # Availability is not proof. A later evidence matcher must establish that
+        # a source explicitly supports or contradicts the mechanism.
+        item["causal_status"] = "not_established"
+        evaluated.append(item)
+    return evaluated
