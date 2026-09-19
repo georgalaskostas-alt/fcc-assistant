@@ -5,6 +5,7 @@ mechanism and never authorizes a process-control action.
 """
 from __future__ import annotations
 from typing import Any
+from .evidence_matching import match_hypothesis_evidence
 
 
 def build_hypothesis_candidates(analytics: dict[str, Any]) -> list[dict[str, Any]]:
@@ -99,8 +100,12 @@ def evaluate_hypotheses(*, hypotheses: list[dict[str, Any]], synthesis: dict[str
         if not event_count: missing.append("Relevant alarms/events")
         if not similar_items: missing.append("Comparable historical episodes")
         item["independent_evidence"] = independent
+        matching = match_hypothesis_evidence(hypothesis=item, synthesis=synthesis)
+        item["evidence_matches"] = matching["matches"]
+        item["evidence_match_count"] = matching["match_count"]
+        item["evidence_match_status"] = matching["interpretation"]
         item["missing_evidence"] = missing
-        item["evidence_status"] = "independent_evidence_available" if independent else "insufficient_independent_evidence"
+        item["evidence_status"] = "specific_independent_evidence_found" if matching["match_count"] else ("independent_evidence_available" if independent else "insufficient_independent_evidence")
         # Availability is not proof. A later evidence matcher must establish that
         # a source explicitly supports or contradicts the mechanism.
         item["causal_status"] = "not_established"
