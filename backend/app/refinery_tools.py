@@ -16,6 +16,7 @@ from .engineering_document_service import EngineeringDocumentService
 from .engineering_documents import RedlineInstruction
 from .refinery_model import DataDomain
 from .tag_service import TagService
+from .operational_events import OperationalEventStore
 from .technical_archive import TechnicalArchive
 
 
@@ -24,12 +25,14 @@ def build_refinery_tool_registry(
     tag_service: TagService | None = None,
     archive: TechnicalArchive | None = None,
     engineering_documents: EngineeringDocumentService | None = None,
+    operational_events: OperationalEventStore | None = None,
 ) -> ToolRegistry:
     tags = tag_service or TagService()
     technical_archive = archive or TechnicalArchive()
     document_service = engineering_documents or EngineeringDocumentService(
         registry=technical_archive.registry
     )
+    events = operational_events or OperationalEventStore()
     registry = ToolRegistry()
 
     registry.register(
@@ -79,6 +82,29 @@ def build_refinery_tool_registry(
             equipment_key=str(args["equipment_key"]) if args.get("equipment_key") else None,
         )
         return [asdict(hit) for hit in hits]
+
+    registry.register(
+        ToolDefinition(
+            name="search_alarms_events",
+            description="Search read-only operational alarms and events inside an authorized unit and time window.",
+            domain=DataDomain.PROCESS,
+            effect=ToolEffect.READ_ONLY,
+            parameters=(
+                ToolParameter("unit_key", "string"),
+                ToolParameter("start_time", "string"),
+                ToolParameter("end_time", "string"),
+                ToolParameter("query", "string", required=False),
+                ToolParameter("limit", "integer", required=False),
+            ),
+        ),
+        lambda context, args: events.search(
+            unit_key=context.scope_id,
+            start_time=str(args["start_time"]),
+            end_time=str(args["end_time"]),
+            query=str(args.get("query") or ""),
+            limit=int(args.get("limit", 100)),
+        ),
+    )
 
     registry.register(
         ToolDefinition(
