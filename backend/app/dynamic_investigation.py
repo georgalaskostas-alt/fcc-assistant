@@ -128,6 +128,41 @@ class DynamicInvestigator:
         }
         combined["evidence_package"] = [*combined.get("evidence_package", []), *events_synthesis.get("evidence_package", [])]
         combined["evidence_count"] = len(combined["evidence_package"])
+        # Historical comparison uses only compact measured context, never raw
+        # historian payloads, and remains inside the authorized unit.
+        episode_context: dict[str, float | str] = {}
+        for evidence in combined.get("evidence_package", []):
+            if not isinstance(evidence, dict): continue
+            description = str(evidence.get("description") or "")
+            marker = "historian evidence for "
+            lowered = description.casefold()
+            if marker not in lowered: continue
+            tag = description[lowered.index(marker) + len(marker):].strip().rstrip(".")
+            data = evidence.get("data")
+            rows = data.get("values", data.get("Values", [])) if isinstance(data, dict) else []
+            if isinstance(rows, list) and rows:
+                row = rows[-1]
+                value = row.get("value", row.get("Value")) if isinstance(row, dict) else row
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    episode_context[f"state.{tag}"] = float(value)
+        similar_step = AgentStep(
+            id="similar-episodes", tool_name="find_similar_episodes",
+            arguments={"context": episode_context, "configuration_version": "current", "limit": 8},
+            description="Find comparable historical operating episodes using measured context.",
+        )
+        similar_run = await self.runtime.execute(AgentPlan(goal=f"Historical comparison for: {goal}", steps=(similar_step,)), context=context, stop_on_error=False)
+        similar_synthesis = synthesize_run(similar_run).to_dict()
+        similar_execution = similar_run.executions.get("similar-episodes")
+        similar_data = similar_execution.result.data if similar_execution and similar_execution.result else []
+        combined["similar_episodes"] = {
+            "attempted": True,
+            "context_features": sorted(episode_context),
+            "count": len(similar_data) if isinstance(similar_data, list) else 0,
+            "items": similar_data if isinstance(similar_data, list) else [],
+            "run": similar_run.to_dict(),
+        }
+        combined["evidence_package"] = [*combined.get("evidence_package", []), *similar_synthesis.get("evidence_package", [])]
+        combined["evidence_count"] = len(combined["evidence_package"])
         combined["resolved_tags"] = tag_keys
         combined["time_window"] = {"start": intent.start_time, "end": intent.end_time, "interpretation": intent.period_interpretation, "site_timezone": intent.site_timezone}
         combined["ready_for_reasoning"] = bool(analysis.evidence)
