@@ -123,7 +123,7 @@ def _compact_discovery(item: dict[str, Any]) -> dict[str, Any]:
 
 def _reasoning_context(*, goal: str, synthesis: dict[str, Any], data_source: dict[str, Any], analytics: dict[str, Any]) -> dict[str, Any]:
     discovery = [_compact_discovery(item) for item in synthesis.get("discovery_evidence", []) if isinstance(item, dict)]; llm_analytics = {key: value for key, value in analytics.items() if key != "trends"}
-    return {"goal": goal, "data_source": {key: data_source.get(key) for key in ("mode", "data_quality", "source", "process_writes") if key in data_source}, "time_window": synthesis.get("time_window"), "resolved_tags": synthesis.get("resolved_tags", []), "deterministic_analytics": llm_analytics, "discovery_evidence": discovery, "limitations": synthesis.get("limitations", [])}
+    return {"goal": goal, "data_source": {key: data_source.get(key) for key in ("mode", "data_quality", "source", "process_writes") if key in data_source}, "time_window": synthesis.get("time_window"), "resolved_tags": synthesis.get("resolved_tags", []), "deterministic_analytics": llm_analytics, "discovery_evidence": discovery, "archive_evidence": synthesis.get("archive_evidence", {}), "event_evidence": synthesis.get("event_evidence", {}), "similar_episodes": synthesis.get("similar_episodes", {}), "limitations": synthesis.get("limitations", [])}
 
 
 def validate_reasoning_text(text: str) -> dict[str, Any]:
