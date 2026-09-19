@@ -12,9 +12,25 @@ _STOP = {"the","and","for","with","from","whether","observed","relationship","be
 def _terms(text: str) -> set[str]:
     return {w.casefold() for w in re.findall(r"[A-Za-z0-9_.-]{3,}", text) if w.casefold() not in _STOP}
 
+_SUPPORT = {"associated","association","accompanied","increase","increased","decrease","decreased","high","low","rise","rises","rose","drop","dropped","response","related"}
+_CONTRADICT = {"not","no","without","unrelated","independent","unchanged","stable","normal","excluded","exclude","contradicts","contradicted"}
+
 def _match(statement: str, text: str) -> dict[str, Any]:
     common = sorted(_terms(statement).intersection(_terms(text)))
-    return {"matched": len(common) >= 2, "matched_terms": common[:12]}
+    words = _terms(text)
+    matched = len(common) >= 2
+    support_hits = sorted(words.intersection(_SUPPORT))
+    contradict_hits = sorted(words.intersection(_CONTRADICT))
+    if not matched:
+        stance = "irrelevant"
+    elif contradict_hits and not support_hits:
+        stance = "contradicting"
+    elif support_hits and not contradict_hits:
+        stance = "supporting"
+    else:
+        stance = "insufficient"
+    return {"matched": matched, "matched_terms": common[:12], "stance": stance,
+            "support_terms": support_hits[:8], "contradict_terms": contradict_hits[:8]}
 
 def match_hypothesis_evidence(*, hypothesis: dict[str, Any], synthesis: dict[str, Any]) -> dict[str, Any]:
     statement = str(hypothesis.get("statement") or "")
@@ -49,4 +65,9 @@ def match_hypothesis_evidence(*, hypothesis: dict[str, Any], synthesis: dict[str
         if result["matched"]:
             matches.append({"source_type":"historical_episode","episode_id":episode.get("id"),"similarity":row.get("similarity"),**result})
 
-    return {"matches": matches, "match_count": len(matches), "interpretation": "relevant_for_review" if matches else "no_specific_match"}
+    supporting = [m for m in matches if m.get("stance") == "supporting"]
+    contradicting = [m for m in matches if m.get("stance") == "contradicting"]
+    insufficient = [m for m in matches if m.get("stance") == "insufficient"]
+    return {"matches": matches, "match_count": len(matches),
+            "supporting": supporting, "contradicting": contradicting, "insufficient": insufficient,
+            "interpretation": "relevant_for_review" if matches else "no_specific_match"}
