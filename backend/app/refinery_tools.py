@@ -17,6 +17,7 @@ from .engineering_documents import RedlineInstruction
 from .refinery_model import DataDomain
 from .tag_service import TagService
 from .operational_events import OperationalEventStore
+from .operational_episode import OperationalEpisodeStore
 from .technical_archive import TechnicalArchive
 
 
@@ -26,6 +27,7 @@ def build_refinery_tool_registry(
     archive: TechnicalArchive | None = None,
     engineering_documents: EngineeringDocumentService | None = None,
     operational_events: OperationalEventStore | None = None,
+    operational_episodes: OperationalEpisodeStore | None = None,
 ) -> ToolRegistry:
     tags = tag_service or TagService()
     technical_archive = archive or TechnicalArchive()
@@ -33,6 +35,7 @@ def build_refinery_tool_registry(
         registry=technical_archive.registry
     )
     events = operational_events or OperationalEventStore()
+    episodes = operational_episodes or OperationalEpisodeStore()
     registry = ToolRegistry()
 
     registry.register(
@@ -82,6 +85,41 @@ def build_refinery_tool_registry(
             equipment_key=str(args["equipment_key"]) if args.get("equipment_key") else None,
         )
         return [asdict(hit) for hit in hits]
+
+    def find_similar_episodes(context, args: dict[str, Any]) -> list[dict[str, Any]]:
+        raw_context = args.get("context")
+        if not isinstance(raw_context, dict) or not raw_context:
+            return []
+        safe_context: dict[str, float | str] = {
+            str(key): value for key, value in raw_context.items()
+            if isinstance(value, (int, float, str)) and not isinstance(value, bool)
+        }
+        hits = episodes.similar(
+            unit_key=context.scope_id,
+            context=safe_context,
+            configuration_version=str(args.get("configuration_version") or "current"),
+            limit=int(args.get("limit", 8)),
+        )
+        return [{
+            "episode": asdict(hit.episode),
+            "similarity": hit.similarity,
+            "matched_features": list(hit.matched_features),
+        } for hit in hits]
+
+    registry.register(
+        ToolDefinition(
+            name="find_similar_episodes",
+            description="Find historical operational episodes with similar governed operating context in the authorized unit.",
+            domain=DataDomain.PROCESS,
+            effect=ToolEffect.READ_ONLY,
+            parameters=(
+                ToolParameter("context", "object"),
+                ToolParameter("configuration_version", "string", required=False),
+                ToolParameter("limit", "integer", required=False),
+            ),
+        ),
+        find_similar_episodes,
+    )
 
     registry.register(
         ToolDefinition(
