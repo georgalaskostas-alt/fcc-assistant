@@ -1,4 +1,4 @@
-"""Dynamic two-pass investigation: discover evidence, then expand into historian analysis."""
+"""Adaptive governed investigation: discover, analyze, then autonomously expand evidence."""
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
@@ -17,12 +17,15 @@ class DynamicInvestigationResult:
 
 
 class DynamicInvestigator:
+    MAX_INITIAL_TAGS = 6
+    MAX_EXPANSION_TAGS = 6
+
     def __init__(self, registry: ToolRegistry, planner: InvestigationPlanner | None = None) -> None:
         self.registry, self.runtime = registry, AgentRuntime(registry)
         self.planner = planner or InvestigationPlanner()
 
     @staticmethod
-    def _tag_keys(data: Any, *, limit: int = 6) -> list[str]:
+    def _tag_keys(data: Any, *, limit: int = MAX_INITIAL_TAGS) -> list[str]:
         rows = data if isinstance(data, list) else data.get("hits", data.get("tags", [])) if isinstance(data, dict) else []
         if not isinstance(rows, list): return []
         keys: list[str] = []
@@ -31,6 +34,33 @@ class DynamicInvestigator:
             key = row.get("key") or row.get("tag_key") or row.get("name")
             if key and str(key) not in keys: keys.append(str(key))
         return keys[:limit]
+
+    @staticmethod
+    def _expansion_queries(goal: str, resolved_tags: list[str]) -> list[str]:
+        """Generic evidence-gap queries; never hard-code FCC equipment/tag names."""
+        queries = [goal]
+        for tag in resolved_tags[:3]:
+            queries.extend((tag, f"{tag} related", f"{tag} upstream downstream"))
+        return list(dict.fromkeys(q for q in queries if q.strip()))[:8]
+
+    async def _expand_tags(self, *, goal: str, resolved_tags: list[str], context: ToolContext) -> tuple[list[str], list[dict[str, Any]]]:
+        """Search semantic/tag registry for additional governed evidence candidates."""
+        found: list[str] = []
+        traces: list[dict[str, Any]] = []
+        for i, query in enumerate(self._expansion_queries(goal, resolved_tags)):
+            try:
+                result = await self.registry.execute("search_tags", arguments={"query": query}, context=context)
+            except Exception as exc:
+                traces.append({"query": query, "ok": False, "error": str(exc)})
+                continue
+            keys = self._tag_keys(result.data, limit=self.MAX_EXPANSION_TAGS)
+            traces.append({"query": query, "ok": True, "keys": keys, "provenance": result.provenance})
+            for key in keys:
+                if key not in resolved_tags and key not in found:
+                    found.append(key)
+                    if len(found) >= self.MAX_EXPANSION_TAGS:
+                        return found, traces
+        return found, traces
 
     async def investigate(self, *, goal: str, unit_key: str, context: ToolContext) -> DynamicInvestigationResult:
         intent = self.planner.understand(goal, unit_key=unit_key)
@@ -59,6 +89,27 @@ class DynamicInvestigator:
         archive_rows = archive_data if isinstance(archive_data, list) else archive_data.get("hits", archive_data.get("items", [])) if isinstance(archive_data, dict) else []
         combined["archive_evidence_useful"] = bool(archive_rows)
         archive_limit = None if archive_rows else "Technical archive search executed but returned no usable approved evidence."
+        # Adaptive evidence pass: use the governed tag-search tool to discover
+        # additional related variables instead of relying on an FCC-specific list.
+        expansion_tags, expansion_trace = await self._expand_tags(goal=goal, resolved_tags=tag_keys, context=context)
+        combined["adaptive_evidence"] = {
+            "attempted": True,
+            "search_trace": expansion_trace,
+            "additional_tags": expansion_tags,
+            "bounded_by": {"max_initial_tags": self.MAX_INITIAL_TAGS, "max_additional_tags": self.MAX_EXPANSION_TAGS},
+        }
+        if expansion_tags:
+            expansion_steps = tuple(AgentStep(
+                id=f"expansion-history-{i}", tool_name="get_history",
+                arguments={"tag_key": key, "start_time": intent.start_time, "end_time": intent.end_time, "max_count": 2000},
+                description=f"Retrieve adaptive read-only historian evidence for {key}.",
+            ) for i, key in enumerate(expansion_tags))
+            expansion = await self.runtime.execute(AgentPlan(goal=f"Adaptive evidence expansion for: {goal}", steps=expansion_steps), context=context, stop_on_error=False)
+            expansion_synthesis = synthesize_run(expansion).to_dict()
+            combined["adaptive_evidence"]["run"] = expansion.to_dict()
+            combined["evidence_package"] = [*combined.get("evidence_package", []), *expansion_synthesis.get("evidence_package", [])]
+            combined["evidence_count"] = len(combined["evidence_package"])
+            tag_keys = [*tag_keys, *expansion_tags]
         combined["resolved_tags"] = tag_keys
         combined["time_window"] = {"start": intent.start_time, "end": intent.end_time, "interpretation": intent.period_interpretation, "site_timezone": intent.site_timezone}
         combined["ready_for_reasoning"] = bool(analysis.evidence)
