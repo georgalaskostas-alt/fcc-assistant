@@ -34,9 +34,10 @@ def _history_payload(item: dict[str, Any]) -> Any:
 
 
 def _tag_from_history_item(item: dict[str, Any]) -> str | None:
-    description = str(item.get("description") or ""); marker = "historian evidence for "; lowered = description.casefold()
-    if marker in lowered:
-        start = lowered.index(marker) + len(marker); return description[start:].strip().rstrip(".") or None
+    description = str(item.get("description") or ""); lowered = description.casefold()
+    for marker in ("historian evidence for ", "adaptive read-only historian evidence for "):
+        if marker in lowered:
+            start = lowered.index(marker) + len(marker); return description[start:].strip().rstrip(".") or None
     provenance = item.get("provenance")
     if isinstance(provenance, dict) and provenance.get("tag_key"): return str(provenance["tag_key"])
     return None
