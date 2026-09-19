@@ -82,6 +82,28 @@ class InvestigationService:
             )
         return InvestigationRunResult(investigation=current, run=run)
 
+    def checkpoint(self, investigation_id: str, *, trail: dict[str, Any], synthesis: dict[str, Any]) -> Investigation:
+        resume_context = {
+            "unit_key": synthesis.get("unit_key"),
+            "time_window": synthesis.get("time_window"),
+            "resolved_tags": list(synthesis.get("resolved_tags") or []),
+            "last_autonomous_focus": synthesis.get("last_autonomous_focus"),
+            "autonomous_rounds_completed": synthesis.get("autonomous_rounds_completed", 0),
+            "evidence_count": synthesis.get("evidence_count", 0),
+        }
+        return self.store.save_checkpoint(investigation_id, trail=trail, resume_context=resume_context)
+
+    def resume_context(self, investigation_id: str) -> dict[str, Any]:
+        item = self.store.resume(investigation_id)
+        return {
+            "investigation_id": item.id,
+            "goal": item.goal,
+            "unit_key": item.unit_key,
+            "trail": dict(item.trail),
+            "resume_context": dict(item.resume_context),
+            "evidence": [e.payload for e in item.evidence],
+        }
+
     def finish(self, investigation_id: str, *, conclusion: str) -> Investigation:
         if not conclusion.strip():
             raise InvestigationServiceError("Conclusion is required")
