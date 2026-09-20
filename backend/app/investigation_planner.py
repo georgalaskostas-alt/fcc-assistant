@@ -58,7 +58,7 @@ class InvestigationPlanner:
         lowered = _search_text(text)
 
         # `_search_text` removes Greek diacritics, so match normalized Greek tokens.
-        if "χθες" in lowered or "yesterday" in lowered:
+        if "χθες" in text.casefold() or "χτες" in text.casefold() or "yesterday" in lowered:
             day = now_local.date() - timedelta(days=1)
             start_local = datetime.combine(day, datetime.min.time(), tzinfo=self._site_tz)
             end_local = start_local + timedelta(days=1)
