@@ -38,6 +38,21 @@ def build_refinery_tool_registry(
     episodes = operational_episodes or OperationalEpisodeStore()
     registry = ToolRegistry()
 
+    def scoped_tag_rows(context, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        result=[]
+        for row in rows:
+            if not isinstance(row,dict): continue
+            unit=str(row.get("unit_key") or "").strip().casefold()
+            # Legacy registries may not yet carry unit_key. Such rows remain
+            # usable only inside the active unit context; explicit foreign-unit
+            # rows are never exposed.
+            if unit and unit != context.scope_id.casefold(): continue
+            result.append(row)
+        return result
+
+    def search_tags(context, args: dict[str, Any]) -> list[dict[str, Any]]:
+        return scoped_tag_rows(context,tags.search(str(args["query"])))
+
     registry.register(
         ToolDefinition(
             name="search_tags",
@@ -46,12 +61,18 @@ def build_refinery_tool_registry(
             effect=ToolEffect.READ_ONLY,
             parameters=(ToolParameter("query", "string"),),
         ),
-        lambda _context, args: tags.search(str(args["query"])),
+        search_tags,
     )
 
-    async def get_history(_context, args: dict[str, Any]) -> dict[str, Any]:
+    async def get_history(context, args: dict[str, Any]) -> dict[str, Any]:
+        tag_key=str(args["tag_key"])
+        # Resolve the tag through the same scoped catalog before reading it.
+        # This prevents an LLM/client from bypassing scope with a guessed key.
+        candidates=scoped_tag_rows(context,tags.search(tag_key))
+        if candidates and not any(str(row.get("key") or "")==tag_key for row in candidates):
+            raise PermissionError("Tag is outside the active authorized unit scope")
         return await tags.recorded_values(
-            key=str(args["tag_key"]),
+            key=tag_key,
             start_time=str(args["start_time"]),
             end_time=str(args["end_time"]),
             max_count=int(args.get("max_count", 1000)),
@@ -73,12 +94,15 @@ def build_refinery_tool_registry(
         get_history,
     )
 
-    def search_archive(_context, args: dict[str, Any]) -> list[dict[str, Any]]:
+    def search_archive(context, args: dict[str, Any]) -> list[dict[str, Any]]:
+        requested_unit=str(args["unit_key"]).strip().casefold()
+        if requested_unit != context.scope_id.casefold():
+            raise PermissionError("Archive search is outside the active authorized unit scope")
         raw_type = args.get("document_type")
         document_type = DocumentType(str(raw_type)) if raw_type else None
         hits = technical_archive.search(
             query=str(args["query"]),
-            unit_key=str(args["unit_key"]),
+            unit_key=requested_unit,
             limit=int(args.get("limit", 8)),
             approved_only=bool(args.get("approved_only", True)),
             document_type=document_type,
