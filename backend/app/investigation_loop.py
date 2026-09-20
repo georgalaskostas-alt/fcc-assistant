@@ -12,6 +12,7 @@ from .investigation_reasoning import build_deterministic_analytics
 from .investigation_hypotheses import build_hypothesis_candidates, evaluate_hypotheses
 from .agent_tools import ToolContext, ToolRegistry
 from .investigation_evidence import merge_new_evidence
+from .investigation_reconciliation import reconcile_follow_up
 
 async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolContext, goal: str,
                                        unit_key: str, synthesis: dict[str, Any],
@@ -45,6 +46,10 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
             break
         synthesis["evidence_package"] = merged
         synthesis["evidence_count"] = len(merged)
+        reconciliation = reconcile_follow_up(synthesis, result)
+        rounds[-1]["reconciliation"] = reconciliation
+        # Recompute hypotheses on the next iteration from the newly reconciled
+        # archive/event/history state, so the planner can change direction.
         # Preserve the trail of what the autonomous loop learned. The next round
         # can focus on a different unresolved hypothesis rather than blindly
         # repeating the original user wording.
