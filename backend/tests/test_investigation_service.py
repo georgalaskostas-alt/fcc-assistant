@@ -1,7 +1,7 @@
 import pytest
 
 from app.agent_runtime import AgentPlan, step
-from app.agent_tools import ToolContext, ToolDefinition, ToolEffect, ToolRegistry, ToolResult
+from app.agent_tools import ToolContext, ToolDefinition, ToolEffect, ToolRegistry
 from app.investigation_service import InvestigationService
 from app.investigation_store import InvestigationStatus, InvestigationStore
 from app.refinery_model import AccessGrant, DataDomain, RefineryScope, ScopeKind, UnitScope
@@ -11,11 +11,8 @@ from app.refinery_model import AccessGrant, DataDomain, RefineryScope, ScopeKind
 async def test_persists_tool_evidence_across_investigation_run(tmp_path):
     registry = ToolRegistry()
 
-    async def history(arguments, context):
-        return ToolResult(
-            data={"tag": {"key": "regenerator_dp", "name": "Regenerator DP"}, "data": [1, 2, 3]},
-            provenance={"source_system": "PI", "read_only": True},
-        )
+    async def history(context, arguments):
+        return {"tag": {"key": "regenerator_dp", "name": "Regenerator DP"}, "data": [1, 2, 3]}
 
     registry.register(
         ToolDefinition(
@@ -23,15 +20,15 @@ async def test_persists_tool_evidence_across_investigation_run(tmp_path):
             description="read historian",
             domain=DataDomain.PROCESS,
             effect=ToolEffect.READ_ONLY,
-            handler=history,
-        )
+        ),
+        history,
     )
 
     refinery = RefineryScope(id="site", name="Site", standalone_units=(UnitScope("fcc", "FCC"),))
     context = ToolContext(
-        user_id="engineer-1",
+        actor_id="engineer-1",
         refinery=refinery,
-        grant=AccessGrant(domains=frozenset({DataDomain.PROCESS}), unit_ids=frozenset({"fcc"})),
+        access=AccessGrant(domains=frozenset({DataDomain.PROCESS}), unit_ids=frozenset({"fcc"})),
         scope_kind=ScopeKind.UNIT,
         scope_id="fcc",
     )
@@ -55,7 +52,7 @@ async def test_persists_tool_evidence_across_investigation_run(tmp_path):
     assert persisted.status == InvestigationStatus.RUNNING
     assert persisted.plan_id == plan.plan_id
     assert len(persisted.evidence) == 1
-    assert persisted.evidence[0].provenance["read_only"] is True
+    assert persisted.evidence[0].provenance["actor_id"] == "engineer-1"\n    assert persisted.evidence[0].provenance["scope_id"] == "fcc"
 
     completed = service.finish(persisted.id, conclusion="DP increased with the observed operating change.")
     assert completed.status == InvestigationStatus.COMPLETED
