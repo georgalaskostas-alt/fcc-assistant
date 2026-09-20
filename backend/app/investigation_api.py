@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .agent_tools import ToolContext
-from .active_identity import active_identity
+from .active_identity import ActiveIdentity, active_identity
 from .investigation_access import visible_investigations
 from .build_identity import runtime_build_identity
 from .diagnostic_trace import append_trace
@@ -33,12 +33,16 @@ class InvestigationRequest(BaseModel):
 
 
 
-def _local_context(user_id: str, unit_key: str) -> ToolContext:
+def _local_context(identity: ActiveIdentity, unit_key: str) -> ToolContext:
     unit = unit_key.strip().casefold()
-    refinery = RefineryScope(id="local-refinery", name="Local Refinery", standalone_units=(UnitScope(id=unit, name=unit.upper()),))
-    access = AccessGrant(domains=default_engineering_domains(), unit_ids=frozenset({unit}))
-    return ToolContext(actor_id=user_id, refinery=refinery, access=access, scope_kind=ScopeKind.UNIT, scope_id=unit, metadata={"identity_adapter": "phase1-local"})
-
+    if unit not in identity.unit_ids:
+        raise PermissionError("Requested unit is not available in the active authorization context")
+    units=tuple(UnitScope(id=value,name=value.upper()) for value in sorted(identity.unit_ids))
+    refinery = RefineryScope(id="local-refinery", name="Local Refinery", standalone_units=units)
+    access = AccessGrant(domains=default_engineering_domains(), unit_ids=identity.unit_ids)
+    return ToolContext(actor_id=identity.actor_id, refinery=refinery, access=access,
+                       scope_kind=ScopeKind.UNIT, scope_id=unit,
+                       metadata={"identity_adapter": identity.source})
 
 def _source_units(synthesis: dict[str, object]) -> set[str]:
     """Only explicitly retrieved engineering units may appear in generated prose."""
@@ -64,7 +68,7 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
         tag_service, source = investigation_tag_service()
         registry = build_refinery_tool_registry(tag_service=tag_service)
         identity = active_identity()
-        context = _local_context(identity.actor_id, request.unit_key)
+        context = _local_context(identity, request.unit_key)
         result = await DynamicInvestigator(registry).investigate(goal=request.goal, unit_key=request.unit_key, context=context)
 
         time_window = result.synthesis.get("time_window") if isinstance(result.synthesis, dict) else None
@@ -108,7 +112,7 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
 @router.get("/saved")
 def list_saved_investigations(unit_key: str) -> dict[str, object]:
     identity=active_identity()
-    context=_local_context(identity.actor_id,unit_key)
+    context=_local_context(identity,unit_key)
     items=visible_investigations(InvestigationStore().list(user_id=identity.actor_id),context)
     return {"count":len(items),"items":[item.to_dict() for item in items],"local_only":True,
             "identity_source":identity.source}
