@@ -36,7 +36,7 @@ async def test_persists_tool_evidence_across_investigation_run(tmp_path):
     service = InvestigationService(registry=registry, store=store)
     plan = AgentPlan(
         goal="Why did regenerator DP increase?",
-        steps=(step("get_history", {"tag_key": "regenerator_dp"}, step_id="history"),),
+        steps=(step("get_history", {}, step_id="history"),),
     )
 
     result = await service.start(
