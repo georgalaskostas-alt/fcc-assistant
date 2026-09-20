@@ -104,7 +104,7 @@ class InvestigationService:
 
     async def continue_from_conversation(self, *, user_id: str, utterance: str, context: ToolContext,
                                          data_source: dict[str, Any], unit_key: str | None = None) -> dict[str, Any]:
-        resolved = resolve_investigation_reference(store=self.store, user_id=user_id, utterance=utterance, unit_key=unit_key)
+        resolved = resolve_investigation_reference(store=self.store, user_id=user_id, utterance=utterance, unit_key=unit_key, context=context)
         if resolved["status"] != "resolved":
             return resolved
         result = await continue_saved_investigation(
