@@ -31,7 +31,7 @@ class InvestigationIntent:
 def _search_text(value: str) -> str:
     """Case/diacritic tolerant text used only for intent matching."""
     decomposed = unicodedata.normalize("NFD", value.casefold())
-    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn").replace("ς", "σ")
 
 
 class InvestigationPlanner:
@@ -58,12 +58,12 @@ class InvestigationPlanner:
         lowered = _search_text(text)
 
         # `_search_text` removes Greek diacritics, so match normalized Greek tokens.
-        if "χθες" in text.casefold() or "χτες" in text.casefold() or "χθες" in lowered or "χτες" in lowered or "χθες".replace("έ", "ε") in lowered or "yesterday" in lowered:
+        if "χθεσ" in lowered or "χτεσ" in lowered or "yesterday" in lowered:
             day = now_local.date() - timedelta(days=1)
             start_local = datetime.combine(day, datetime.min.time(), tzinfo=self._site_tz)
             end_local = start_local + timedelta(days=1)
             start, end, period = start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc), "previous_local_calendar_day"
-        elif "τελευταιες 24" in lowered or "τελευταια 24" in lowered or "τελευταιεσ 24" in lowered or "τελευταια 24" in lowered or "last 24" in lowered:
+        elif "τελευταιεσ 24" in lowered or "τελευταια 24" in lowered or "last 24" in lowered:
             end = supplied_now.astimezone(timezone.utc)
             start = end - timedelta(hours=24)
             period = "rolling_24h"
