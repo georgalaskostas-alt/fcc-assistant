@@ -22,3 +22,16 @@ def test_loop_module_has_hard_round_bound():
     source=inspect.getsource(investigation_loop.run_autonomous_evidence_loop)
     assert "max_rounds" in source
     assert "seen_plans" in source
+
+
+def test_budget_never_allows_more_than_global_limit():
+    from backend.app.investigation_budget import InvestigationBudget
+    budget=InvestigationBudget(max_rounds=3,max_actions_per_round=3,max_total_tool_calls=7)
+    assert budget.allowance(3)==3
+    budget.record(round_number=1,requested=3,executed=3)
+    budget.record(round_number=2,requested=3,executed=3)
+    assert budget.remaining_tool_calls==1
+    assert budget.allowance(3)==1
+    budget.record(round_number=3,requested=3,executed=1)
+    assert budget.remaining_tool_calls==0
+    assert budget.allowance(1)==0
