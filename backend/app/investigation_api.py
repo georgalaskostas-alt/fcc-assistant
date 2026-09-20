@@ -5,6 +5,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .agent_tools import ToolContext
+from .active_identity import active_identity
+from .investigation_access import visible_investigations
 from .build_identity import runtime_build_identity
 from .diagnostic_trace import append_trace
 from .dynamic_investigation import DynamicInvestigator
@@ -23,12 +25,12 @@ router = APIRouter(prefix="/api/v1/investigations", tags=["investigations"])
 class InvestigationContinueRequest(BaseModel):
     utterance: str = Field(min_length=2, max_length=4000)
     unit_key: str = Field(min_length=1, max_length=80)
-    user_id: str = Field(default="local-engineer", min_length=1, max_length=200)
+
 
 class InvestigationRequest(BaseModel):
     goal: str = Field(min_length=3, max_length=4000)
     unit_key: str = Field(min_length=1, max_length=80)
-    user_id: str = Field(default="local-engineer", min_length=1, max_length=200)
+
 
 
 def _local_context(user_id: str, unit_key: str) -> ToolContext:
@@ -61,7 +63,8 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
     try:
         tag_service, source = investigation_tag_service()
         registry = build_refinery_tool_registry(tag_service=tag_service)
-        context = _local_context(request.user_id, request.unit_key)
+        identity = active_identity()
+        context = _local_context(identity.actor_id, request.unit_key)
         result = await DynamicInvestigator(registry).investigate(goal=request.goal, unit_key=request.unit_key, context=context)
 
         time_window = result.synthesis.get("time_window") if isinstance(result.synthesis, dict) else None
@@ -103,19 +106,23 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
 
 
 @router.get("/saved")
-def list_saved_investigations(user_id: str = "local-engineer") -> dict[str, object]:
-    items = InvestigationStore().list(user_id=user_id)
-    return {"count": len(items), "items": [item.to_dict() for item in items], "local_only": True}
+def list_saved_investigations(unit_key: str) -> dict[str, object]:
+    identity=active_identity()
+    context=_local_context(identity.actor_id,unit_key)
+    items=visible_investigations(InvestigationStore().list(user_id=identity.actor_id),context)
+    return {"count":len(items),"items":[item.to_dict() for item in items],"local_only":True,
+            "identity_source":identity.source}
 
 @router.post("/continue")
 async def continue_investigation(request: InvestigationContinueRequest) -> dict[str, object]:
     try:
         tag_service, source = investigation_tag_service()
         registry = build_refinery_tool_registry(tag_service=tag_service)
-        context = _local_context(request.user_id, request.unit_key)
+        identity = active_identity()
+        context = _local_context(identity.actor_id, request.unit_key)
         service = InvestigationService(registry=registry, store=InvestigationStore())
         result = await service.continue_from_conversation(
-            user_id=request.user_id, utterance=request.utterance, context=context,
+            user_id=identity.actor_id, utterance=request.utterance, context=context,
             data_source=source, unit_key=request.unit_key)
         return {"mode":"local","data_source":source,"read_only_process_access":True,**result}
     except PermissionError as exc:
