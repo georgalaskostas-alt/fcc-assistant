@@ -6,7 +6,7 @@ from app.agent_tools import ToolContext, ToolDefinition, ToolEffect, ToolParamet
 from app.autonomous_investigation import AutonomousInvestigator
 from app.investigation_planner import InvestigationPlanner
 from app.investigation_store import InvestigationStore
-from app.refinery_model import AccessGrant, DataDomain, RefineryScope, UnitScope
+from app.refinery_model import AccessGrant, DataDomain, RefineryScope, ScopeKind, UnitScope
 
 
 def _context():
@@ -15,7 +15,7 @@ def _context():
         domains=frozenset({DataDomain.PROCESS, DataDomain.KNOWLEDGE}),
         refinery_ids=frozenset({"site"}),
     )
-    return ToolContext(actor_id="engineer-1", refinery=refinery, grant=grant, unit_id="fcc")
+    return ToolContext(actor_id="engineer-1", refinery=refinery, access=grant, scope_kind=ScopeKind.UNIT, scope_id="fcc")
 
 
 @pytest.mark.asyncio
@@ -64,5 +64,4 @@ def test_planner_resolves_yesterday_window():
     planner = InvestigationPlanner(now_provider=lambda: datetime(2026, 9, 15, 12, tzinfo=timezone.utc))
     intent = planner.understand("Γιατί ανέβηκε το ΔP χθες;", unit_key="FCC")
     assert intent.unit_key == "fcc"
-    assert intent.start_time.startswith("2026-09-14T00:00:00")
-    assert intent.end_time.startswith("2026-09-15T00:00:00")
+    assert intent.period_interpretation == "previous_local_calendar_day"\n    assert intent.start_time.startswith("2026-09-13T21:00:00")\n    assert intent.end_time.startswith("2026-09-14T21:00:00")
