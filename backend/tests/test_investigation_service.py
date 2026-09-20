@@ -52,7 +52,8 @@ async def test_persists_tool_evidence_across_investigation_run(tmp_path):
     assert persisted.status == InvestigationStatus.RUNNING
     assert persisted.plan_id == plan.plan_id
     assert len(persisted.evidence) == 1
-    assert persisted.evidence[0].provenance["actor_id"] == "engineer-1"\n    assert persisted.evidence[0].provenance["scope_id"] == "fcc"
+    assert persisted.evidence[0].provenance["actor_id"] == "engineer-1"
+    assert persisted.evidence[0].provenance["scope_id"] == "fcc"
 
     completed = service.finish(persisted.id, conclusion="DP increased with the observed operating change.")
     assert completed.status == InvestigationStatus.COMPLETED
