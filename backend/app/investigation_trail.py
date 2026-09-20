@@ -33,6 +33,7 @@ def build_investigation_trail(*, goal: str, synthesis: dict[str, Any], hypothese
         "goal":goal,"entries":entries,
         "stop_reason":autonomous.get("stop_reason"),
         "rounds_completed":autonomous.get("rounds_completed",0),
+        "budget":dict(autonomous.get("budget") or {}),
         "evidence_count":synthesis.get("evidence_count",0),
         "causal_conclusion":"not_established",
         "process_control_actions_allowed":False,
