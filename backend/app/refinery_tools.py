@@ -68,8 +68,9 @@ def build_refinery_tool_registry(
         tag_key=str(args["tag_key"])
         # Resolve the tag through the same scoped catalog before reading it.
         # This prevents an LLM/client from bypassing scope with a guessed key.
-        candidates=scoped_tag_rows(context,tags.search(tag_key))
-        if candidates and not any(str(row.get("key") or "")==tag_key for row in candidates):
+        raw_candidates=tags.search(tag_key)
+        candidates=scoped_tag_rows(context,raw_candidates)
+        if raw_candidates and not any(str(row.get("key") or "")==tag_key for row in candidates):
             raise PermissionError("Tag is outside the active authorized unit scope")
         return await tags.recorded_values(
             key=tag_key,
