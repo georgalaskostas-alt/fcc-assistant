@@ -105,6 +105,8 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
             "synthesis": result.synthesis,
             "reasoning": reasoning,
         }
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
