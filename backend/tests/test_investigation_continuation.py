@@ -5,8 +5,8 @@ from backend.app.agent_tools import ToolContext,ToolRegistry
 from backend.app.refinery_model import AccessGrant,DataDomain,RefineryScope,ScopeKind,UnitScope
 
 def _context(actor="eng",unit="fcc"):
-    refinery=RefineryScope(key="site",name="Site",units=(UnitScope(key="fcc",name="FCC"),UnitScope(key="hcu",name="HCU")))
-    access=AccessGrant(actor_id=actor,allowed_domains=frozenset({DataDomain.PROCESS,DataDomain.KNOWLEDGE}),refinery_keys=frozenset({"site"}),unit_keys=frozenset({unit}))
+    refinery=RefineryScope(id="site",name="Site",standalone_units=(UnitScope(id="fcc",name="FCC"),UnitScope(id="hcu",name="HCU")))
+    access=AccessGrant(domains=frozenset({DataDomain.PROCESS,DataDomain.KNOWLEDGE}),unit_ids=frozenset({unit}))
     return ToolContext(actor_id=actor,refinery=refinery,access=access,scope_kind=ScopeKind.UNIT,scope_id=unit)
 
 @pytest.mark.asyncio
