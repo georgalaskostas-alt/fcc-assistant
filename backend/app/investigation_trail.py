@@ -20,8 +20,14 @@ def build_investigation_trail(*, goal: str, synthesis: dict[str, Any], hypothese
         plan=r.get("plan") if isinstance(r.get("plan"),dict) else {}
         entries.append({
             "type":"autonomous_round","round":r.get("round"),"focus":plan.get("focus"),
-            "actions":[{"tool":a.get("tool"),"reason":a.get("reason")} for a in plan.get("actions",[]) if isinstance(a,dict)],
+            "selected_hypothesis_id":plan.get("selected_hypothesis_id"),
+            "selected_hypothesis_score":plan.get("selected_hypothesis_score"),
+            "hypothesis_ranking":list(plan.get("hypothesis_ranking") or []),
+            "actions":[{"tool":a.get("tool"),"reason":a.get("reason"),"value":a.get("value")} for a in plan.get("actions",[]) if isinstance(a,dict)],
+            "returned_evidence_count":r.get("returned_evidence_count"),
             "new_evidence_count":r.get("new_evidence_count"),
+            "new_evidence_ids":list(r.get("new_evidence_ids") or []),
+            "reconciliation":dict(r.get("reconciliation") or {}),
         })
     return {
         "goal":goal,"entries":entries,
