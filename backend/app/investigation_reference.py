@@ -7,16 +7,20 @@ from __future__ import annotations
 import re
 from typing import Any
 from .investigation_store import Investigation, InvestigationStore, InvestigationStatus
+from .agent_tools import ToolContext
+from .investigation_access import visible_investigations
 
 _STOP={"continue","resume","investigation","research","the","that","about","for","with","συνέχισε","συνεχισε","έρευνα","ερευνα","εκείνο","εκεινο","θέμα","θεμα","με","το","τη","την","για"}
 
 def _terms(text:str)->set[str]:
     return {x.casefold() for x in re.findall(r"[A-Za-zΑ-Ωα-ωΆ-ώ0-9_.-]{2,}",text) if x.casefold() not in _STOP}
 
-def resolve_investigation_reference(*, store:InvestigationStore,user_id:str,utterance:str,unit_key:str|None=None,limit:int=8)->dict[str,Any]:
+def resolve_investigation_reference(*, store:InvestigationStore,user_id:str,utterance:str,unit_key:str|None=None,limit:int=8,context:ToolContext|None=None)->dict[str,Any]:
     query=_terms(utterance)
     candidates=[]
-    for item in store.list(user_id=user_id)[:limit]:
+    items=store.list(user_id=user_id)
+    if context is not None: items=visible_investigations(items,context)
+    for item in items[:limit]:
         if item.status==InvestigationStatus.FAILED: continue
         hay=_terms(item.goal+" "+str(item.resume_context.get("last_autonomous_focus") or ""))
         overlap=sorted(query & hay)
