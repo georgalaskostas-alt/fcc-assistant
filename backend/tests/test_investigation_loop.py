@@ -6,8 +6,8 @@ from backend.app.refinery_model import AccessGrant, DataDomain, RefineryScope, S
 @pytest.mark.asyncio
 async def test_loop_stops_when_no_governed_follow_up_can_add_evidence():
     registry=ToolRegistry()
-    refinery=RefineryScope(key="site",name="Site",units=(UnitScope(key="fcc",name="FCC"),))
-    access=AccessGrant(actor_id="u",allowed_domains=frozenset({DataDomain.PROCESS,DataDomain.KNOWLEDGE}),refinery_keys=frozenset({"site"}),unit_keys=frozenset({"fcc"}))
+    refinery=RefineryScope(id="site",name="Site",standalone_units=(UnitScope(id="fcc",name="FCC"),))
+    access=AccessGrant(domains=frozenset({DataDomain.PROCESS,DataDomain.KNOWLEDGE}),unit_ids=frozenset({"fcc"}))
     context=ToolContext(actor_id="u",refinery=refinery,access=access,scope_kind=ScopeKind.UNIT,scope_id="fcc")
     synthesis={"evidence_package":[],"archive_evidence":{"count":0},"event_evidence":{"count":0},"similar_episodes":{"count":0}}
     result=await run_autonomous_evidence_loop(registry=registry,context=context,goal="why",unit_key="fcc",
