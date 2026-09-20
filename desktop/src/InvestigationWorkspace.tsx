@@ -22,7 +22,7 @@ export function InvestigationWorkspace({unitKey,unitName}:{unitKey:string;unitNa
  const[goal,setGoal]=useState("Γιατί ανέβηκε το ΔP του regenerator χθες;"),[result,setResult]=useState<InvestigationResponse|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null);
  const[saved,setSaved]=useState<SavedInvestigation[]>([]),[continuation,setContinuation]=useState<InvestigationContinuationResponse|null>(null),[resumeBusy,setResumeBusy]=useState(false);
  const canRun=unitKey!=="all"&&goal.trim().length>=3;
- async function loadSaved(){try{const response=await api.savedInvestigations();setSaved(response.items);}catch{/* saved investigations are optional until backend is ready */}}
+ async function loadSaved(){try{const response=await api.savedInvestigations(unitKey);setSaved(response.items);}catch{/* saved investigations are optional until backend is ready */}}
  useEffect(()=>{void loadSaved();},[unitKey]);
  async function resume(item:SavedInvestigation){if(unitKey==="all")return;setResumeBusy(true);setError(null);setContinuation(null);try{const response=await api.continueInvestigation(`continue investigation ${item.goal}`,unitKey);setContinuation(response);await loadSaved();}catch(err){setError(err instanceof Error?err.message:"Unable to continue investigation");}finally{setResumeBusy(false);}}
  async function run(){if(!canRun)return;setBusy(true);setError(null);setResult(null);setContinuation(null);try{setResult(await api.runInvestigation(goal.trim(),unitKey));await loadSaved();}catch(err){setError(err instanceof Error?err.message:"Investigation failed");}finally{setBusy(false)}}
