@@ -42,12 +42,10 @@ def detect_user_language(text: str) -> LanguageDecision:
 def looks_like_spoken_command(text: str) -> bool:
     clean = re.sub(r"[^\w\s'-]+", " ", text, flags=re.UNICODE)
     words = [w for w in clean.split() if w]
-    if len(words) >= 2:
-        return True
     if not words:
         return False
     token = words[0].casefold()
     return token in {
-        "add", "remove", "delete", "show", "hide", "restore", "change", "update",
-        "βάλε", "βαλε", "βγάλε", "βγαλε", "δείξε", "δειξε", "άλλαξε", "αλλαξε",
+        "add", "remove", "delete", "show", "hide", "restore", "change", "update", "move", "set",
+        "βάλε", "βαλε", "βγάλε", "βγαλε", "δείξε", "δειξε", "άλλαξε", "αλλαξε", "μετέφερε", "μεταφερε",
     }
