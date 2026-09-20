@@ -46,36 +46,18 @@ def build_hypothesis_candidates(analytics: dict[str, Any]) -> list[dict[str, Any
 
 
 def investigation_stop_decision(*, synthesis: dict[str, Any], analytics: dict[str, Any], hypotheses: list[dict[str, Any]]) -> dict[str, Any]:
-    adaptive = synthesis.get("adaptive_evidence") if isinstance(synthesis.get("adaptive_evidence"), dict) else {}
-    additional = adaptive.get("additional_tags") if isinstance(adaptive.get("additional_tags"), list) else []
-    archive_ok = bool(synthesis.get("archive_evidence_useful"))
-    event_info = synthesis.get("event_evidence") if isinstance(synthesis.get("event_evidence"), dict) else {}
-    events_attempted = bool(event_info.get("attempted"))
-    event_count = int(event_info.get("count") or 0)
-    similar_info = synthesis.get("similar_episodes") if isinstance(synthesis.get("similar_episodes"), dict) else {}
-    similar_attempted = bool(similar_info.get("attempted"))
-    similar_count = int(similar_info.get("count") or 0)
-    unresolved = [h for h in hypotheses if h.get("causal_status") != "established"]
-    reasons: list[str] = []
-    if not archive_ok: reasons.append("approved_archive_evidence_missing")
-    if unresolved: reasons.append("causal_hypotheses_unresolved")
-    if not additional: reasons.append("no_additional_process_variables_resolved")
-    if not events_attempted: reasons.append("alarm_event_search_not_attempted")
-    elif event_count == 0: reasons.append("no_relevant_alarm_event_evidence")
-    if not similar_attempted: reasons.append("historical_similarity_not_attempted")
-    elif similar_count == 0: reasons.append("no_similar_historical_episode_evidence")
+    """Describe the evidence boundary; the autonomous loop owns the actual stop reason."""
+    autonomous=synthesis.get("autonomous_investigation") if isinstance(synthesis.get("autonomous_investigation"),dict) else {}
+    reason=str(autonomous.get("stop_reason") or "evidence_sufficient_for_bounded_assessment")
+    unresolved=[h for h in hypotheses if h.get("causal_status")!="established"]
     return {
         "stop": True,
-        "reason": "evidence_boundary_reached",
-        "reasons": list(dict.fromkeys(reasons)),
-        "iterations_completed": 2 if adaptive.get("attempted") else 1,
-        "next_tools_needed": [
-            *([] if events_attempted else ["search_alarms_events"]),
-            *([] if similar_attempted else ["find_similar_episodes"]),
-        ],
+        "reason": reason,
+        "reasons": [f"{len(unresolved)} causal hypotheses remain unresolved"] if unresolved else [],
+        "iterations_completed": int(autonomous.get("rounds_completed") or 0),
+        "next_tools_needed": [],
         "safe_to_assert_causality": False,
     }
-
 
 def evaluate_hypotheses(*, hypotheses: list[dict[str, Any]], synthesis: dict[str, Any]) -> list[dict[str, Any]]:
     """Attach independent evidence availability without turning association into causality."""
