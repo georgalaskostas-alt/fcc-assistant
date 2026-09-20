@@ -64,4 +64,6 @@ def test_planner_resolves_yesterday_window():
     planner = InvestigationPlanner(now_provider=lambda: datetime(2026, 9, 15, 12, tzinfo=timezone.utc))
     intent = planner.understand("Γιατί ανέβηκε το ΔP χθες;", unit_key="FCC")
     assert intent.unit_key == "fcc"
-    assert intent.period_interpretation == "previous_local_calendar_day"\n    assert intent.start_time.startswith("2026-09-13T21:00:00")\n    assert intent.end_time.startswith("2026-09-14T21:00:00")
+    assert intent.period_interpretation == "previous_local_calendar_day"
+    assert intent.start_time.startswith("2026-09-13T21:00:00")
+    assert intent.end_time.startswith("2026-09-14T21:00:00")
