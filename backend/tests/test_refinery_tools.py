@@ -15,7 +15,7 @@ from app.refinery_tools import build_refinery_tool_registry
 
 class FakeTags:
     def search(self, query):
-        return [{"key": "feed_flow", "query": query}]
+        return [{"key": "feed_flow", "query": query, "unit_key": "fcc"}]
 
     async def recorded_values(self, key, start_time, end_time, max_count=1000):
         return {"tag": key, "start": start_time, "end": end_time, "max_count": max_count}
@@ -135,3 +135,27 @@ async def test_history_tool_remains_read_only():
 
     assert result.effect == ToolEffect.READ_ONLY
     assert result.data["tag"] == "feed_flow"
+
+
+class CrossUnitTags(FakeTags):
+    def search(self, query):
+        if query=="hcu_feed": return [{"key":"hcu_feed","unit_key":"hcu"}]
+        return [{"key":"feed_flow","unit_key":"fcc"},{"key":"hcu_feed","unit_key":"hcu"}]
+
+@pytest.mark.asyncio
+async def test_search_tags_filters_foreign_units():
+    registry=build_refinery_tool_registry(tag_service=CrossUnitTags(),archive=FakeArchive(),engineering_documents=FakeEngineeringDocuments())
+    result=await registry.execute("search_tags",context=_context(),arguments={"query":"feed"})
+    assert [row["unit_key"] for row in result.data]==["fcc"]
+
+@pytest.mark.asyncio
+async def test_history_rejects_foreign_unit_tag():
+    registry=build_refinery_tool_registry(tag_service=CrossUnitTags(),archive=FakeArchive(),engineering_documents=FakeEngineeringDocuments())
+    with pytest.raises(Exception):
+        await registry.execute("get_history",context=_context(),arguments={"tag_key":"hcu_feed","start_time":"a","end_time":"b"})
+
+@pytest.mark.asyncio
+async def test_archive_rejects_foreign_unit_argument():
+    registry=_registry()
+    with pytest.raises(Exception):
+        await registry.execute("search_archive",context=_context(),arguments={"query":"compressor","unit_key":"hcu"})
