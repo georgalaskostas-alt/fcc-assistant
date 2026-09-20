@@ -5,16 +5,19 @@ from .agent_tools import ToolContext, ToolRegistry
 from .investigation_loop import run_autonomous_evidence_loop
 from .investigation_store import InvestigationStore
 from .investigation_reasoning import reason_about_investigation
+from .investigation_access import authorize_investigation
 
 async def continue_saved_investigation(*, registry:ToolRegistry,store:InvestigationStore,
                                        investigation_id:str,context:ToolContext,
                                        data_source:dict[str,Any],max_rounds:int=3)->dict[str,Any]:
     item=store.get(investigation_id)
     if item is None: raise ValueError("Unknown investigation")
-    if item.user_id != context.actor_id: raise PermissionError("Investigation belongs to another user")
+    authorize_investigation(item,context)
     resume=dict(item.resume_context)
     unit_key=str(resume.get("unit_key") or item.unit_key or context.scope_id)
-    if context.scope_id != unit_key: raise PermissionError("Investigation is outside the active authorized unit scope")
+    if not context.access.permits_scope(context.refinery,scope_kind=context.scope_kind,scope_id=unit_key):
+        raise PermissionError("Investigation is not available in the active authorization context")
+    item=store.resume(item.id)
     synthesis={
         "unit_key":unit_key,
         "time_window":dict(resume.get("time_window") or {}),
