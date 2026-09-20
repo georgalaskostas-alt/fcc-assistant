@@ -14,6 +14,7 @@ from .agent_tools import ToolContext, ToolRegistry
 from .investigation_evidence import merge_new_evidence
 from .investigation_reconciliation import reconcile_follow_up
 from .investigation_budget import InvestigationBudget
+from .investigation_stop import classify_execution_boundary, normalize_stop_reason
 
 async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolContext, goal: str,
                                        unit_key: str, synthesis: dict[str, Any],
@@ -50,12 +51,16 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
         executed = len((result.get("run") or {}).get("executions") or []) if isinstance(result.get("run"), dict) else 0
         budget.record(round_number=round_index + 1, requested=requested_actions, executed=executed)
         plan = bounded_plan
+        boundary = classify_execution_boundary(result)
         evidence = result.get("evidence_package") if isinstance(result.get("evidence_package"), list) else []
         existing = synthesis.get("evidence_package") if isinstance(synthesis.get("evidence_package"), list) else []
         merged, novel = merge_new_evidence(existing, evidence)
         rounds.append({"round": round_index + 1, "plan": plan, **result,
                        "returned_evidence_count": len(evidence), "new_evidence_count": len(novel),
                        "new_evidence_ids": [item.get("stable_evidence_id") for item in novel]})
+        if boundary:
+            stop_reason = boundary
+            break
         if not novel:
             stop_reason = "no_new_evidence"
             break
@@ -70,6 +75,7 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
         # repeating the original user wording.
         synthesis["last_autonomous_focus"] = plan.get("focus")
         synthesis["autonomous_rounds_completed"] = round_index + 1
+    stop_reason = normalize_stop_reason(stop_reason)
     return {"rounds": rounds, "rounds_completed": len(rounds), "stop_reason": stop_reason,
             "bounded_by": {"max_rounds": max_rounds, "max_actions_per_round": 3, "max_total_tool_calls": max_total_tool_calls},
             "budget": budget.to_dict(),
