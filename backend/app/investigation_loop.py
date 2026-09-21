@@ -109,6 +109,16 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
                 *(synthesis.get("measurement_information_gain") or []),
                 *realized_gain,
             ]
+        next_hypotheses = evaluate_hypotheses(
+            hypotheses=build_hypothesis_candidates(after_analytics),
+            synthesis=synthesis,
+        )
+        next_lifecycle = evolve_hypothesis_branches(
+            hypotheses=next_hypotheses,
+            previous_branches=branch_lifecycle,
+        )
+        rounds[-1]["branch_lifecycle_after_evidence"] = next_lifecycle
+        synthesis["hypothesis_branch_lifecycle"] = next_lifecycle
         # Recompute hypotheses on the next iteration from the newly reconciled
         # archive/event/history state, so the planner can change direction.
         # Preserve the trail of what the autonomous loop learned. The next round
