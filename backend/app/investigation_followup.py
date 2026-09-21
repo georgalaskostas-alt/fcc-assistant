@@ -109,11 +109,12 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
             planning_mode = "new_measurement_history"
         else:
             actions = choose_next_evidence_actions(
-            hypothesis=hypothesis,
-            synthesis=synthesis,
-            unit_key=unit_key,
-            query=query,
+                hypothesis=hypothesis,
+                synthesis=synthesis,
+                unit_key=unit_key,
+                query=query,
             )
+            planning_mode = "hypothesis_evidence"
         # If independent evidence is already present but the relationship is
         # still unresolved, search the governed catalog for measurements named
         # by the evidence gap/focus. This discovers candidates; it never guesses
