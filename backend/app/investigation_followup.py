@@ -6,7 +6,7 @@ discovery pass instead of stopping before gathering evidence.
 """
 from __future__ import annotations
 from typing import Any
-from .investigation_value import rank_hypotheses, choose_next_evidence_actions
+from .investigation_value import rank_hypotheses, choose_next_evidence_actions, rank_measurement_candidates
 
 
 def _goal_discovery_actions(*, goal: str, unit_key: str, synthesis: dict[str, Any]) -> list[dict[str, Any]]:
@@ -88,6 +88,18 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
             str(value) for value in (synthesis.get("pending_history_tags") or [])
             if str(value).strip()
         ]
+        discovered = synthesis.get("discovered_tags") if isinstance(synthesis.get("discovered_tags"), dict) else {}
+        candidate_rows = [
+            row for row in (discovered.get("items") or [])
+            if isinstance(row, dict) and str(row.get("key") or row.get("tag_key") or "") in set(pending_history)
+        ]
+        measurement_ranking = rank_measurement_candidates(
+            candidates=candidate_rows,
+            hypothesis=hypothesis,
+            resolved_tags=[str(value) for value in (synthesis.get("resolved_tags") or [])],
+        )
+        if measurement_ranking:
+            pending_history = [item["tag_key"] for item in measurement_ranking]
         time_window = synthesis.get("time_window") if isinstance(synthesis.get("time_window"), dict) else {}
         start_time = time_window.get("start") or time_window.get("start_time")
         end_time = time_window.get("end") or time_window.get("end_time")
@@ -107,6 +119,7 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
                 for tag_key in pending_history[:max(0, max_actions)]
             ]
             planning_mode = "new_measurement_history"
+            measurement_selection = measurement_ranking[:max(0, max_actions)]
         else:
             actions = choose_next_evidence_actions(
                 hypothesis=hypothesis,
@@ -155,6 +168,8 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
         "planning_mode": planning_mode,
         "selected_hypothesis_id": hypothesis.get("id") if hypothesis else None,
         "selected_hypothesis_score": selected_hypothesis.get("score") if selected_hypothesis else None,
+        "measurement_ranking": locals().get("measurement_ranking", []),
+        "measurement_selection": locals().get("measurement_selection", []),
         "hypothesis_ranking": [
             {
                 "id": x["hypothesis"].get("id"),
