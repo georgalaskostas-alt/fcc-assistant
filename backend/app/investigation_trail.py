@@ -2,6 +2,36 @@
 from __future__ import annotations
 from typing import Any
 
+def _source_kind(item: dict[str, Any]) -> str:
+    tool=str(item.get("tool") or item.get("type") or "")
+    return {
+        "get_history":"historian","search_alarms_events":"alarms_events",
+        "search_archive":"technical_archive","find_similar_episodes":"previous_incident",
+    }.get(tool, tool or "evidence")
+
+def _evidence_graph(hypotheses: list[dict[str, Any]], synthesis: dict[str, Any]) -> dict[str, Any]:
+    nodes: list[dict[str, Any]]=[]; edges: list[dict[str, Any]]=[]; seen:set[str]=set()
+    for h in hypotheses:
+        if not isinstance(h,dict): continue
+        hid=str(h.get("id") or "")
+        if not hid: continue
+        nodes.append({"id":hid,"kind":"hypothesis","label":h.get("statement"),"status":h.get("evidence_status"),"causal_status":"not_established"});seen.add(hid)
+        for relation,key in (("supports","supporting_independent_evidence"),("contradicts","contradicting_independent_evidence")):
+            for i,e in enumerate(h.get(key) or []):
+                if not isinstance(e,dict): continue
+                eid=str(e.get("stable_evidence_id") or e.get("evidence_id") or e.get("id") or f"{hid}:{relation}:{i}")
+                if eid not in seen:
+                    nodes.append({"id":eid,"kind":"evidence","source_kind":_source_kind(e),"label":e.get("description") or e.get("title") or e.get("type") or eid,"provenance":dict(e.get("provenance") or {})});seen.add(eid)
+                edges.append({"from":eid,"to":hid,"relation":relation})
+        for i,e in enumerate(h.get("evidence_matches") or []):
+            if not isinstance(e,dict): continue
+            eid=str(e.get("stable_evidence_id") or e.get("evidence_id") or e.get("id") or f"{hid}:match:{i}")
+            if eid not in seen:
+                nodes.append({"id":eid,"kind":"evidence","source_kind":_source_kind(e),"label":e.get("description") or e.get("title") or e.get("type") or eid,"provenance":dict(e.get("provenance") or {})});seen.add(eid)
+            relation=str(e.get("stance") or e.get("relation") or "related")
+            edges.append({"from":eid,"to":hid,"relation":relation})
+    return {"nodes":nodes,"edges":edges}
+
 def build_investigation_trail(*, goal: str, synthesis: dict[str, Any], hypotheses: list[dict[str, Any]]) -> dict[str, Any]:
     entries: list[dict[str, Any]] = []
     for h in hypotheses:
@@ -44,4 +74,5 @@ def build_investigation_trail(*, goal: str, synthesis: dict[str, Any], hypothese
         "evidence_count":synthesis.get("evidence_count",0),
         "causal_conclusion":"not_established",
         "process_control_actions_allowed":False,
+        "evidence_graph":_evidence_graph(hypotheses,synthesis),
     }
