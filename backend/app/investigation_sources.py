@@ -27,3 +27,19 @@ def collect_canonical_sources(synthesis:dict[str,Any])->list[dict[str,Any]]:
             for item in rows:
                 if isinstance(item,dict):add(item,field,kind)
     return collected
+
+
+def canonical_source_ids(sources:list[dict[str,Any]])->set[str]:
+    return {str(source.get("evidence_id")) for source in sources if isinstance(source,dict) and source.get("evidence_id")}
+
+def resolve_source_ids(refs:list[Any],sources:list[dict[str,Any]])->list[str]:
+    """Resolve claim/evidence references only to canonical source IDs."""
+    valid=canonical_source_ids(sources);resolved=[]
+    for ref in refs:
+        if isinstance(ref,dict):
+            value=ref.get("stable_evidence_id") or ref.get("evidence_id") or ref.get("id")
+        else:value=ref
+        if value is None:continue
+        key=str(value)
+        if key in valid and key not in resolved:resolved.append(key)
+    return resolved
