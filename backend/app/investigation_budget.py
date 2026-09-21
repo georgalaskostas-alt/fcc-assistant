@@ -34,3 +34,22 @@ class InvestigationBudget:
                 "max_total_tool_calls":self.max_total_tool_calls,"tool_calls_used":self.tool_calls_used,
                 "remaining_tool_calls":self.remaining_tool_calls,"denied_actions":self.denied_actions,
                 "history":list(self.history)}
+
+
+def allocate_branch_tool_budget(*, branches:list[dict[str,Any]], remaining_calls:int, max_actions:int=3)->dict[str,int]:
+    """Allocate the next bounded tool-call slice across active hypothesis branches."""
+    active=[b for b in branches if isinstance(b,dict) and b.get("state")!="prune" and b.get("branch_id")]
+    if not active or remaining_calls<=0 or max_actions<=0:return {}
+    ranked=sorted(active,key=lambda b:(int(b.get("priority") or 999),-float(b.get("score") or 0.0),str(b.get("branch_id"))))
+    slots=min(remaining_calls,max_actions)
+    allocation={str(b["branch_id"]):0 for b in ranked}
+    # First preserve competing explanations when budget allows.
+    for branch in ranked[:slots]:
+        allocation[str(branch["branch_id"])]+=1
+    slots-=min(slots,len(ranked))
+    # Then give remaining capacity to promoted/high-priority branches.
+    weighted=sorted(ranked,key=lambda b:(0 if b.get("state")=="promote" else 1,int(b.get("priority") or 999),-float(b.get("score") or 0.0)))
+    i=0
+    while slots>0 and weighted:
+        allocation[str(weighted[i%len(weighted)]["branch_id"])]+=1;i+=1;slots-=1
+    return {k:v for k,v in allocation.items() if v>0}
