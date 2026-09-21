@@ -56,6 +56,9 @@ def build_investigation_trail(*, goal: str, synthesis: dict[str, Any], hypothese
             "hypothesis_branches":list(plan.get("hypothesis_branches") or []),
             "planning_mode":plan.get("planning_mode"),
             "semantic_candidates":list(plan.get("semantic_candidates") or []),
+            "branch_budget_allocation":dict(plan.get("branch_budget_allocation") or {}),
+            "branch_budget_mode":plan.get("branch_budget_mode"),
+            "realized_process_path_gain":list(r.get("realized_process_path_gain") or []),
             "branch_lifecycle":list(r.get("hypothesis_branch_lifecycle") or []),
             "branch_lifecycle_after_evidence":list(r.get("branch_lifecycle_after_evidence") or []),
             "actions":[{
