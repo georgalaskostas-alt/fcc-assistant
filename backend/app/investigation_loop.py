@@ -13,7 +13,7 @@ from .investigation_hypotheses import build_hypothesis_candidates, evaluate_hypo
 from .agent_tools import ToolContext, ToolRegistry
 from .investigation_evidence import merge_new_evidence
 from .investigation_reconciliation import reconcile_follow_up
-from .investigation_budget import InvestigationBudget, allocate_branch_tool_budget, adaptive_branch_tool_budget
+from .investigation_budget import InvestigationBudget, allocate_branch_tool_budget, adaptive_branch_tool_budget, explain_branch_budget
 from .investigation_stop import classify_execution_boundary, normalize_stop_reason
 from .investigation_value import score_evidence_gain, score_process_path_gain, evolve_hypothesis_branches
 from .semantic_engineering_graph import build_semantic_engineering_graph, traverse_semantic_neighbors, trace_process_paths
@@ -110,6 +110,7 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
             plan["actions"]=ordered
             plan["branch_budget_allocation"]=branch_allocation
             plan["branch_budget_mode"]="adaptive_information_gain" if path_gain_history else "balanced_initial"
+            plan["branch_budget_explanations"]=explain_branch_budget(branches=branch_lifecycle,allocation=branch_allocation,path_gain_history=path_gain_history,mode=plan["branch_budget_mode"])
         requested_actions = len(plan.get("actions") or [])
         allowed_actions = budget.allowance(requested_actions)
         if allowed_actions <= 0:
