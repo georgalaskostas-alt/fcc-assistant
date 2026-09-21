@@ -67,9 +67,19 @@ def reconcile_follow_up(synthesis: dict[str, Any], result: dict[str, Any]) -> di
 
     if tags:
         current = synthesis.get("discovered_tags") if isinstance(synthesis.get("discovered_tags"), dict) else {}
-        items = _dedupe([*(current.get("items") or []), *tags], ("key", "tag_key", "id"))
+        before = _dedupe(list(current.get("items") or []), ("key", "tag_key", "id"))
+        items = _dedupe([*before, *tags], ("key", "tag_key", "id"))
         current.update({"attempted": True, "items": items, "count": len(items)})
         synthesis["discovered_tags"] = current
+        resolved = {str(value) for value in (synthesis.get("resolved_tags") or [])}
+        pending = []
+        for row in items:
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("key") or row.get("tag_key") or "").strip()
+            if key and key not in resolved:
+                pending.append(key)
+        synthesis["pending_history_tags"] = list(dict.fromkeys(pending))
 
     if histories:
         current = synthesis.get("history_evidence") if isinstance(synthesis.get("history_evidence"), dict) else {}
