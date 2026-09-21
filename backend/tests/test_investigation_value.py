@@ -67,3 +67,18 @@ def test_realized_information_gain_marks_empty_historian_read():
     )
     assert gain["classification"]=="no_usable_data"
     assert gain["score"]==0
+
+
+def test_competing_hypothesis_branches_are_bounded_and_ranked():
+    from backend.app.investigation_value import allocate_hypothesis_branches
+    hypotheses=[
+        {"id":"h-low","statement":"low","evidence_status":"supporting_independent_evidence","association":{"strength":0.2},"missing_evidence":[],"causal_status":"not_established"},
+        {"id":"h-high","statement":"high","evidence_status":"insufficient_independent_evidence","association":{"strength":0.9},"missing_evidence":["a","b"],"causal_status":"not_established"},
+        {"id":"h-mid","statement":"mid","evidence_status":"relevant_but_insufficient","association":{"strength":0.6},"missing_evidence":["a"],"causal_status":"not_established"},
+        {"id":"h-extra","statement":"extra","evidence_status":"independent_evidence_available","association":{"strength":0.1},"missing_evidence":[],"causal_status":"not_established"},
+    ]
+    branches=allocate_hypothesis_branches(hypotheses=hypotheses,max_branches=3)
+    assert len(branches)==3
+    assert branches[0]["branch_id"]=="h-high"
+    assert [b["priority"] for b in branches]==[1,2,3]
+    assert all(b["causal_status"]=="not_established" for b in branches)
