@@ -34,3 +34,24 @@ def semantic_candidates_to_actions(*, candidates:list[dict[str,Any]], unit_key:s
         elif item.get("kind")=="equipment":
             actions.append({"tool":"search_archive","value":5,"reason":item["reason"],"arguments":{"query":item["query"],"unit_key":unit_key,"equipment_key":item["equipment_key"],"limit":6,"approved_only":True},"semantic_candidate":item})
     return actions
+
+
+def process_path_candidates(*, process_paths:dict[str,Any], graph:dict[str,Any], synthesis:dict[str,Any], limit:int=4)->list[dict[str,Any]]:
+    """Rank unseen measurements/equipment reached through configured process paths."""
+    nodes={str(n.get("id")):n for n in graph.get("nodes",[]) if isinstance(n,dict)}
+    resolved={str(x) for x in synthesis.get("resolved_tags") or []};candidates=[]
+    for path in process_paths.get("paths",[]):
+        if not isinstance(path,dict):continue
+        relations=list(path.get("relationships") or [])
+        for node_id in reversed(list(path.get("nodes") or [])):
+            node=nodes.get(str(node_id),{})
+            if node.get("kind")=="equipment":
+                candidates.append({"kind":"equipment","equipment_key":node.get("equipment_key"),"query":node.get("label"),"path_relationships":relations,"reason":"Reached through configured process-path relationships; inspect approved engineering context."});break
+            if node.get("kind")=="tag" and str(node.get("tag_key") or "") not in resolved:
+                candidates.append({"kind":"measurement","tag_key":node.get("tag_key"),"query":node.get("label"),"path_relationships":relations,"reason":"Reached through configured process-path relationships; inspect governed measurement."});break
+    unique=[];seen=set()
+    for item in candidates:
+        fp=(item["kind"],item.get("tag_key") or item.get("equipment_key"))
+        if fp in seen or not fp[1]:continue
+        seen.add(fp);unique.append(item)
+    return unique[:max(0,limit)]
