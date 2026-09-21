@@ -22,9 +22,11 @@ def evidence_identity(item:dict[str,Any])->str:
         key=data.get("episode_id") or data.get("id")
         if key:return f"episode:{key}"
     if tool=="get_history":
-        tag=data.get("tag_key") or provenance.get("tag_key")
-        start=data.get("start_time") or provenance.get("start_time")
-        end=data.get("end_time") or provenance.get("end_time")
+        tag_meta=data.get("tag") if isinstance(data.get("tag"),dict) else {}
+        range_meta=data.get("range") if isinstance(data.get("range"),dict) else {}
+        tag=data.get("tag_key") or tag_meta.get("key") or tag_meta.get("tag_key") or provenance.get("tag_key")
+        start=data.get("start_time") or range_meta.get("start_time") or provenance.get("start_time")
+        end=data.get("end_time") or range_meta.get("end_time") or provenance.get("end_time")
         if tag:return f"history:{tag}:{start or ''}:{end or ''}"
     payload={"tool":tool,"data":data,"provenance":provenance}
     return "evidence:"+hashlib.sha256(_stable(payload).encode("utf-8")).hexdigest()[:24]
