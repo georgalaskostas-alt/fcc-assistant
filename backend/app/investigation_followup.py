@@ -12,13 +12,13 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
     selected_hypothesis = ranked[0] if ranked else None
     hypothesis = selected_hypothesis["hypothesis"] if selected_hypothesis else {}
     focus = str(hypothesis.get("statement") or goal)
-    query = focus if round_index > 0 else goal
+    query = focus if round_index > 0 else goal\n    # Preserve the selected unresolved hypothesis as the planner focus while\n    # using the original goal only as the first-round search query.
     actions = choose_next_evidence_actions(hypothesis=hypothesis, synthesis=synthesis, unit_key=unit_key, query=query) if hypothesis else []
     selected = actions[:max(0, max_actions)]
     return {
         "needed": bool(selected),
         "actions": selected,
-        "focus": query,
+        "focus": focus,
         "selected_hypothesis_id": hypothesis.get("id") if hypothesis else None,
         "selected_hypothesis_score": selected_hypothesis.get("score") if selected_hypothesis else None,
         "hypothesis_ranking": [{"id":x["hypothesis"].get("id"),"score":x["score"],"status":x["status"],"missing_count":x["missing_count"]} for x in ranked[:5]],
