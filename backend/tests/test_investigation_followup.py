@@ -176,3 +176,21 @@ def test_no_usable_historian_direction_is_not_retried():
     )
     history=[a for a in plan["actions"] if a["tool"]=="get_history"]
     assert [a["arguments"]["tag_key"] for a in history]==["useful_tag"]
+
+
+def test_follow_up_can_spend_budget_across_competing_hypotheses():
+    hypotheses=[
+        {"id":"h1","statement":"Investigate pressure and temperature","evidence_status":"relevant_but_insufficient","association":{"strength":0.9},"missing_evidence":["Approved technical evidence"],"causal_status":"not_established"},
+        {"id":"h2","statement":"Investigate pressure and flow","evidence_status":"insufficient_independent_evidence","association":{"strength":0.7},"missing_evidence":["Relevant alarms/events"],"causal_status":"not_established"},
+    ]
+    plan=plan_follow_up(
+        goal="why pressure changed",unit_key="fcc",
+        synthesis={"archive_evidence":{"count":0},"event_evidence":{"count":0},"similar_episodes":{"count":1}},
+        hypotheses=hypotheses,max_actions=3,round_index=1,
+    )
+    assert plan["planning_mode"]=="branching_hypothesis_evidence"
+    assert len(plan["hypothesis_branches"])==2
+    assert {a.get("hypothesis_branch_id") for a in plan["actions"]} <= {"h1","h2"}
+    assert any(a.get("hypothesis_branch_id")=="h1" for a in plan["actions"])
+    assert any(a.get("hypothesis_branch_id")=="h2" for a in plan["actions"])
+    assert plan["process_control_actions_allowed"] is False
