@@ -63,3 +63,33 @@ def test_goal_discovery_uses_only_previously_discovered_tag_keys_for_history():
     assert all(action["arguments"]["start_time"] == "2026-09-20T00:00:00Z" for action in history)
     assert all(action["arguments"]["end_time"] == "2026-09-21T00:00:00Z" for action in history)
     assert not any(action["tool"] == "search_tags" for action in plan["actions"])
+
+
+def test_unresolved_hypothesis_can_discover_additional_governed_measurements():
+    hypothesis={
+        "id":"h1",
+        "statement":"Investigate the observed relationship between A and B.",
+        "causal_status":"not_established",
+        "evidence_status":"specific_independent_evidence_found",
+        "association":{"strength":0.8},
+        "missing_evidence":["Additional operating context"],
+    }
+    plan=plan_follow_up(
+        goal="Why did pressure increase?",
+        unit_key="fcc",
+        synthesis={
+            "archive_evidence":{"count":1},
+            "event_evidence":{"count":1},
+            "similar_episodes":{"count":1},
+            "resolved_tags":["tag_a"],
+            "discovered_tags":{"items":[{"key":"tag_b"}]},
+        },
+        hypotheses=[hypothesis],
+        max_actions=3,
+        round_index=1,
+    )
+    discovery=[a for a in plan["actions"] if a["tool"]=="search_tags"]
+    assert discovery
+    assert discovery[0]["arguments"]["query"]==hypothesis["statement"]
+    assert discovery[0]["exclude_tag_keys"]==["tag_a","tag_b"]
+    assert plan["process_control_actions_allowed"] is False
