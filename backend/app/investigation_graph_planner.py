@@ -64,3 +64,29 @@ def process_path_candidates(*, process_paths:dict[str,Any], graph:dict[str,Any],
         unique.append(item)
     unique.sort(key=lambda x:(-float(x.get("adaptive_value") or 0.0),str(x.get("equipment_key") or x.get("tag_key") or "")))
     return unique[:max(0,limit)]
+
+
+def branch_process_path_candidates(*, hypotheses:list[dict[str,Any]], graph:dict[str,Any], synthesis:dict[str,Any], trace_fn, limit_per_branch:int=2)->list[dict[str,Any]]:
+    """Discover process-path evidence separately for each active hypothesis branch."""
+    all_candidates=[]
+    for hypothesis in hypotheses:
+        if not isinstance(hypothesis,dict):continue
+        branch_id=str(hypothesis.get("id") or "")
+        if not branch_id:continue
+        neighborhood_nodes=[]
+        for edge in graph.get("edges",[]):
+            if not isinstance(edge,dict):continue
+            if str(edge.get("to") or "")==branch_id:neighborhood_nodes.append(str(edge.get("from") or ""))
+            if str(edge.get("from") or "")==branch_id:neighborhood_nodes.append(str(edge.get("to") or ""))
+        starts=[]
+        nodes={str(n.get("id")):n for n in graph.get("nodes",[]) if isinstance(n,dict)}
+        for node_id in neighborhood_nodes:
+            node=nodes.get(node_id,{})
+            if node.get("kind") in {"equipment","stream"} and node_id not in starts:starts.append(node_id)
+        paths=trace_fn(graph=graph,start_ids=starts[:4],max_depth=4,max_paths=16)
+        candidates=process_path_candidates(process_paths=paths,graph=graph,synthesis=synthesis,limit=limit_per_branch)
+        for candidate in candidates:
+            item=dict(candidate);item["hypothesis_branch_id"]=branch_id
+            item["hypothesis_statement"]=str(hypothesis.get("statement") or "")
+            all_candidates.append(item)
+    return all_candidates
