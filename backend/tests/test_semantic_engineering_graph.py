@@ -9,7 +9,9 @@ def test_semantic_graph_links_tag_measurement_unit_and_hypothesis():
     )
     edges={(e["from"],e["to"],e["relation"]) for e in graph["edges"]}
     assert ("tag:regenerator_dp","measurement:regenerator_dp","measures") in edges
-    assert ("measurement:regenerator_dp","unit:fcc","belongs_to_unit") in edges
+    assert ("measurement:regenerator_dp","equipment:fcc:regenerator","measurement_of") in edges
+    assert ("equipment:fcc:regenerator","section:fcc:reaction_regeneration","belongs_to_section") in edges
+    assert ("section:fcc:reaction_regeneration","unit:fcc","belongs_to_unit") in edges
     assert ("history:dp","tag:regenerator_dp","derived_from") in edges
     assert ("measurement:regenerator_dp","h1","investigated_in") in edges
     assert graph["read_only"] is True
