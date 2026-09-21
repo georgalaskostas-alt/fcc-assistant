@@ -97,7 +97,7 @@ def evaluate_hypotheses(*, hypotheses: list[dict[str, Any]], synthesis: dict[str
         elif matching["supporting"]:
             item["evidence_status"] = "supporting_independent_evidence"
         elif matching["match_count"]:
-            item["evidence_status"] = "relevant_but_insufficient"
+            item["evidence_status"] = "specific_independent_evidence_found"
         else:
             item["evidence_status"] = "independent_evidence_available" if independent else "insufficient_independent_evidence"
         # Availability is not proof. A later evidence matcher must establish that
