@@ -38,3 +38,28 @@ def test_goal_discovery_bootstraps_when_no_hypothesis_exists():
     assert tools == ["search_tags", "search_alarms_events", "search_archive"]
     assert plan["selected_hypothesis_id"] is None
     assert plan["process_control_actions_allowed"] is False
+
+
+def test_goal_discovery_uses_only_previously_discovered_tag_keys_for_history():
+    plan = plan_follow_up(
+        goal="Why did regenerator DP increase?",
+        unit_key="fcc",
+        synthesis={
+            "time_window": {"start": "2026-09-20T00:00:00Z", "end": "2026-09-21T00:00:00Z"},
+            "discovered_tags": {"items": [
+                {"key": "regenerator_dp", "label": "Regenerator Differential Pressure"},
+                {"key": "regenerator_temp", "label": "Regenerator Temperature"},
+            ]},
+        },
+        hypotheses=[],
+        max_actions=3,
+        round_index=1,
+    )
+
+    assert plan["needed"] is True
+    assert plan["planning_mode"] == "goal_discovery"
+    history = [action for action in plan["actions"] if action["tool"] == "get_history"]
+    assert [action["arguments"]["tag_key"] for action in history] == ["regenerator_dp", "regenerator_temp"]
+    assert all(action["arguments"]["start_time"] == "2026-09-20T00:00:00Z" for action in history)
+    assert all(action["arguments"]["end_time"] == "2026-09-21T00:00:00Z" for action in history)
+    assert not any(action["tool"] == "search_tags" for action in plan["actions"])
