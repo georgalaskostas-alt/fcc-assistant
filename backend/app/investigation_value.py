@@ -194,3 +194,14 @@ def score_evidence_gain(*, before_analytics: dict[str, Any], after_analytics: di
         "new_correlations": new_correlations,
         "temporal_profile_available": temporal_available,
     }
+
+
+def score_process_path_gain(*, candidate:dict[str,Any], novel_evidence_count:int, before_analytics:dict[str,Any], after_analytics:dict[str,Any])->dict[str,Any]:
+    """Score realized value of a configured engineering path without treating it as causal proof."""
+    relationships=[str(x) for x in candidate.get("path_relationships") or []]
+    before_corr=before_analytics.get("correlations") if isinstance(before_analytics.get("correlations"),list) else []
+    after_corr=after_analytics.get("correlations") if isinstance(after_analytics.get("correlations"),list) else []
+    correlation_gain=max(0,len(after_corr)-len(before_corr))
+    score=min(4,novel_evidence_count)*1.5+min(3,correlation_gain)*1.0+(1.0 if relationships else 0.0)
+    classification="no_information_gain" if score<=0 else ("useful_path" if score>=4 else "limited_path")
+    return {"candidate_kind":candidate.get("kind"),"candidate_key":candidate.get("tag_key") or candidate.get("equipment_key"),"relationships":relationships,"score":round(score,3),"classification":classification,"novel_evidence_count":novel_evidence_count,"new_correlations":correlation_gain,"causal_status":"not_established"}
