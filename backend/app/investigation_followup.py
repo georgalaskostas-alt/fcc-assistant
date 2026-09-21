@@ -90,6 +90,33 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
             unit_key=unit_key,
             query=query,
         )
+        # If independent evidence is already present but the relationship is
+        # still unresolved, search the governed catalog for measurements named
+        # by the evidence gap/focus. This discovers candidates; it never guesses
+        # historian keys or embeds FCC-specific variables.
+        status = str(hypothesis.get("evidence_status") or "").casefold()
+        discovered = synthesis.get("discovered_tags") if isinstance(synthesis.get("discovered_tags"), dict) else {}
+        known_keys = {
+            str(row.get("key") or row.get("tag_key") or "")
+            for row in (discovered.get("items") or [])
+            if isinstance(row, dict)
+        }
+        resolved_keys = {str(value) for value in (synthesis.get("resolved_tags") or [])}
+        if status in {
+            "specific_independent_evidence_found",
+            "relevant_but_insufficient",
+            "mixed_independent_evidence",
+            "supporting_independent_evidence",
+            "contradicting_independent_evidence",
+        }:
+            actions.append({
+                "tool": "search_tags",
+                "value": 7,
+                "reason": "Discover additional governed measurements relevant to the unresolved evidence gap.",
+                "arguments": {"query": focus},
+                "exclude_tag_keys": sorted(known_keys | resolved_keys),
+            })
+        actions = sorted(actions, key=lambda action: -int(action.get("value", 0)))
         planning_mode = "hypothesis_evidence"
     else:
         actions = _goal_discovery_actions(goal=goal, unit_key=unit_key, synthesis=synthesis)
