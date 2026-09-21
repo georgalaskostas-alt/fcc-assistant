@@ -1,41 +1,81 @@
-"""Refinery semantic engineering relationships for source-grounded investigations."""
+"""Refinery semantic engineering graph and bounded graph traversal."""
 from __future__ import annotations
 from typing import Any
 from .site_model import SiteModel
 
+def _equipment_for_semantic(semantic:str)->tuple[str,str]:
+    value=semantic.casefold()
+    if "regenerator" in value:return ("regenerator","Regenerator")
+    if "fractionator" in value:return ("main_fractionator","Main Fractionator")
+    if "reactor" in value or "reaction" in value:return ("reactor","Reactor")
+    return ("unit_process","Unit Process")
+
+def _section_for_equipment(equipment:str)->tuple[str,str]:
+    if equipment in {"regenerator","reactor"}:return ("reaction_regeneration","Reaction & Regeneration")
+    if equipment=="main_fractionator":return ("fractionation","Fractionation")
+    return ("general","General Process")
+
 def build_semantic_engineering_graph(*, unit_key:str, site:SiteModel, hypotheses:list[dict[str,Any]], evidence_graph:dict[str,Any]) -> dict[str,Any]:
-    unit=site.find_unit(unit_key);nodes=[];edges=[];seen=set()
+    unit=site.find_unit(unit_key);nodes=[];edges=[];seen=set();edge_seen=set()
     def node(identifier:str,kind:str,label:str,**meta:Any)->None:
         if identifier in seen:return
         seen.add(identifier);nodes.append({"id":identifier,"kind":kind,"label":label,**meta})
     def edge(source:str,target:str,relation:str)->None:
-        if source and target:edges.append({"from":source,"to":target,"relation":relation})
-    uid=f"unit:{unit_key}";node(uid,"unit",unit.name if unit else unit_key)
+        key=(source,target,relation)
+        if source and target and key not in edge_seen:edge_seen.add(key);edges.append({"from":source,"to":target,"relation":relation})
+    refinery_id="refinery:site";uid=f"unit:{unit_key}"
+    node(refinery_id,"refinery",site.name);node(uid,"unit",unit.name if unit else unit_key);edge(uid,refinery_id,"belongs_to_refinery")
     if unit:
         for tag in unit.tags:
-            tid=f"tag:{tag.key}";sid=f"measurement:{tag.semantic}"
+            tid=f"tag:{tag.key}";mid=f"measurement:{tag.semantic}"
+            equipment_key,equipment_label=_equipment_for_semantic(tag.semantic);eid=f"equipment:{unit_key}:{equipment_key}"
+            section_key,section_label=_section_for_equipment(equipment_key);sid=f"section:{unit_key}:{section_key}"
             node(tid,"tag",tag.label,engineering_unit=tag.unit,tag_key=tag.key)
-            node(sid,"measurement",tag.semantic,semantic_key=tag.semantic)
-            edge(tid,sid,"measures");edge(sid,uid,"belongs_to_unit")
+            node(mid,"measurement",tag.semantic,semantic_key=tag.semantic)
+            node(eid,"equipment",equipment_label,equipment_key=equipment_key)
+            node(sid,"section",section_label,section_key=section_key)
+            edge(tid,mid,"measures");edge(mid,eid,"measurement_of");edge(eid,sid,"belongs_to_section");edge(sid,uid,"belongs_to_unit")
     for item in evidence_graph.get("nodes",[]):
         if not isinstance(item,dict):continue
         eid=str(item.get("id") or "");kind=str(item.get("kind") or "")
         if kind=="evidence":
-            node(eid,"evidence",str(item.get("label") or eid),source_kind=item.get("source_kind"),provenance=item.get("provenance") or {})
+            source_kind=str(item.get("source_kind") or "evidence")
+            node(eid,"evidence",str(item.get("label") or eid),source_kind=source_kind,provenance=item.get("provenance") or {})
             provenance=item.get("provenance") if isinstance(item.get("provenance"),dict) else {}
             tag_key=str(provenance.get("tag_key") or "")
+            equipment_key=str(provenance.get("equipment_key") or "")
             if tag_key and f"tag:{tag_key}" in seen:edge(eid,f"tag:{tag_key}","derived_from")
-        elif kind=="hypothesis":
-            node(eid,"hypothesis",str(item.get("label") or eid),causal_status="not_established")
+            if equipment_key and f"equipment:{unit_key}:{equipment_key}" in seen:edge(eid,f"equipment:{unit_key}:{equipment_key}","documents")
+            if source_kind=="technical_archive":edge(eid,uid,"document_for_unit")
+            elif source_kind=="previous_incident":edge(eid,uid,"incident_in_unit")
+            elif source_kind=="alarms_events":edge(eid,uid,"event_in_unit")
+        elif kind=="hypothesis":node(eid,"hypothesis",str(item.get("label") or eid),causal_status="not_established")
     for relation in evidence_graph.get("edges",[]):
         if isinstance(relation,dict):edge(str(relation.get("from") or ""),str(relation.get("to") or ""),str(relation.get("relation") or "related"))
     for hypothesis in hypotheses:
         if not isinstance(hypothesis,dict):continue
-        hid=str(hypothesis.get("id") or "")
-        statement=str(hypothesis.get("statement") or "").casefold()
+        hid=str(hypothesis.get("id") or "");statement=str(hypothesis.get("statement") or "").casefold()
         if not hid:continue
         for tag in unit.tags if unit else ():
             tokens={tag.key.casefold(),tag.semantic,*[a.casefold() for a in tag.aliases]}
-            if any(token and token in statement for token in tokens):
-                edge(f"measurement:{tag.semantic}",hid,"investigated_in")
+            if any(token and token in statement for token in tokens):edge(f"measurement:{tag.semantic}",hid,"investigated_in")
     return {"unit_key":unit_key,"nodes":nodes,"edges":edges,"read_only":True,"causal_inference":False}
+
+def traverse_semantic_neighbors(*, graph:dict[str,Any], start_ids:list[str], max_depth:int=2, max_nodes:int=24) -> dict[str,Any]:
+    """Return a bounded, deterministic neighborhood; this discovers context, not causality."""
+    nodes={str(n.get("id")):n for n in graph.get("nodes",[]) if isinstance(n,dict) and n.get("id")}
+    adjacency:dict[str,list[tuple[str,str]]]={}
+    for e in graph.get("edges",[]):
+        if not isinstance(e,dict):continue
+        a,b,r=str(e.get("from") or ""),str(e.get("to") or ""),str(e.get("relation") or "related")
+        if a and b:
+            adjacency.setdefault(a,[]).append((b,r));adjacency.setdefault(b,[]).append((a,r))
+    visited=set(x for x in start_ids if x in nodes);frontier=[(x,0) for x in visited];paths=[]
+    while frontier and len(visited)<max_nodes:
+        current,depth=frontier.pop(0)
+        if depth>=max_depth:continue
+        for neighbor,relation in adjacency.get(current,[]):
+            paths.append({"from":current,"to":neighbor,"relation":relation,"depth":depth+1})
+            if neighbor not in visited and len(visited)<max_nodes:
+                visited.add(neighbor);frontier.append((neighbor,depth+1))
+    return {"start_ids":[x for x in start_ids if x in nodes],"nodes":[nodes[x] for x in visited],"paths":paths,"max_depth":max_depth,"bounded":True,"causal_inference":False}
