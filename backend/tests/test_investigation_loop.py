@@ -56,3 +56,30 @@ def test_branch_budget_allocator_prunes_and_respects_remaining_calls():
     allocation=allocate_branch_tool_budget(branches=branches,remaining_calls=2,max_actions=3)
     assert allocation=={"h1":1,"h3":1}
     assert sum(allocation.values())==2
+
+
+def test_adaptive_branch_budget_moves_calls_to_productive_branch():
+    from backend.app.investigation_budget import adaptive_branch_tool_budget
+    branches=[
+        {"branch_id":"h1","priority":1,"score":7.0,"state":"keep"},
+        {"branch_id":"h2","priority":2,"score":7.0,"state":"keep"},
+    ]
+    history=[
+        {"hypothesis_branch_id":"h1","classification":"no_information_gain","score":0},
+        {"hypothesis_branch_id":"h2","classification":"useful_path","score":6},
+    ]
+    allocation=adaptive_branch_tool_budget(branches=branches,remaining_calls=3,path_gain_history=history,max_actions=3)
+    assert allocation.get("h2",0)>=1
+    assert allocation.get("h1",0)==0
+    assert sum(allocation.values())<=3
+
+def test_adaptive_branch_budget_preserves_exploration_for_untried_branch():
+    from backend.app.investigation_budget import adaptive_branch_tool_budget
+    branches=[
+        {"branch_id":"h1","priority":1,"score":8.0,"state":"promote"},
+        {"branch_id":"h2","priority":2,"score":6.0,"state":"keep"},
+    ]
+    history=[{"hypothesis_branch_id":"h1","classification":"useful_path","score":6}]
+    allocation=adaptive_branch_tool_budget(branches=branches,remaining_calls=3,path_gain_history=history,max_actions=3)
+    assert allocation.get("h2",0)==1
+    assert allocation.get("h1",0)>=1
