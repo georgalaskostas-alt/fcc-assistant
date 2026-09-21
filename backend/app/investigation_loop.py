@@ -13,7 +13,7 @@ from .investigation_hypotheses import build_hypothesis_candidates, evaluate_hypo
 from .agent_tools import ToolContext, ToolRegistry
 from .investigation_evidence import merge_new_evidence
 from .investigation_reconciliation import reconcile_follow_up
-from .investigation_budget import InvestigationBudget, allocate_branch_tool_budget
+from .investigation_budget import InvestigationBudget, allocate_branch_tool_budget, adaptive_branch_tool_budget
 from .investigation_stop import classify_execution_boundary, normalize_stop_reason
 from .investigation_value import score_evidence_gain, score_process_path_gain, evolve_hypothesis_branches
 from .semantic_engineering_graph import build_semantic_engineering_graph, traverse_semantic_neighbors, trace_process_paths
@@ -97,7 +97,8 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
             stop_reason = "repeated_plan_no_new_direction"
             break
         seen_plans.add(fingerprint)
-        branch_allocation=allocate_branch_tool_budget(branches=branch_lifecycle,remaining_calls=budget.remaining_tool_calls,max_actions=3)
+        path_gain_history=list(synthesis.get("process_path_information_gain") or [])
+        branch_allocation=(adaptive_branch_tool_budget(branches=branch_lifecycle,remaining_calls=budget.remaining_tool_calls,path_gain_history=path_gain_history,max_actions=3) if path_gain_history else allocate_branch_tool_budget(branches=branch_lifecycle,remaining_calls=budget.remaining_tool_calls,max_actions=3))
         if branch_allocation:
             branch_used={key:0 for key in branch_allocation};ordered=[]
             for action in plan.get("actions") or []:
@@ -108,6 +109,7 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
                 ordered.append(action)
             plan["actions"]=ordered
             plan["branch_budget_allocation"]=branch_allocation
+            plan["branch_budget_mode"]="adaptive_information_gain" if path_gain_history else "balanced_initial"
         requested_actions = len(plan.get("actions") or [])
         allowed_actions = budget.allowance(requested_actions)
         if allowed_actions <= 0:
