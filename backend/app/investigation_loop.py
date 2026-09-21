@@ -17,7 +17,7 @@ from .investigation_budget import InvestigationBudget, allocate_branch_tool_budg
 from .investigation_stop import classify_execution_boundary, normalize_stop_reason
 from .investigation_value import score_evidence_gain, score_process_path_gain, evolve_hypothesis_branches
 from .semantic_engineering_graph import build_semantic_engineering_graph, traverse_semantic_neighbors, trace_process_paths
-from .investigation_graph_planner import semantic_discovery_candidates, semantic_candidates_to_actions, process_path_candidates
+from .investigation_graph_planner import semantic_discovery_candidates, semantic_candidates_to_actions, process_path_candidates, branch_process_path_candidates
 from .site_model import load_site_model
 
 async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolContext, goal: str,
@@ -68,13 +68,14 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
                 if node.get("kind") in {"equipment","stream"} and str(node_id) not in path_start_ids:path_start_ids.append(str(node_id))
         process_paths=trace_process_paths(graph=semantic_graph,start_ids=path_start_ids[:6],max_depth=4,max_paths=24)
         path_candidates=process_path_candidates(process_paths=process_paths,graph=semantic_graph,synthesis=synthesis,limit=4)
+        branch_path_candidates=branch_process_path_candidates(hypotheses=active_hypotheses,graph=semantic_graph,synthesis=synthesis,trace_fn=trace_process_paths,limit_per_branch=2)
         combined_candidates=[];candidate_seen=set()
-        for candidate in [*path_candidates,*graph_candidates]:
+        for candidate in [*branch_path_candidates,*path_candidates,*graph_candidates]:
             fp=(candidate.get("kind"),candidate.get("tag_key") or candidate.get("equipment_key"))
             if fp in candidate_seen:continue
             candidate_seen.add(fp);combined_candidates.append(candidate)
         graph_candidates=combined_candidates[:6]
-        synthesis["semantic_discovery"] = {"neighborhood":neighborhood,"process_paths":process_paths,"candidates":graph_candidates}
+        synthesis["semantic_discovery"] = {"neighborhood":neighborhood,"process_paths":process_paths,"branch_path_candidates":branch_path_candidates,"candidates":graph_candidates}
         if graph_candidates and plan.get("planning_mode") != "new_measurement_history":
             existing=list(plan.get("actions") or [])
             fingerprints={(a.get("tool"),str((a.get("arguments") or {}).get("query") or ""),str((a.get("arguments") or {}).get("equipment_key") or "")) for a in existing if isinstance(a,dict)}
@@ -84,7 +85,7 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
                     existing.append(action);fingerprints.add(fp)
             existing.sort(key=lambda a:-int(a.get("value",0)))
             plan["actions"]=existing[:3];plan["needed"]=bool(plan["actions"])
-            if plan["actions"]:plan["planning_mode"]="process_path_discovery" if path_candidates else "semantic_graph_discovery"
+            if plan["actions"]:plan["planning_mode"]="branch_process_path_discovery" if branch_path_candidates else ("process_path_discovery" if path_candidates else "semantic_graph_discovery")
             plan["semantic_candidates"]=graph_candidates
         if not plan.get("needed"):
             # No actionable governed follow-up is not, by itself, proof that evidence is sufficient.
@@ -158,7 +159,7 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
                 *realized_gain,
             ]
         path_gain=[
-            score_process_path_gain(candidate=dict(action.get("semantic_candidate") or {}),novel_evidence_count=len(novel),before_analytics=analytics,after_analytics=after_analytics)
+            {**score_process_path_gain(candidate=dict(action.get("semantic_candidate") or {}),novel_evidence_count=len(novel),before_analytics=analytics,after_analytics=after_analytics),"hypothesis_branch_id":action.get("hypothesis_branch_id")}
             for action in plan.get("actions",[])
             if isinstance(action,dict) and (action.get("semantic_candidate") or {}).get("path_relationships")
         ]
