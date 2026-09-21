@@ -29,6 +29,28 @@ def rank_hypotheses(hypotheses: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ranked.append({"hypothesis": h, "score": round(score, 3), "status": status, "missing_count": missing})
     return sorted(ranked, key=lambda x: (-x["score"], str(x["hypothesis"].get("id") or "")))
 
+
+def allocate_hypothesis_branches(*, hypotheses: list[dict[str, Any]], max_branches: int = 3) -> list[dict[str, Any]]:
+    """Allocate bounded investigation attention across competing hypotheses.
+
+    The output is a planning priority, not a causal verdict. It keeps several
+    unresolved explanations alive when their evidence value is competitive.
+    """
+    ranked = rank_hypotheses(hypotheses)
+    branches: list[dict[str, Any]] = []
+    for position, item in enumerate(ranked[:max(0, max_branches)], start=1):
+        hypothesis = item["hypothesis"]
+        branches.append({
+            "branch_id": str(hypothesis.get("id") or f"branch:{position}"),
+            "priority": position,
+            "score": item["score"],
+            "status": item["status"],
+            "statement": str(hypothesis.get("statement") or ""),
+            "missing_count": item["missing_count"],
+            "causal_status": str(hypothesis.get("causal_status") or "not_established"),
+        })
+    return branches
+
 def choose_next_evidence_actions(*, hypothesis: dict[str, Any], synthesis: dict[str, Any], unit_key: str, query: str) -> list[dict[str, Any]]:
     archive = synthesis.get("archive_evidence") if isinstance(synthesis.get("archive_evidence"), dict) else {}
     events = synthesis.get("event_evidence") if isinstance(synthesis.get("event_evidence"), dict) else {}
