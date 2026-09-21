@@ -318,7 +318,7 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
             return {"action": "remove_widgets", "target_ids": ids, "read_only": True, "requires_confirmation": False}, f"Αφαίρεσα {len(ids)} γραφήματα από {scope_name}."
         return {"action": "answer", "read_only": True, "requires_confirmation": False}, "Δεν υπάρχουν γραφήματα για αφαίρεση."
 
-    previous_batch_ref = any(token in text or token in folded_text for token in (
+    previous_batch_ref = any(token in text or "".join(ch for ch in unicodedata.normalize("NFD", token) if unicodedata.category(ch) != "Mn") in folded_text for token in (
         "αυτά που έβαλες", "αυτα που εβαλες", "αυτό που έβαλες", "αυτο που εβαλες",
         "αυτό που έβαλε", "αυτο που εβαλε", "αυτά που βάλαμε", "αυτα που βαλαμε",
         "που μόλις έβαλες", "που μολις εβαλες", "ό,τι έβαλες", "ο,τι εβαλες",
