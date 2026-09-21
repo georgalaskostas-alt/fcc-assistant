@@ -205,3 +205,20 @@ def score_process_path_gain(*, candidate:dict[str,Any], novel_evidence_count:int
     score=min(4,novel_evidence_count)*1.5+min(3,correlation_gain)*1.0+(1.0 if relationships else 0.0)
     classification="no_information_gain" if score<=0 else ("useful_path" if score>=4 else "limited_path")
     return {"candidate_kind":candidate.get("kind"),"candidate_key":candidate.get("tag_key") or candidate.get("equipment_key"),"relationships":relationships,"score":round(score,3),"classification":classification,"novel_evidence_count":novel_evidence_count,"new_correlations":correlation_gain,"causal_status":"not_established"}
+
+
+def path_feedback_index(history:list[dict[str,Any]])->dict[tuple[str,tuple[str,...]],dict[str,Any]]:
+    """Summarize realized path value so future rounds avoid repeatedly low-value directions."""
+    index:dict[tuple[str,tuple[str,...]],dict[str,Any]]={}
+    for item in history:
+        if not isinstance(item,dict):continue
+        key=str(item.get("candidate_key") or "");relationships=tuple(str(x) for x in item.get("relationships") or [])
+        if not key:continue
+        slot=index.setdefault((key,relationships),{"attempts":0,"useful":0,"limited":0,"no_gain":0,"score_total":0.0})
+        slot["attempts"]+=1;slot["score_total"]+=float(item.get("score") or 0.0)
+        classification=str(item.get("classification") or "")
+        if classification=="useful_path":slot["useful"]+=1
+        elif classification=="limited_path":slot["limited"]+=1
+        else:slot["no_gain"]+=1
+    for slot in index.values():slot["mean_score"]=round(slot["score_total"]/max(1,slot["attempts"]),3)
+    return index
