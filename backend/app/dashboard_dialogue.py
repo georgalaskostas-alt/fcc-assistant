@@ -179,7 +179,7 @@ def _retarget_widget(widget: dict[str, object], target: ProcessUnit, site: SiteM
             mapped = target.tag_by_semantic(source_tag.semantic)
             if mapped is None: return None
             target_tags.append(mapped.key); labels.append(mapped.label)
-    widget_type = str(widget.get("type", "kpi")); title = str(widget.get("title", target.name))\n    # KPI is a presentation type; semantic retargeting remains identical to a trend.
+    widget_type = str(widget.get("type", "kpi")); title = str(widget.get("title", target.name))
     if labels: title = " / ".join(labels) if widget_type == "trend" else (f"Average {labels[0]}" if widget_type == "average" else labels[0])
     suffix = "-".join(target_tags) if target_tags else "summary"; raw_layout = widget.get("layout")
     layout = WidgetLayout(order=int(raw_layout.get("order", 0)), width=int(raw_layout.get("width", 6)), height=str(raw_layout.get("height", "normal"))) if isinstance(raw_layout, dict) else WidgetLayout()
