@@ -270,11 +270,11 @@ def _move_plan(
         "steps": steps,
         "read_only": True,
         "requires_confirmation": False,
-    }, f"Μετέφερα τα {len(steps)} γραφήματα στη μονάδα {target.name}."
+    }, f"Μετέφερα τα {len(steps)} γραφήματα στη μονάδα {target_label}."
 
 
 def contextual_plan(command: str, site: SiteModel, state: dict[str, object], current_widgets: list[dict[str, object]], learned_aliases: dict[str, str] | None = None) -> tuple[dict[str, object] | None, str | None]:
-    text = command.strip().casefold(); last_widget = state.get("last_widget") if isinstance(state.get("last_widget"), dict) else None; units = resolve_units(text, site, learned_aliases)
+    text = command.strip().casefold().replace("’", "'").replace("‘", "'"); last_widget = state.get("last_widget") if isinstance(state.get("last_widget"), dict) else None; units = resolve_units(text, site, learned_aliases)
 
     restore_intent = any(token in text for token in (
         "βάλε τα πάλι", "βαλε τα παλι", "βάλτα πάλι", "βαλτα παλι",
