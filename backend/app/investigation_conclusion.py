@@ -5,7 +5,7 @@ manufacture confidence or turn association into causation.
 """
 from __future__ import annotations
 from typing import Any
-from .investigation_sources import collect_canonical_sources, resolve_source_ids
+from .investigation_sources import collect_canonical_sources, resolve_source_ids, source_drilldown
 
 
 def _confidence(*, support: int, contradictions: int, missing: int) -> dict[str, Any]:
@@ -89,7 +89,7 @@ def build_evidence_aware_conclusion(*, analytics: dict[str, Any],
         "contradicted_explanations": contradicted,
         "unresolved_explanations": unresolved,
         "limitations": list(dict.fromkeys(limitations)),
-        "sources": sources,
+        "sources": [{**source, "drilldown": source_drilldown(source)} for source in sources],
         "overall_causal_conclusion": "not_established",
         "confidence_policy": "Deterministic evidence sufficiency only; never LLM self-confidence or probability of causation.",
         "process_control_actions_allowed": False,
