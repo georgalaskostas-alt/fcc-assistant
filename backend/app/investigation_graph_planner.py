@@ -31,9 +31,9 @@ def semantic_candidates_to_actions(*, candidates:list[dict[str,Any]], unit_key:s
     actions=[]
     for item in candidates:
         if item.get("kind")=="measurement":
-            actions.append({"tool":"search_tags","value":int(round(float(item.get("adaptive_value") or 6))),"reason":item["reason"],"arguments":{"query":item["query"]},"semantic_candidate":item})
+            actions.append({"tool":"search_tags","value":int(round(float(item.get("adaptive_value") or 6))),"reason":item["reason"],"arguments":{"query":item["query"]},"semantic_candidate":item,"hypothesis_branch_id":item.get("hypothesis_branch_id")})
         elif item.get("kind")=="equipment":
-            actions.append({"tool":"search_archive","value":int(round(float(item.get("adaptive_value") or 5))),"reason":item["reason"],"arguments":{"query":item["query"],"unit_key":unit_key,"equipment_key":item["equipment_key"],"limit":6,"approved_only":True},"semantic_candidate":item})
+            actions.append({"tool":"search_archive","value":int(round(float(item.get("adaptive_value") or 5))),"reason":item["reason"],"arguments":{"query":item["query"],"unit_key":unit_key,"equipment_key":item["equipment_key"],"limit":6,"approved_only":True},"semantic_candidate":item,"hypothesis_branch_id":item.get("hypothesis_branch_id")})
     return actions
 
 
