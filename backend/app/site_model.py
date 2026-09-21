@@ -7,12 +7,24 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class UnitTag:
-    key:str; label:str; unit:str; aliases:tuple[str,...]=(); semantic_key:str=""
+    key:str; label:str; unit:str; aliases:tuple[str,...]=(); semantic_key:str=""; equipment_key:str=""; stream_key:str=""
     @property
     def semantic(self)->str:return (self.semantic_key or self.key).strip().casefold()
 @dataclass(frozen=True)
+class ProcessSection:
+    key:str; name:str
+
+@dataclass(frozen=True)
+class Equipment:
+    key:str; name:str; section_key:str; equipment_type:str=""
+
+@dataclass(frozen=True)
+class ProcessStream:
+    key:str; name:str; from_equipment:str=""; to_equipment:str=""
+
+@dataclass(frozen=True)
 class ProcessUnit:
-    key:str; name:str; tags:tuple[UnitTag,...]=(); aliases:tuple[str,...]=()
+    key:str; name:str; tags:tuple[UnitTag,...]=(); aliases:tuple[str,...]=(); sections:tuple[ProcessSection,...]=(); equipment:tuple[Equipment,...]=(); streams:tuple[ProcessStream,...]=()
     def tag_by_semantic(self,semantic_key:str)->UnitTag|None:
         needle=semantic_key.strip().casefold();return next((t for t in self.tags if t.semantic==needle),None)
     def matches(self,query:str)->bool:
@@ -67,8 +79,16 @@ def _site_from_payload(payload:dict[str,object])->SiteModel:
             tag_key=str(raw_tag.get("key") or "").strip();label=str(raw_tag.get("label") or tag_key).strip();engineering_unit=str(raw_tag.get("unit") or "").strip();tag_aliases=raw_tag.get("aliases") or [];semantic=str(raw_tag.get("semantic_key") or tag_key).strip().casefold()
             if not isinstance(tag_aliases,list):raise ValueError(f"Aliases for {key}.{tag_key} must be a list")
             if not tag_key or tag_key in seen_tags:raise ValueError(f"Unit {key} requires unique non-empty tag keys")
-            seen_tags.add(tag_key);tags.append(UnitTag(tag_key,label,engineering_unit,tuple(str(x) for x in tag_aliases),semantic))
-        units.append(ProcessUnit(key,unit_name,tuple(tags),tuple(str(x) for x in aliases)))
+            seen_tags.add(tag_key);tags.append(UnitTag(tag_key,label,engineering_unit,tuple(str(x) for x in tag_aliases),semantic,str(raw_tag.get("equipment_key") or "").strip().casefold(),str(raw_tag.get("stream_key") or "").strip().casefold()))
+        def objects(field:str)->list[dict[str,object]]:
+            value=raw_unit.get(field) or []
+            if not isinstance(value,list):raise ValueError(f"Unit {key} {field} must be a list")
+            if not all(isinstance(x,dict) for x in value):raise ValueError(f"Unit {key} contains invalid {field}")
+            return value
+        sections=tuple(ProcessSection(str(x.get("key") or "").strip().casefold(),str(x.get("name") or x.get("key") or "").strip()) for x in objects("sections"))
+        equipment=tuple(Equipment(str(x.get("key") or "").strip().casefold(),str(x.get("name") or x.get("key") or "").strip(),str(x.get("section_key") or "").strip().casefold(),str(x.get("type") or "").strip()) for x in objects("equipment"))
+        streams=tuple(ProcessStream(str(x.get("key") or "").strip().casefold(),str(x.get("name") or x.get("key") or "").strip(),str(x.get("from_equipment") or "").strip().casefold(),str(x.get("to_equipment") or "").strip().casefold()) for x in objects("streams"))
+        units.append(ProcessUnit(key,unit_name,tuple(tags),tuple(str(x) for x in aliases),sections,equipment,streams))
     return SiteModel(name,tuple(units))
 
 def load_site_model(config_path:str|Path|None=None)->SiteModel:
