@@ -32,3 +32,11 @@ def test_source_drilldown_exposes_historian_window_and_points():
     assert detail["historian"]["tag_key"]=="fcc.feed"
     assert detail["historian"]["start_time"]=="a"
     assert len(detail["historian"]["points"])==2
+
+
+def test_document_drilldown_exposes_exact_read_only_open_target():
+    source={"evidence_id":"d2","source_kind":"technical_archive","provenance":{"record_id":"rec-9","document_id":"P-101","revision":"C","page":7,"source_path":"/controlled/P-101.pdf"},"data":{"title":"FCC P&ID"}}
+    detail=source_drilldown(source)
+    assert detail["read_only"] is True
+    assert detail["document"]["open_target"]=={"record_id":"rec-9","document_id":"P-101","revision":"C","page":7}
+    assert detail["document"]["source_path"]=="/controlled/P-101.pdf"
