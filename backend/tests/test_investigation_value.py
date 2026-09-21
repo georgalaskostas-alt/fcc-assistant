@@ -82,3 +82,29 @@ def test_competing_hypothesis_branches_are_bounded_and_ranked():
     assert branches[0]["branch_id"]=="h-high"
     assert [b["priority"] for b in branches]==[1,2,3]
     assert all(b["causal_status"]=="not_established" for b in branches)
+
+
+def test_branch_lifecycle_promotes_supported_and_weakens_contradicted():
+    from backend.app.investigation_value import evolve_hypothesis_branches
+    hypotheses=[
+        {"id":"supported","statement":"supported","evidence_status":"supporting_independent_evidence","association":{"strength":0.8},"missing_evidence":[],"supporting_independent_evidence":[{"id":"e1"}],"contradicting_independent_evidence":[],"causal_status":"not_established"},
+        {"id":"contradicted","statement":"contradicted","evidence_status":"contradicting_independent_evidence","association":{"strength":0.7},"missing_evidence":["x"],"supporting_independent_evidence":[],"contradicting_independent_evidence":[{"id":"e2"}],"causal_status":"not_established"},
+    ]
+    lifecycle=evolve_hypothesis_branches(hypotheses=hypotheses)
+    states={item["branch_id"]:item["state"] for item in lifecycle}
+    assert states["supported"]=="promote"
+    assert states["contradicted"]=="weaken"
+    assert all(item["causal_status"]=="not_established" for item in lifecycle)
+
+
+def test_branch_lifecycle_prunes_low_value_branch_outside_active_three():
+    from backend.app.investigation_value import evolve_hypothesis_branches
+    hypotheses=[
+        {"id":"a","evidence_status":"insufficient_independent_evidence","association":{"strength":1.0},"missing_evidence":["1","2","3"],"causal_status":"not_established"},
+        {"id":"b","evidence_status":"relevant_but_insufficient","association":{"strength":0.9},"missing_evidence":["1"],"causal_status":"not_established"},
+        {"id":"c","evidence_status":"independent_evidence_available","association":{"strength":0.8},"missing_evidence":[],"causal_status":"not_established"},
+        {"id":"d","evidence_status":"supporting_independent_evidence","association":{"strength":0.0},"missing_evidence":[],"causal_status":"not_established"},
+    ]
+    lifecycle=evolve_hypothesis_branches(hypotheses=hypotheses)
+    states={item["branch_id"]:item["state"] for item in lifecycle}
+    assert states["d"]=="prune"
