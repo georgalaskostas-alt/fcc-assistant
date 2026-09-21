@@ -25,6 +25,7 @@ def build_investigation_trail(*, goal: str, synthesis: dict[str, Any], hypothese
             "hypothesis_ranking":list(plan.get("hypothesis_ranking") or []),
             "hypothesis_branches":list(plan.get("hypothesis_branches") or []),
             "branch_lifecycle":list(r.get("hypothesis_branch_lifecycle") or []),
+            "branch_lifecycle_after_evidence":list(r.get("branch_lifecycle_after_evidence") or []),
             "actions":[{
                 "tool":a.get("tool"),"reason":a.get("reason"),"value":a.get("value"),
                 "hypothesis_branch_id":a.get("hypothesis_branch_id"),"branch_score":a.get("branch_score"),
