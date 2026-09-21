@@ -1,5 +1,5 @@
-from backend.app.semantic_engineering_graph import build_semantic_engineering_graph, traverse_semantic_neighbors
-from backend.app.site_model import default_site_model, SiteModel, ProcessUnit, ProcessSection, Equipment, ProcessStream, UnitTag
+from backend.app.semantic_engineering_graph import build_semantic_engineering_graph, traverse_semantic_neighbors, trace_process_paths
+from backend.app.site_model import default_site_model, SiteModel, ProcessUnit, ProcessSection, Equipment, ProcessStream, UnitTag, EngineeringRelationship
 
 def test_semantic_graph_links_tag_measurement_unit_and_hypothesis():
     graph=build_semantic_engineering_graph(
@@ -52,3 +52,16 @@ def test_semantic_graph_uses_configured_equipment_sections_and_streams():
     assert ("measurement:catalyst_rate","equipment:fcc:reactor","measurement_of") in edges
     assert ("measurement:catalyst_rate","stream:fcc:cat_circ","measurement_of_stream") in edges
     assert ("equipment:fcc:reactor","section:fcc:rr","belongs_to_section") in edges
+
+
+def test_configured_engineering_relationship_supports_directed_process_path():
+    site=SiteModel("Refinery",(ProcessUnit("fcc","FCC",(),(),(),(
+        Equipment("reactor","Reactor","rr"),Equipment("regenerator","Regenerator","rr"),
+    ),(),(
+        EngineeringRelationship("equipment","regenerator","equipment","reactor","temperature_influence","engineering_context",False),
+    )),))
+    graph=build_semantic_engineering_graph(unit_key="fcc",site=site,hypotheses=[],evidence_graph={"nodes":[],"edges":[]})
+    assert any(e["relation"]=="temperature_influence" for e in graph["edges"])
+    traced=trace_process_paths(graph=graph,start_ids=["equipment:fcc:regenerator"],max_depth=3)
+    assert any(p["nodes"][-1]=="equipment:fcc:reactor" and "temperature_influence" in p["relationships"] for p in traced["paths"])
+    assert traced["causal_inference"] is False
