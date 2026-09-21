@@ -48,14 +48,14 @@ def build_hypothesis_candidates(analytics: dict[str, Any]) -> list[dict[str, Any
 def investigation_stop_decision(*, synthesis: dict[str, Any], analytics: dict[str, Any], hypotheses: list[dict[str, Any]]) -> dict[str, Any]:
     """Describe the evidence boundary; the autonomous loop owns the actual stop reason."""
     autonomous=synthesis.get("autonomous_investigation") if isinstance(synthesis.get("autonomous_investigation"),dict) else {}
-    reason=str(autonomous.get("stop_reason") or "evidence_sufficient_for_bounded_assessment")
+    reason=str(autonomous.get("stop_reason") or "evidence_boundary_reached")
     unresolved=[h for h in hypotheses if h.get("causal_status")!="established"]
     return {
         "stop": True,
         "reason": reason,
         "reasons": [f"{len(unresolved)} causal hypotheses remain unresolved"] if unresolved else [],
         "iterations_completed": int(autonomous.get("rounds_completed") or 0),
-        "next_tools_needed": [],
+        "next_tools_needed": [] if autonomous else ["search_alarms_events", "search_archive", "find_similar_episodes"],
         "safe_to_assert_causality": False,
     }
 
