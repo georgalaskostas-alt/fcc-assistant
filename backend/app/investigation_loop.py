@@ -16,6 +16,9 @@ from .investigation_reconciliation import reconcile_follow_up
 from .investigation_budget import InvestigationBudget
 from .investigation_stop import classify_execution_boundary, normalize_stop_reason
 from .investigation_value import score_evidence_gain, evolve_hypothesis_branches
+from .semantic_engineering_graph import build_semantic_engineering_graph, traverse_semantic_neighbors
+from .investigation_graph_planner import semantic_discovery_candidates, semantic_candidates_to_actions
+from .site_model import load_site_model
 
 async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolContext, goal: str,
                                        unit_key: str, synthesis: dict[str, Any],
@@ -49,6 +52,25 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
         ] if branch_lifecycle else hypotheses
         synthesis["investigation_focus"] = str(active_hypotheses[0].get("statement") or goal) if active_hypotheses else goal
         plan = plan_follow_up(goal=goal, unit_key=unit_key, synthesis=synthesis, hypotheses=active_hypotheses, max_actions=3, round_index=round_index)
+        # Use the refinery semantic graph as a bounded second source of planning
+        # context. It may discover measurements/equipment, but never creates
+        # process-control actions or asserts causality.
+        evidence_graph = synthesis.get("evidence_graph") if isinstance(synthesis.get("evidence_graph"), dict) else {"nodes":[],"edges":[]}
+        semantic_graph = build_semantic_engineering_graph(unit_key=unit_key, site=load_site_model(), hypotheses=active_hypotheses, evidence_graph=evidence_graph)
+        neighborhood = traverse_semantic_neighbors(graph=semantic_graph, start_ids=[str(h.get("id")) for h in active_hypotheses if h.get("id")], max_depth=3, max_nodes=32)
+        graph_candidates = semantic_discovery_candidates(neighborhood=neighborhood, synthesis=synthesis, limit=4)
+        synthesis["semantic_discovery"] = {"neighborhood":neighborhood,"candidates":graph_candidates}
+        if graph_candidates and plan.get("planning_mode") != "new_measurement_history":
+            existing=list(plan.get("actions") or [])
+            fingerprints={(a.get("tool"),str((a.get("arguments") or {}).get("query") or ""),str((a.get("arguments") or {}).get("equipment_key") or "")) for a in existing if isinstance(a,dict)}
+            for action in semantic_candidates_to_actions(candidates=graph_candidates,unit_key=unit_key):
+                fp=(action.get("tool"),str((action.get("arguments") or {}).get("query") or ""),str((action.get("arguments") or {}).get("equipment_key") or ""))
+                if fp not in fingerprints:
+                    existing.append(action);fingerprints.add(fp)
+            existing.sort(key=lambda a:-int(a.get("value",0)))
+            plan["actions"]=existing[:3];plan["needed"]=bool(plan["actions"])
+            if plan["actions"]:plan["planning_mode"]="semantic_graph_discovery"
+            plan["semantic_candidates"]=graph_candidates
         if not plan.get("needed"):
             # No actionable governed follow-up is not, by itself, proof that evidence is sufficient.
             has_evidence = bool(synthesis.get("evidence") or synthesis.get("executions") or synthesis.get("history"))
