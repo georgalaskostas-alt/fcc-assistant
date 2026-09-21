@@ -25,10 +25,10 @@ def choose_next_evidence_actions(*,hypothesis:dict[str,Any],synthesis:dict[str,A
     similar=synthesis.get("similar_episodes") if isinstance(synthesis.get("similar_episodes"),dict) else {}
     missing=" ".join(map(str,hypothesis.get("missing_evidence") or [])).casefold()
     actions=[]
-    if "archive" in missing or not archive.get("count"):
+    if "archive" in missing or "technical" in missing or not archive.get("count"):
         actions.append({"tool":"search_archive","value":9,"reason":"Highest-value gap: approved engineering mechanism/context","arguments":{"query":query,"unit_key":unit_key,"approved_only":True,"limit":8}})
     if "alarm" in missing or "event" in missing or not events.get("count"):
         actions.append({"tool":"search_alarms_events","value":8,"reason":"High-value gap: independent event timing/context","arguments":{"unit_key":unit_key,"query":query,"limit":100}})
-    if "historical" in missing or not similar.get("count"):
+    if "historical" in missing or "comparable" in missing or not similar.get("count"):
         actions.append({"tool":"find_similar_episodes","value":6,"reason":"Need analogical historical comparison","arguments":{}})
     return sorted(actions,key=lambda a:-int(a["value"]))
