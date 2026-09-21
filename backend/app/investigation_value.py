@@ -92,3 +92,36 @@ def rank_measurement_candidates(*, candidates: list[dict[str, Any]], focus: str,
     return ranked[:max(0, limit)]
 
 
+
+
+def score_evidence_gain(*, before_analytics: dict[str, Any], after_analytics: dict[str, Any],
+                        tag_key: str) -> dict[str, Any]:
+    """Measure whether a historian read added usable deterministic information."""
+    before_summaries = before_analytics.get("summaries") if isinstance(before_analytics.get("summaries"), dict) else {}
+    after_summaries = after_analytics.get("summaries") if isinstance(after_analytics.get("summaries"), dict) else {}
+    before_correlations = before_analytics.get("correlations") if isinstance(before_analytics.get("correlations"), list) else []
+    after_correlations = after_analytics.get("correlations") if isinstance(after_analytics.get("correlations"), list) else []
+    summary = after_summaries.get(tag_key) if isinstance(after_summaries.get(tag_key), dict) else {}
+    sample_count = int(summary.get("count") or 0)
+    new_series = tag_key not in before_summaries and sample_count > 0
+    new_correlations = max(0, len(after_correlations) - len(before_correlations))
+    temporal = after_analytics.get("temporal") if isinstance(after_analytics.get("temporal"), dict) else {}
+    temporal_available = bool(isinstance(temporal.get(tag_key), dict) and temporal[tag_key].get("available"))
+    score = (4.0 if new_series else 0.0) + min(new_correlations, 4) * 1.25 + (1.0 if temporal_available else 0.0)
+    if sample_count == 0:
+        classification = "no_usable_data"
+    elif score >= 7.0:
+        classification = "high_information_gain"
+    elif score >= 4.0:
+        classification = "useful_information_gain"
+    else:
+        classification = "limited_information_gain"
+    return {
+        "tag_key": tag_key,
+        "score": round(score, 3),
+        "classification": classification,
+        "sample_count": sample_count,
+        "new_series": new_series,
+        "new_correlations": new_correlations,
+        "temporal_profile_available": temporal_available,
+    }
