@@ -98,8 +98,18 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
             hypothesis=hypothesis,
             resolved_tags=[str(value) for value in (synthesis.get("resolved_tags") or [])],
         )
+        prior_gain = {
+            str(item.get("tag_key")): item
+            for item in (synthesis.get("measurement_information_gain") or [])
+            if isinstance(item, dict) and item.get("tag_key")
+        }
         if measurement_ranking:
-            pending_history = [item["tag_key"] for item in measurement_ranking]
+            productive = [
+                item for item in measurement_ranking
+                if (prior_gain.get(item["tag_key"]) or {}).get("classification") != "no_usable_data"
+            ]
+            pending_history = [item["tag_key"] for item in productive]
+            synthesis["active_measurement_ranking"] = productive
         time_window = synthesis.get("time_window") if isinstance(synthesis.get("time_window"), dict) else {}
         start_time = time_window.get("start") or time_window.get("start_time")
         end_time = time_window.get("end") or time_window.get("end_time")
