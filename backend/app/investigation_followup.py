@@ -104,10 +104,18 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
             if isinstance(item, dict) and item.get("tag_key")
         }
         if measurement_ranking:
-            productive = [
-                item for item in measurement_ranking
-                if (prior_gain.get(item["tag_key"]) or {}).get("classification") != "no_usable_data"
-            ]
+            productive = []
+            for item in measurement_ranking:
+                gain = prior_gain.get(item["tag_key"]) or {}
+                classification = str(gain.get("classification") or "")
+                if classification == "no_usable_data":
+                    continue
+                adjusted = dict(item)
+                bonus = 2.0 if classification == "high_information_gain" else 1.0 if classification == "useful_information_gain" else 0.0
+                adjusted["score"] = round(float(adjusted.get("score") or 0.0) + bonus, 3)
+                adjusted["prior_information_gain"] = classification or "not_yet_measured"
+                productive.append(adjusted)
+            productive.sort(key=lambda item: (-float(item.get("score") or 0.0), int(item.get("catalog_order") or 0), str(item.get("tag_key") or "")))
             pending_history = [item["tag_key"] for item in productive]
             synthesis["active_measurement_ranking"] = productive
         time_window = synthesis.get("time_window") if isinstance(synthesis.get("time_window"), dict) else {}
