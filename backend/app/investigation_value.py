@@ -23,9 +23,9 @@ def choose_next_evidence_actions(*,hypothesis:dict[str,Any],synthesis:dict[str,A
     archive=synthesis.get("archive_evidence") if isinstance(synthesis.get("archive_evidence"),dict) else {}
     events=synthesis.get("event_evidence") if isinstance(synthesis.get("event_evidence"),dict) else {}
     similar=synthesis.get("similar_episodes") if isinstance(synthesis.get("similar_episodes"),dict) else {}
-    missing=" ".join(map(str,hypothesis.get("missing_evidence") or [])).casefold()
+    missing=" ".join(map(str,hypothesis.get("missing_evidence") or [])).casefold()\n    status=str(hypothesis.get("evidence_status") or "").casefold()
     actions=[]
-    if "archive" in missing or "technical" in missing or not archive.get("count"):
+    if "archive" in missing or "technical" in missing or status in {"relevant_but_insufficient","specific_independent_evidence_found"} or not archive.get("count"):
         actions.append({"tool":"search_archive","value":9,"reason":"Highest-value gap: approved engineering mechanism/context","arguments":{"query":query,"unit_key":unit_key,"approved_only":True,"limit":8}})
     if "alarm" in missing or "event" in missing or not events.get("count"):
         actions.append({"tool":"search_alarms_events","value":8,"reason":"High-value gap: independent event timing/context","arguments":{"unit_key":unit_key,"query":query,"limit":100}})
