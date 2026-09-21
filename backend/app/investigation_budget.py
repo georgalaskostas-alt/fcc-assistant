@@ -78,16 +78,18 @@ def adaptive_branch_tool_budget(*, branches:list[dict[str,Any]], remaining_calls
     allocation:dict[str,int]={}
     # Keep one exploration slot for the best branch without realized feedback when possible.
     unexplored=[b for b in ranked if str(b.get("branch_id")) not in gain]
+    exploration_branch_id=""
     if unexplored and slots>1:
-        exploratory=unexplored[0];allocation[str(exploratory["branch_id"])]=1;slots-=1
+        exploratory=unexplored[0];exploration_branch_id=str(exploratory["branch_id"]);allocation[exploration_branch_id]=1;slots-=1
+    exploitation_ranked=[b for b in ranked if str(b.get("branch_id"))!=exploration_branch_id] or ranked
     i=0
-    while slots>0 and ranked:
-        branch=ranked[i%len(ranked)];branch_id=str(branch["branch_id"])
+    while slots>0 and exploitation_ranked:
+        branch=exploitation_ranked[i%len(exploitation_ranked)];branch_id=str(branch["branch_id"])
         # A branch with only no-gain history gets no repeated slot while alternatives exist.
         history=gain.get(branch_id,{})
-        if float(history.get("no_gain") or 0)>0 and float(history.get("useful") or 0)==0 and len(ranked)>1:
+        if float(history.get("no_gain") or 0)>0 and float(history.get("useful") or 0)==0 and len(exploitation_ranked)>1:
             i+=1
-            if i>len(ranked)*2:break
+            if i>len(exploitation_ranked)*2:break
             continue
         allocation[branch_id]=allocation.get(branch_id,0)+1;slots-=1;i+=1
     return allocation
