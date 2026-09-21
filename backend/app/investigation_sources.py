@@ -52,7 +52,7 @@ def source_drilldown(source:dict[str,Any])->dict[str,Any]:
     if kind=="historian":
         detail["historian"]={"tag_key":prov.get("tag_key") or data.get("tag_key"),"start_time":prov.get("start_time") or data.get("start_time"),"end_time":prov.get("end_time") or data.get("end_time"),"points":data.get("points") or data.get("items") or []}
     elif kind=="technical_archive":
-        detail["document"]={"document_id":prov.get("document_id") or data.get("document_id"),"revision":prov.get("revision") or data.get("revision"),"page":prov.get("page") or data.get("page"),"title":data.get("title"),"status":data.get("status"),"excerpt":data.get("text") or data.get("excerpt")}
+        detail["document"]={"document_id":prov.get("document_id") or data.get("document_id"),"revision":prov.get("revision") or data.get("revision"),"page":prov.get("page") or data.get("page"),"title":data.get("title"),"status":data.get("status"),"excerpt":data.get("text") or data.get("excerpt"),"record_id":prov.get("record_id") or data.get("record_id"),"source_path":prov.get("source_path") or data.get("source_path"),"open_target":{"record_id":prov.get("record_id") or data.get("record_id"),"document_id":prov.get("document_id") or data.get("document_id"),"revision":prov.get("revision") or data.get("revision"),"page":prov.get("page") or data.get("page")}}
     elif kind=="alarms_events":
         detail["event"]={"event_id":prov.get("event_id") or data.get("event_id"),"timestamp":data.get("timestamp") or data.get("time"),"tag_key":data.get("tag_key"),"message":data.get("message") or data.get("description"),"state":data.get("state")}
     elif kind=="previous_incident":
