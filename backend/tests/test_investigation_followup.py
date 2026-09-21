@@ -151,3 +151,28 @@ def test_new_measurement_history_prefers_highest_information_value_candidate():
     assert plan["actions"][0]["arguments"]["tag_key"]=="regenerator_pressure"
     assert plan["measurement_selection"][0]["tag_key"]=="regenerator_pressure"
     assert plan["measurement_ranking"][0]["score"] > plan["measurement_ranking"][1]["score"]
+
+
+def test_no_usable_historian_direction_is_not_retried():
+    hypothesis={
+        "id":"h1","statement":"Investigate pressure relationship",
+        "causal_status":"not_established","evidence_status":"relevant_but_insufficient",
+        "association":{"strength":0.7},"missing_evidence":["Additional operating context"],
+    }
+    plan=plan_follow_up(
+        goal="why",unit_key="fcc",
+        synthesis={
+            "time_window":{"start":"s","end":"e"},
+            "pending_history_tags":["dead_tag","useful_tag"],
+            "discovered_tags":{"items":[
+                {"key":"dead_tag","label":"Pressure dead"},
+                {"key":"useful_tag","label":"Pressure useful"},
+            ]},
+            "measurement_information_gain":[
+                {"tag_key":"dead_tag","classification":"no_usable_data","score":0}
+            ],
+        },
+        hypotheses=[hypothesis],max_actions=3,round_index=2,
+    )
+    history=[a for a in plan["actions"] if a["tool"]=="get_history"]
+    assert [a["arguments"]["tag_key"] for a in history]==["useful_tag"]
