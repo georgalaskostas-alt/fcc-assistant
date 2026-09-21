@@ -43,3 +43,50 @@ def choose_next_evidence_actions(*, hypothesis: dict[str, Any], synthesis: dict[
     if "historical" in missing or "comparable" in missing or not similar.get("count"):
         actions.append({"tool": "find_similar_episodes", "value": 6, "reason": "Need analogical historical comparison", "arguments": {}})
     return sorted(actions, key=lambda a: -int(a["value"]))
+
+
+def rank_measurement_candidates(*, candidates: list[dict[str, Any]], focus: str,
+                                resolved_tags: list[str] | None = None,
+                                limit: int = 6) -> list[dict[str, Any]]:
+    """Rank governed measurement candidates by explainable information value.
+
+    This is deliberately deterministic. It does not invent process relationships:
+    it ranks only metadata returned by the authorized tag catalog.
+    """
+    resolved = {str(value).casefold() for value in (resolved_tags or [])}
+    tokens = {
+        token for token in "".join(ch if ch.isalnum() else " " for ch in focus.casefold()).split()
+        if len(token) >= 3
+    }
+    ranked: list[dict[str, Any]] = []
+    for index, row in enumerate(candidates):
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or row.get("tag_key") or "").strip()
+        if not key or key.casefold() in resolved:
+            continue
+        fields = [
+            key,
+            str(row.get("label") or ""),
+            str(row.get("name") or ""),
+            str(row.get("semantic_key") or row.get("semantic") or ""),
+            " ".join(str(value) for value in (row.get("aliases") or [])),
+        ]
+        haystack = " ".join(fields).casefold()
+        matched = sorted(token for token in tokens if token in haystack)
+        semantic = str(row.get("semantic_key") or row.get("semantic") or "").strip()
+        score = len(matched) * 2.0
+        if semantic:
+            score += 1.0
+        if row.get("unit"):
+            score += 0.25
+        ranked.append({
+            "candidate": row,
+            "tag_key": key,
+            "score": round(score, 3),
+            "matched_focus_tokens": matched,
+            "catalog_order": index,
+            "reason": "Ranked from governed catalog metadata and investigation focus.",
+        })
+    ranked.sort(key=lambda item: (-float(item["score"]), int(item["catalog_order"]), str(item["tag_key"])))
+    return ranked[:max(0, limit)]
