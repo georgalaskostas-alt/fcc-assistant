@@ -15,6 +15,7 @@ from .investigation_evidence import merge_new_evidence
 from .investigation_reconciliation import reconcile_follow_up
 from .investigation_budget import InvestigationBudget
 from .investigation_stop import classify_execution_boundary, normalize_stop_reason
+from .investigation_value import score_evidence_gain
 
 async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolContext, goal: str,
                                        unit_key: str, synthesis: dict[str, Any],
@@ -74,6 +75,26 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
         synthesis["evidence_count"] = len(merged)
         reconciliation = reconcile_follow_up(synthesis, result)
         rounds[-1]["reconciliation"] = reconciliation
+        after_analytics = build_deterministic_analytics(synthesis)
+        historian_actions = [
+            action for action in plan.get("actions", [])
+            if isinstance(action, dict) and action.get("tool") == "get_history"
+        ]
+        realized_gain = [
+            score_evidence_gain(
+                before_analytics=analytics,
+                after_analytics=after_analytics,
+                tag_key=str((action.get("arguments") or {}).get("tag_key") or ""),
+            )
+            for action in historian_actions
+            if str((action.get("arguments") or {}).get("tag_key") or "")
+        ]
+        if realized_gain:
+            rounds[-1]["realized_information_gain"] = realized_gain
+            synthesis["measurement_information_gain"] = [
+                *(synthesis.get("measurement_information_gain") or []),
+                *realized_gain,
+            ]
         # Recompute hypotheses on the next iteration from the newly reconciled
         # archive/event/history state, so the planner can change direction.
         # Preserve the trail of what the autonomous loop learned. The next round
