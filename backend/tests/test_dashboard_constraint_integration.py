@@ -98,7 +98,7 @@ def test_bad_llm_action_is_replanned_and_executed_safely(monkeypatch):
     )
 
     assert result["plan"]["action"] == "add_widget"
-    assert result["agent"] == "constraint-recovered-fallback"
+    # Explicit deterministic commands intentionally bypass the local model when a safe fast-path exists.\n    assert result["agent"] == "deterministic-explicit-fastpath"
     assert result["needs_clarification"] is False
     assert store.mutated is True
     assert any(w["id"] == "fcc-feed-new" for w in result["workspace"]["widgets"])
