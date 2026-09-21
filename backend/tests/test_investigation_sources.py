@@ -1,4 +1,4 @@
-from backend.app.investigation_sources import collect_canonical_sources
+from backend.app.investigation_sources import collect_canonical_sources, resolve_source_ids
 
 def test_collects_and_deduplicates_sources_across_investigation_state():
     history={"tool":"get_history","evidence_id":"h1","data":{"tag_key":"fcc.feed","start_time":"a","end_time":"b"},"provenance":{"tag_key":"fcc.feed"}}
@@ -10,3 +10,9 @@ def test_collects_and_deduplicates_sources_across_investigation_state():
     assert {s["source_kind"] for s in sources}=={"historian","technical_archive","alarms_events"}
     assert all(s["evidence_id"] for s in sources)
     assert next(s for s in sources if s["source_kind"]=="technical_archive")["provenance"]["revision"]=="A"
+
+
+def test_resolves_only_real_canonical_source_ids():
+    sources=[{"evidence_id":"history:fcc.feed:a:b"},{"evidence_id":"archive:DOC-1:A:3"}]
+    refs=[{"evidence_id":"archive:DOC-1:A:3"},"missing",{"stable_evidence_id":"history:fcc.feed:a:b"}]
+    assert resolve_source_ids(refs,sources)==["archive:DOC-1:A:3","history:fcc.feed:a:b"]
