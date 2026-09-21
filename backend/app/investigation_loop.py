@@ -15,7 +15,7 @@ from .investigation_evidence import merge_new_evidence
 from .investigation_reconciliation import reconcile_follow_up
 from .investigation_budget import InvestigationBudget
 from .investigation_stop import classify_execution_boundary, normalize_stop_reason
-from .investigation_value import score_evidence_gain
+from .investigation_value import score_evidence_gain, evolve_hypothesis_branches
 
 async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolContext, goal: str,
                                        unit_key: str, synthesis: dict[str, Any],
@@ -34,8 +34,21 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
             break
         analytics = build_deterministic_analytics(synthesis)
         hypotheses = evaluate_hypotheses(hypotheses=build_hypothesis_candidates(analytics), synthesis=synthesis)
-        synthesis["investigation_focus"] = str(hypotheses[0].get("statement") or goal) if hypotheses else goal
-        plan = plan_follow_up(goal=goal, unit_key=unit_key, synthesis=synthesis, hypotheses=hypotheses, max_actions=3, round_index=round_index)
+        branch_lifecycle = evolve_hypothesis_branches(
+            hypotheses=hypotheses,
+            previous_branches=synthesis.get("hypothesis_branch_lifecycle") if isinstance(synthesis.get("hypothesis_branch_lifecycle"), list) else [],
+        )
+        synthesis["hypothesis_branch_lifecycle"] = branch_lifecycle
+        active_branch_ids = {
+            str(item.get("branch_id")) for item in branch_lifecycle
+            if item.get("state") != "prune"
+        }
+        active_hypotheses = [
+            item for item in hypotheses
+            if str(item.get("id") or "") in active_branch_ids
+        ] if branch_lifecycle else hypotheses
+        synthesis["investigation_focus"] = str(active_hypotheses[0].get("statement") or goal) if active_hypotheses else goal
+        plan = plan_follow_up(goal=goal, unit_key=unit_key, synthesis=synthesis, hypotheses=active_hypotheses, max_actions=3, round_index=round_index)
         if not plan.get("needed"):
             # No actionable governed follow-up is not, by itself, proof that evidence is sufficient.
             has_evidence = bool(synthesis.get("evidence") or synthesis.get("executions") or synthesis.get("history"))
@@ -63,6 +76,7 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
         existing = synthesis.get("evidence_package") if isinstance(synthesis.get("evidence_package"), list) else []
         merged, novel = merge_new_evidence(existing, evidence)
         rounds.append({"round": round_index + 1, "plan": plan, **result,
+                       "hypothesis_branch_lifecycle": branch_lifecycle,
                        "returned_evidence_count": len(evidence), "new_evidence_count": len(novel),
                        "new_evidence_ids": [item.get("stable_evidence_id") for item in novel]})
         if boundary:
