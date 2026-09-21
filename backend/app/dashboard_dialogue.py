@@ -197,9 +197,11 @@ def _move_plan(
     if not move_intent:
         return None, None
 
-    all_variables = any(token in text for token in (
-        "όλες τις μεταβλητές", "ολες τις μεταβλητες", "όλα τα γραφήματα", "ολα τα γραφηματα",
-        "όλα τα διαγράμματα", "ολα τα διαγραμματα", "όλα", "ολα", "everything", "all variables", "all widgets",
+    import unicodedata
+    folded_move = "".join(ch for ch in unicodedata.normalize("NFD", text.casefold()) if unicodedata.category(ch) != "Mn")
+    all_variables = any(token in folded_move for token in (
+        "ολες τις μεταβλητες", "ολα τα γραφηματα", "ολα τα διαγραμματα",
+        "ολα", "everything", "all variables", "all widgets",
     ))
     plural_reference = all_variables or any(token in text for token in (
         "μετέφερε τα", "μεταφερε τα", "μετακίνησε τα", "μετακινησε τα", "πήγαινέ τα", "πηγαινε τα", "move them",
