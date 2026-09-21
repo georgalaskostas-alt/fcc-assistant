@@ -37,3 +37,19 @@ def test_trail_preserves_branch_decisions_and_realized_information_gain():
     assert entry["branch_lifecycle_after_evidence"][0]["state"]=="promote"
     assert entry["actions"][0]["hypothesis_branch_id"]=="h1"
     assert entry["realized_information_gain"][0]["classification"]=="useful_information_gain"
+
+
+def test_trail_builds_explicit_hypothesis_evidence_graph():
+    hypotheses=[{
+        "id":"h1","statement":"Investigate DP and temperature","evidence_status":"supporting_independent_evidence",
+        "causal_status":"not_established",
+        "supporting_independent_evidence":[{"evidence_id":"doc:1","tool":"search_archive","description":"Approved troubleshooting note","provenance":{"revision":"B"}}],
+        "contradicting_independent_evidence":[{"evidence_id":"event:2","tool":"search_alarms_events","description":"Alarm sequence","provenance":{"event_id":"2"}}],
+        "missing_evidence":[],
+    }]
+    trail=build_investigation_trail(goal="why",synthesis={},hypotheses=hypotheses)
+    graph=trail["evidence_graph"]
+    assert any(n["id"]=="h1" and n["kind"]=="hypothesis" for n in graph["nodes"])
+    assert any(n["id"]=="doc:1" and n["source_kind"]=="technical_archive" for n in graph["nodes"])
+    assert {"from":"doc:1","to":"h1","relation":"supports"} in graph["edges"]
+    assert {"from":"event:2","to":"h1","relation":"contradicts"} in graph["edges"]
