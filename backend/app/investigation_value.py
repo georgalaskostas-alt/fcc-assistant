@@ -45,7 +45,8 @@ def choose_next_evidence_actions(*, hypothesis: dict[str, Any], synthesis: dict[
     return sorted(actions, key=lambda a: -int(a["value"]))
 
 
-def rank_measurement_candidates(*, candidates: list[dict[str, Any]], focus: str,
+def rank_measurement_candidates(*, candidates: list[dict[str, Any]], focus: str | None = None,
+                                hypothesis: dict[str, Any] | None = None,
                                 resolved_tags: list[str] | None = None,
                                 limit: int = 6) -> list[dict[str, Any]]:
     """Rank governed measurement candidates by explainable information value.
@@ -54,8 +55,9 @@ def rank_measurement_candidates(*, candidates: list[dict[str, Any]], focus: str,
     it ranks only metadata returned by the authorized tag catalog.
     """
     resolved = {str(value).casefold() for value in (resolved_tags or [])}
+    active_focus = str(focus or ((hypothesis or {}).get("statement") if isinstance(hypothesis, dict) else "") or "")
     tokens = {
-        token for token in "".join(ch if ch.isalnum() else " " for ch in focus.casefold()).split()
+        token for token in "".join(ch if ch.isalnum() else " " for ch in active_focus.casefold()).split()
         if len(token) >= 3
     }
     ranked: list[dict[str, Any]] = []
