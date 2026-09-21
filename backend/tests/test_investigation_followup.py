@@ -120,3 +120,34 @@ def test_newly_discovered_hypothesis_tags_are_read_from_historian_next_round():
     assert [a["tool"] for a in plan["actions"]]==["get_history","get_history"]
     assert [a["arguments"]["tag_key"] for a in plan["actions"]]==["new_tag_1","new_tag_2"]
     assert all(a["arguments"]["start_time"]=="2026-09-20T00:00:00Z" for a in plan["actions"])
+
+
+def test_new_measurement_history_prefers_highest_information_value_candidate():
+    hypothesis={
+        "id":"h1",
+        "statement":"Investigate regenerator pressure relationship",
+        "causal_status":"not_established",
+        "evidence_status":"relevant_but_insufficient",
+        "association":{"strength":0.8},
+        "missing_evidence":["Additional operating context"],
+    }
+    plan=plan_follow_up(
+        goal="why",
+        unit_key="fcc",
+        synthesis={
+            "time_window":{"start":"s","end":"e"},
+            "pending_history_tags":["unrelated_flow","regenerator_pressure"],
+            "resolved_tags":["existing"],
+            "discovered_tags":{"items":[
+                {"key":"unrelated_flow","label":"Unrelated Flow","score":0.2},
+                {"key":"regenerator_pressure","label":"Regenerator Pressure","semantic_key":"regenerator_pressure","score":0.9},
+            ]},
+        },
+        hypotheses=[hypothesis],
+        max_actions=1,
+        round_index=2,
+    )
+    assert plan["planning_mode"]=="new_measurement_history"
+    assert plan["actions"][0]["arguments"]["tag_key"]=="regenerator_pressure"
+    assert plan["measurement_selection"][0]["tag_key"]=="regenerator_pressure"
+    assert plan["measurement_ranking"][0]["score"] > plan["measurement_ranking"][1]["score"]
