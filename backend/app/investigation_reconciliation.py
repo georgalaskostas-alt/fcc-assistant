@@ -86,6 +86,18 @@ def reconcile_follow_up(synthesis: dict[str, Any], result: dict[str, Any]) -> di
         items = _dedupe([*(current.get("items") or []), *histories], ("tag_key", "key", "id"))
         current.update({"attempted": True, "items": items, "count": len(items), "run": run})
         synthesis["history_evidence"] = current
+        resolved = [str(value) for value in (synthesis.get("resolved_tags") or [])]
+        read_keys: list[str] = []
+        for row in histories:
+            if not isinstance(row, dict):
+                continue
+            tag_meta = row.get("tag") if isinstance(row.get("tag"), dict) else {}
+            key = str(row.get("tag_key") or tag_meta.get("key") or tag_meta.get("tag_key") or "").strip()
+            if key:
+                read_keys.append(key)
+        synthesis["resolved_tags"] = list(dict.fromkeys([*resolved, *read_keys]))
+        pending = [str(value) for value in (synthesis.get("pending_history_tags") or [])]
+        synthesis["pending_history_tags"] = [key for key in pending if key not in set(read_keys)]
 
     return {
         "archive_added": len(archive),
