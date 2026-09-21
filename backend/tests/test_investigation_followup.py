@@ -93,3 +93,30 @@ def test_unresolved_hypothesis_can_discover_additional_governed_measurements():
     assert discovery[0]["arguments"]["query"]==hypothesis["statement"]
     assert discovery[0]["exclude_tag_keys"]==["tag_a","tag_b"]
     assert plan["process_control_actions_allowed"] is False
+
+
+def test_newly_discovered_hypothesis_tags_are_read_from_historian_next_round():
+    hypothesis={
+        "id":"h1",
+        "statement":"Investigate A and B",
+        "causal_status":"not_established",
+        "evidence_status":"relevant_but_insufficient",
+        "association":{"strength":0.7},
+        "missing_evidence":["Additional operating context"],
+    }
+    plan=plan_follow_up(
+        goal="why",
+        unit_key="fcc",
+        synthesis={
+            "time_window":{"start":"2026-09-20T00:00:00Z","end":"2026-09-21T00:00:00Z"},
+            "pending_history_tags":["new_tag_1","new_tag_2"],
+            "resolved_tags":["old_tag"],
+        },
+        hypotheses=[hypothesis],
+        max_actions=3,
+        round_index=2,
+    )
+    assert plan["planning_mode"]=="new_measurement_history"
+    assert [a["tool"] for a in plan["actions"]]==["get_history","get_history"]
+    assert [a["arguments"]["tag_key"] for a in plan["actions"]]==["new_tag_1","new_tag_2"]
+    assert all(a["arguments"]["start_time"]=="2026-09-20T00:00:00Z" for a in plan["actions"])
