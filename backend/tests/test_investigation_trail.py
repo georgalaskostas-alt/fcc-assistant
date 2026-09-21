@@ -15,3 +15,25 @@ def test_trail_records_hypotheses_rounds_and_stop_reason():
     assert trail["entries"][1]["actions"][0]["tool"] == "search_archive"
     assert trail["causal_conclusion"] == "not_established"
     assert trail["process_control_actions_allowed"] is False
+
+
+def test_trail_preserves_branch_decisions_and_realized_information_gain():
+    synthesis={"autonomous_investigation":{"rounds_completed":1,"stop_reason":"iteration_budget_exhausted","rounds":[{
+        "round":1,
+        "plan":{
+            "focus":"pressure-temperature",
+            "hypothesis_branches":[{"branch_id":"h1","priority":1,"score":8.0}],
+            "actions":[{"tool":"get_history","reason":"new measurement","hypothesis_branch_id":"h1","branch_score":8.0}],
+        },
+        "hypothesis_branch_lifecycle":[{"branch_id":"h1","state":"keep","score":8.0}],
+        "branch_lifecycle_after_evidence":[{"branch_id":"h1","state":"promote","score":8.5}],
+        "realized_information_gain":[{"tag_key":"temperature","classification":"useful_information_gain","score":5.25}],
+        "new_evidence_count":1,
+    }]}}
+    trail=build_investigation_trail(goal="why",synthesis=synthesis,hypotheses=[])
+    entry=trail["entries"][0]
+    assert entry["hypothesis_branches"][0]["branch_id"]=="h1"
+    assert entry["branch_lifecycle"][0]["state"]=="keep"
+    assert entry["branch_lifecycle_after_evidence"][0]["state"]=="promote"
+    assert entry["actions"][0]["hypothesis_branch_id"]=="h1"
+    assert entry["realized_information_gain"][0]["classification"]=="useful_information_gain"
