@@ -28,3 +28,18 @@ def test_process_path_candidates_preserve_relationship_trace():
     actions=semantic_candidates_to_actions(candidates=candidates,unit_key="fcc")
     assert actions[0]["tool"]=="search_archive"
     assert actions[0]["semantic_candidate"]["path_relationships"]==["temperature_influence"]
+
+
+def test_process_path_planner_prunes_previous_no_gain_direction():
+    graph={"nodes":[{"id":"equipment:fcc:reactor","kind":"equipment","equipment_key":"reactor","label":"Reactor"}]}
+    paths={"paths":[{"nodes":["equipment:fcc:regenerator","equipment:fcc:reactor"],"relationships":["temperature_influence"]}]}
+    synthesis={"resolved_tags":[],"process_path_information_gain":[{"candidate_key":"reactor","relationships":["temperature_influence"],"classification":"no_information_gain","score":0}]}
+    assert process_path_candidates(process_paths=paths,graph=graph,synthesis=synthesis,limit=4)==[]
+
+def test_process_path_planner_rewards_previously_useful_direction():
+    graph={"nodes":[{"id":"equipment:fcc:reactor","kind":"equipment","equipment_key":"reactor","label":"Reactor"}]}
+    paths={"paths":[{"nodes":["equipment:fcc:regenerator","equipment:fcc:reactor"],"relationships":["temperature_influence"]}]}
+    synthesis={"resolved_tags":[],"process_path_information_gain":[{"candidate_key":"reactor","relationships":["temperature_influence"],"classification":"useful_path","score":5}]}
+    candidates=process_path_candidates(process_paths=paths,graph=graph,synthesis=synthesis,limit=4)
+    assert candidates[0]["prior_path_attempts"]==1
+    assert candidates[0]["adaptive_value"]>6
