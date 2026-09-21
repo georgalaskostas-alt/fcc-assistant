@@ -84,12 +84,36 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
     focus = str(hypothesis.get("statement") or goal)
     query = focus if round_index > 0 else goal
     if hypothesis:
-        actions = choose_next_evidence_actions(
+        pending_history = [
+            str(value) for value in (synthesis.get("pending_history_tags") or [])
+            if str(value).strip()
+        ]
+        time_window = synthesis.get("time_window") if isinstance(synthesis.get("time_window"), dict) else {}
+        start_time = time_window.get("start") or time_window.get("start_time")
+        end_time = time_window.get("end") or time_window.get("end_time")
+        if pending_history and start_time and end_time:
+            actions = [
+                {
+                    "tool": "get_history",
+                    "value": 10,
+                    "reason": "Retrieve historian evidence for a newly discovered governed measurement.",
+                    "arguments": {
+                        "tag_key": tag_key,
+                        "start_time": str(start_time),
+                        "end_time": str(end_time),
+                        "max_count": 1000,
+                    },
+                }
+                for tag_key in pending_history[:max(0, max_actions)]
+            ]
+            planning_mode = "new_measurement_history"
+        else:
+            actions = choose_next_evidence_actions(
             hypothesis=hypothesis,
             synthesis=synthesis,
             unit_key=unit_key,
             query=query,
-        )
+            )
         # If independent evidence is already present but the relationship is
         # still unresolved, search the governed catalog for measurements named
         # by the evidence gap/focus. This discovers candidates; it never guesses
@@ -102,7 +126,7 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
             if isinstance(row, dict)
         }
         resolved_keys = {str(value) for value in (synthesis.get("resolved_tags") or [])}
-        if status in {
+        if planning_mode != "new_measurement_history" and status in {
             "specific_independent_evidence_found",
             "relevant_but_insufficient",
             "mixed_independent_evidence",
@@ -116,7 +140,8 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
                 "exclude_tag_keys": sorted(known_keys | resolved_keys),
             })
         actions = sorted(actions, key=lambda action: -int(action.get("value", 0)))
-        planning_mode = "hypothesis_evidence"
+        if planning_mode != "new_measurement_history":
+            planning_mode = "hypothesis_evidence"
     else:
         actions = _goal_discovery_actions(goal=goal, unit_key=unit_key, synthesis=synthesis)
         planning_mode = "goal_discovery"
