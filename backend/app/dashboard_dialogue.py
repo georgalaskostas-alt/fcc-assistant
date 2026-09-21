@@ -199,10 +199,12 @@ def _move_plan(
 
     import unicodedata
     folded_move = "".join(ch for ch in unicodedata.normalize("NFD", text.casefold()) if unicodedata.category(ch) != "Mn")
-    all_variables = any(token in folded_move for token in (
-        "ολες τις μεταβλητες", "ολα τα γραφηματα", "ολα τα διαγραμματα",
-        "ολα", "everything", "all variables", "all widgets",
-    ))
+    all_variables = (
+        ("μεταβλητ" in folded_move and any(q in folded_move for q in ("ολ", "all")))
+        or ("γραφημα" in folded_move and any(q in folded_move for q in ("ολ", "all")))
+        or ("διαγραμμα" in folded_move and any(q in folded_move for q in ("ολ", "all")))
+        or any(token in folded_move for token in ("everything", "all variables", "all widgets"))
+    )
     plural_reference = all_variables or any(token in text for token in (
         "μετέφερε τα", "μεταφερε τα", "μετακίνησε τα", "μετακινησε τα", "πήγαινέ τα", "πηγαινε τα", "move them",
     ))
