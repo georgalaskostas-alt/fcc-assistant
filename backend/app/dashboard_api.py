@@ -85,7 +85,7 @@ def _widget_matches_metric(widget,metric_filter):
     return True
 
 def _period_followup_plan(command,state,action_context,widgets,explicit_units):
-    text=command.casefold().strip()
+    text=command.casefold().strip().replace("’", "'").replace("‘", "'")
     if _explicit_action(text) in {"add","remove","restore","replace"}:return None
     match=re.search(r"(?<!\d)(\d{1,3})\s*(?:h|hr|hrs|hour|hours|ωρ(?:α|ες|ών)?|ωρες|ώρα|ώρες)(?!\w)",text,re.I)
     if not match:return None
