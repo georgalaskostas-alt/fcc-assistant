@@ -106,7 +106,6 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
             "specific_independent_evidence_found",
             "relevant_but_insufficient",
             "mixed_independent_evidence",
-            "mixed_independent_evidence",
             "contradicting_independent_evidence",
         }:
             actions.append({
