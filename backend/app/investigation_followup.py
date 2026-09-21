@@ -6,7 +6,7 @@ discovery pass instead of stopping before gathering evidence.
 """
 from __future__ import annotations
 from typing import Any
-from .investigation_value import rank_hypotheses, choose_next_evidence_actions, rank_measurement_candidates
+from .investigation_value import rank_hypotheses, allocate_hypothesis_branches, choose_next_evidence_actions, rank_measurement_candidates
 
 
 def _goal_discovery_actions(*, goal: str, unit_key: str, synthesis: dict[str, Any]) -> list[dict[str, Any]]:
@@ -79,6 +79,7 @@ def _goal_discovery_actions(*, goal: str, unit_key: str, synthesis: dict[str, An
 
 def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypotheses: list[dict[str, Any]], max_actions: int = 3, round_index: int = 0) -> dict[str, Any]:
     ranked = rank_hypotheses(hypotheses)
+    branches = allocate_hypothesis_branches(hypotheses=hypotheses, max_branches=min(3, max(1, max_actions)))
     selected_hypothesis = ranked[0] if ranked else None
     hypothesis = selected_hypothesis["hypothesis"] if selected_hypothesis else {}
     focus = str(hypothesis.get("statement") or goal)
@@ -188,6 +189,7 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
         "selected_hypothesis_score": selected_hypothesis.get("score") if selected_hypothesis else None,
         "measurement_ranking": locals().get("measurement_ranking", []),
         "measurement_selection": locals().get("measurement_selection", []),
+        "hypothesis_branches": branches,
         "hypothesis_ranking": [
             {
                 "id": x["hypothesis"].get("id"),
