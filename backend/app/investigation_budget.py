@@ -93,3 +93,32 @@ def adaptive_branch_tool_budget(*, branches:list[dict[str,Any]], remaining_calls
             continue
         allocation[branch_id]=allocation.get(branch_id,0)+1;slots-=1;i+=1
     return allocation
+
+
+def explain_branch_budget(*, branches:list[dict[str,Any]], allocation:dict[str,int], path_gain_history:list[dict[str,Any]], mode:str)->list[dict[str,Any]]:
+    """Create deterministic human-readable reasons for the current branch allocation."""
+    by_id={str(b.get("branch_id")):b for b in branches if isinstance(b,dict) and b.get("branch_id")}
+    history:dict[str,dict[str,float]]={}
+    for item in path_gain_history:
+        if not isinstance(item,dict):continue
+        branch_id=str(item.get("hypothesis_branch_id") or "")
+        if not branch_id:continue
+        slot=history.setdefault(branch_id,{"attempts":0.0,"useful":0.0,"limited":0.0,"no_gain":0.0,"score_total":0.0})
+        slot["attempts"]+=1;slot["score_total"]+=float(item.get("score") or 0.0)
+        classification=str(item.get("classification") or "")
+        if classification=="useful_path":slot["useful"]+=1
+        elif classification=="limited_path":slot["limited"]+=1
+        elif classification=="no_information_gain":slot["no_gain"]+=1
+    rows=[]
+    for branch_id,branch in by_id.items():
+        calls=int(allocation.get(branch_id,0));stats=history.get(branch_id,{})
+        attempts=int(stats.get("attempts") or 0);useful=int(stats.get("useful") or 0);no_gain=int(stats.get("no_gain") or 0)
+        mean=round(float(stats.get("score_total") or 0.0)/max(1,attempts),3)
+        if mode=="balanced_initial":reason="Initial balanced exploration across active hypotheses."
+        elif calls==0 and no_gain>0 and useful==0:reason="No repeated budget: prior process-path exploration produced no information gain."
+        elif attempts==0 and calls>0:reason="Exploration slot reserved because this hypothesis has not yet been tested."
+        elif useful>0 and calls>0:reason="Budget retained or increased because prior process-path exploration produced useful evidence."
+        elif calls>0:reason="Budget retained for an active hypothesis within the hard investigation limit."
+        else:reason="No tool call allocated in this bounded round."
+        rows.append({"hypothesis_branch_id":branch_id,"allocated_calls":calls,"state":branch.get("state"),"priority":branch.get("priority"),"branch_score":branch.get("score"),"prior_attempts":attempts,"prior_useful_paths":useful,"prior_no_gain_paths":no_gain,"prior_mean_path_gain":mean,"reason":reason})
+    return rows
