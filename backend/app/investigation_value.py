@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Any
 
-_STATUS_WEIGHT={"insufficient_independent_evidence":6.0,"relevant_but_insufficient":5.0,"mixed_independent_evidence":4.5,"independent_evidence_available":4.0,"contradicting_independent_evidence":3.0,"supporting_independent_evidence":2.5}
+_STATUS_WEIGHT={"insufficient_independent_evidence":6.0,"specific_independent_evidence_found":5.0,"relevant_but_insufficient":5.0,"mixed_independent_evidence":4.5,"independent_evidence_available":4.0,"contradicting_independent_evidence":3.0,"supporting_independent_evidence":2.5}
 
 def rank_hypotheses(hypotheses:list[dict[str,Any]])->list[dict[str,Any]]:
     ranked=[]
