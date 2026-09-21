@@ -5,7 +5,7 @@ manufacture confidence or turn association into causation.
 """
 from __future__ import annotations
 from typing import Any
-from .investigation_sources import collect_canonical_sources
+from .investigation_sources import collect_canonical_sources, resolve_source_ids
 
 
 def _confidence(*, support: int, contradictions: int, missing: int) -> dict[str, Any]:
@@ -33,6 +33,7 @@ def _confidence(*, support: int, contradictions: int, missing: int) -> dict[str,
 def build_evidence_aware_conclusion(*, analytics: dict[str, Any],
                                     hypotheses: list[dict[str, Any]],
                                     synthesis: dict[str, Any]) -> dict[str, Any]:
+    sources = collect_canonical_sources(synthesis)
     facts: list[dict[str, Any]] = []
     for tag, summary in (analytics.get("summaries") or {}).items():
         if not isinstance(summary, dict) or not summary.get("count"):
@@ -44,7 +45,7 @@ def build_evidence_aware_conclusion(*, analytics: dict[str, Any],
             "minimum": summary.get("min"),
             "maximum": summary.get("max"),
             "delta": summary.get("delta"),
-            "evidence_ids": [summary.get("evidence_id")] if summary.get("evidence_id") else [],
+            "evidence_ids": resolve_source_ids([summary.get("evidence_id")], sources),
         })
 
     supported: list[dict[str, Any]] = []
@@ -64,6 +65,9 @@ def build_evidence_aware_conclusion(*, analytics: dict[str, Any],
             "confidence": _confidence(support=support, contradictions=contradictions, missing=len(missing_items)),
             "supporting_evidence": list(hypothesis.get("supporting_independent_evidence") or []),
             "contradicting_evidence": list(hypothesis.get("contradicting_independent_evidence") or []),
+            "supporting_source_ids": resolve_source_ids(list(hypothesis.get("supporting_independent_evidence") or []), sources),
+            "contradicting_source_ids": resolve_source_ids(list(hypothesis.get("contradicting_independent_evidence") or []), sources),
+            "related_source_ids": resolve_source_ids(list(hypothesis.get("evidence_matches") or []), sources),
             "missing_evidence": missing_items,
         }
         if contradictions and not support:
@@ -72,8 +76,6 @@ def build_evidence_aware_conclusion(*, analytics: dict[str, Any],
             supported.append(item)
         else:
             unresolved.append(item)
-
-    sources = collect_canonical_sources(synthesis)
 
     limitations = [str(value) for value in (synthesis.get("limitations") or [])]
     if not facts:
