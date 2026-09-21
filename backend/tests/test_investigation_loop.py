@@ -35,3 +35,24 @@ def test_budget_never_allows_more_than_global_limit():
     budget.record(round_number=3,requested=3,executed=1)
     assert budget.remaining_tool_calls==0
     assert budget.allowance(1)==0
+
+
+def test_branch_budget_allocator_preserves_competing_hypotheses():
+    from backend.app.investigation_budget import allocate_branch_tool_budget
+    branches=[
+        {"branch_id":"h1","priority":1,"score":8.0,"state":"promote"},
+        {"branch_id":"h2","priority":2,"score":7.5,"state":"keep"},
+        {"branch_id":"h3","priority":3,"score":6.0,"state":"keep"},
+    ]
+    assert allocate_branch_tool_budget(branches=branches,remaining_calls=3,max_actions=3)=={"h1":1,"h2":1,"h3":1}
+
+def test_branch_budget_allocator_prunes_and_respects_remaining_calls():
+    from backend.app.investigation_budget import allocate_branch_tool_budget
+    branches=[
+        {"branch_id":"h1","priority":1,"score":8.0,"state":"promote"},
+        {"branch_id":"h2","priority":2,"score":7.5,"state":"prune"},
+        {"branch_id":"h3","priority":3,"score":6.0,"state":"keep"},
+    ]
+    allocation=allocate_branch_tool_budget(branches=branches,remaining_calls=2,max_actions=3)
+    assert allocation=={"h1":1,"h3":1}
+    assert sum(allocation.values())==2
