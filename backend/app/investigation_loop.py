@@ -33,6 +33,7 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
             break
         analytics = build_deterministic_analytics(synthesis)
         hypotheses = evaluate_hypotheses(hypotheses=build_hypothesis_candidates(analytics), synthesis=synthesis)
+        synthesis["investigation_focus"] = str(hypotheses[0].get("statement") or goal) if hypotheses else goal
         plan = plan_follow_up(goal=goal, unit_key=unit_key, synthesis=synthesis, hypotheses=hypotheses, max_actions=3, round_index=round_index)
         if not plan.get("needed"):
             # No actionable governed follow-up is not, by itself, proof that evidence is sufficient.
