@@ -23,7 +23,9 @@ def _match(statement: str, text: str) -> dict[str, Any]:
     contradict_hits = sorted(words.intersection(_CONTRADICT))
     if not matched:
         stance = "irrelevant"
-    elif contradict_hits:\n        stance = "contradicting"\n    elif support_hits:
+    elif contradict_hits:
+        stance = "contradicting"
+    elif support_hits:
         stance = "supporting"
     else:
         stance = "insufficient"
