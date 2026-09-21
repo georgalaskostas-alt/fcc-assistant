@@ -140,13 +140,28 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
             planning_mode = "new_measurement_history"
             measurement_selection = measurement_ranking[:max(0, max_actions)]
         else:
-            actions = choose_next_evidence_actions(
-                hypothesis=hypothesis,
-                synthesis=synthesis,
-                unit_key=unit_key,
-                query=query,
-            )
-            planning_mode = "hypothesis_evidence"
+            actions = []
+            action_fingerprints: set[str] = set()
+            branch_by_id = {str(item.get("branch_id")): item for item in branches}
+            for ranked_item in ranked[:max(1, min(3, max_actions))]:
+                branch_hypothesis = ranked_item["hypothesis"]
+                branch_id = str(branch_hypothesis.get("id") or "")
+                branch_query = str(branch_hypothesis.get("statement") or query)
+                for action in choose_next_evidence_actions(
+                    hypothesis=branch_hypothesis,
+                    synthesis=synthesis,
+                    unit_key=unit_key,
+                    query=branch_query,
+                ):
+                    fingerprint = str((action.get("tool"), sorted((action.get("arguments") or {}).items())))
+                    if fingerprint in action_fingerprints:
+                        continue
+                    action_fingerprints.add(fingerprint)
+                    enriched = dict(action)
+                    enriched["hypothesis_branch_id"] = branch_id or None
+                    enriched["branch_score"] = (branch_by_id.get(branch_id) or {}).get("score")
+                    actions.append(enriched)
+            planning_mode = "branching_hypothesis_evidence" if len(branches) > 1 else "hypothesis_evidence"
         # If independent evidence is already present but the relationship is
         # still unresolved, search the governed catalog for measurements named
         # by the evidence gap/focus. This discovers candidates; it never guesses
@@ -173,7 +188,7 @@ def plan_follow_up(*, goal: str, unit_key: str, synthesis: dict[str, Any], hypot
                 "exclude_tag_keys": sorted(known_keys | resolved_keys),
             })
         actions = sorted(actions, key=lambda action: -int(action.get("value", 0)))
-        if planning_mode != "new_measurement_history":
+        if planning_mode not in {"new_measurement_history", "branching_hypothesis_evidence"}:
             planning_mode = "hypothesis_evidence"
     else:
         actions = _goal_discovery_actions(goal=goal, unit_key=unit_key, synthesis=synthesis)
