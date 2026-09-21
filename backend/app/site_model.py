@@ -20,11 +20,15 @@ class Equipment:
 
 @dataclass(frozen=True)
 class ProcessStream:
-    key:str; name:str; from_equipment:str=""; to_equipment:str=""
+    key:str; name:str; from_equipment:str=""; to_equipment:str=""; relationships:tuple[str,...]=("flow",)
+
+@dataclass(frozen=True)
+class EngineeringRelationship:
+    source_kind:str; source_key:str; target_kind:str; target_key:str; relation:str; strength:str="context"; bidirectional:bool=False
 
 @dataclass(frozen=True)
 class ProcessUnit:
-    key:str; name:str; tags:tuple[UnitTag,...]=(); aliases:tuple[str,...]=(); sections:tuple[ProcessSection,...]=(); equipment:tuple[Equipment,...]=(); streams:tuple[ProcessStream,...]=()
+    key:str; name:str; tags:tuple[UnitTag,...]=(); aliases:tuple[str,...]=(); sections:tuple[ProcessSection,...]=(); equipment:tuple[Equipment,...]=(); streams:tuple[ProcessStream,...]=(); relationships:tuple[EngineeringRelationship,...]=()
     def tag_by_semantic(self,semantic_key:str)->UnitTag|None:
         needle=semantic_key.strip().casefold();return next((t for t in self.tags if t.semantic==needle),None)
     def matches(self,query:str)->bool:
@@ -87,8 +91,9 @@ def _site_from_payload(payload:dict[str,object])->SiteModel:
             return value
         sections=tuple(ProcessSection(str(x.get("key") or "").strip().casefold(),str(x.get("name") or x.get("key") or "").strip()) for x in objects("sections"))
         equipment=tuple(Equipment(str(x.get("key") or "").strip().casefold(),str(x.get("name") or x.get("key") or "").strip(),str(x.get("section_key") or "").strip().casefold(),str(x.get("type") or "").strip()) for x in objects("equipment"))
-        streams=tuple(ProcessStream(str(x.get("key") or "").strip().casefold(),str(x.get("name") or x.get("key") or "").strip(),str(x.get("from_equipment") or "").strip().casefold(),str(x.get("to_equipment") or "").strip().casefold()) for x in objects("streams"))
-        units.append(ProcessUnit(key,unit_name,tuple(tags),tuple(str(x) for x in aliases),sections,equipment,streams))
+        streams=tuple(ProcessStream(str(x.get("key") or "").strip().casefold(),str(x.get("name") or x.get("key") or "").strip(),str(x.get("from_equipment") or "").strip().casefold(),str(x.get("to_equipment") or "").strip().casefold(),tuple(str(r).strip().casefold() for r in (x.get("relationships") or ["flow"]))) for x in objects("streams"))
+        relationships=tuple(EngineeringRelationship(str(x.get("source_kind") or "").strip().casefold(),str(x.get("source_key") or "").strip().casefold(),str(x.get("target_kind") or "").strip().casefold(),str(x.get("target_key") or "").strip().casefold(),str(x.get("relation") or "").strip().casefold(),str(x.get("strength") or "context").strip().casefold(),bool(x.get("bidirectional",False))) for x in objects("relationships"))
+        units.append(ProcessUnit(key,unit_name,tuple(tags),tuple(str(x) for x in aliases),sections,equipment,streams,relationships))
     return SiteModel(name,tuple(units))
 
 def load_site_model(config_path:str|Path|None=None)->SiteModel:
