@@ -16,3 +16,20 @@ def test_lagged_pearson_reports_descriptive_best_lag():
     assert result["available"] is True
     assert "lag_samples" in result
     assert "causation" in result["warning"]
+
+
+def test_real_historian_payload_keeps_tag_identity_in_analytics():
+    synthesis={"evidence_package":[{
+        "evidence_id":"get_history:1",
+        "tool":"get_history",
+        "description":"Autonomous evidence follow-up.",
+        "data":{
+            "tag":{"key":"regenerator_dp","name":"Regenerator DP"},
+            "range":{"start_time":"s","end_time":"e"},
+            "data":{"Items":[{"Value":1.0},{"Value":2.0},{"Value":3.0}]},
+        },
+        "provenance":{},
+    }]}
+    analytics=build_deterministic_analytics(synthesis)
+    assert "regenerator_dp" in analytics["summaries"]
+    assert analytics["summaries"]["regenerator_dp"]["count"]==3
