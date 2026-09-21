@@ -10,6 +10,8 @@ from .investigation_hypotheses import build_hypothesis_candidates, evaluate_hypo
 from .investigation_followup import plan_follow_up
 from .investigation_trail import build_investigation_trail
 from .investigation_conclusion import build_evidence_aware_conclusion
+from .semantic_engineering_graph import build_semantic_engineering_graph
+from .site_model import load_site_model
 from .process_analytics import detect_deviation, lagged_pearson, pearson, summarize_series, temporal_profile
 
 INVESTIGATION_SYSTEM_PROMPT = """You are the local refinery engineering reasoning layer.
@@ -180,6 +182,14 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
     stop_decision = investigation_stop_decision(synthesis=synthesis, analytics=analytics, hypotheses=hypotheses)
     follow_up = plan_follow_up(goal=goal, unit_key=str(synthesis.get('unit_key') or ''), synthesis=synthesis, hypotheses=hypotheses)
     trail = build_investigation_trail(goal=goal, synthesis=synthesis, hypotheses=hypotheses)
+    unit_key = str(synthesis.get("unit_key") or synthesis.get("scope_id") or "")
+    semantic_graph = build_semantic_engineering_graph(
+        unit_key=unit_key,
+        site=load_site_model(),
+        hypotheses=hypotheses,
+        evidence_graph=trail.get("evidence_graph") or {},
+    ) if unit_key else {"unit_key":"","nodes":[],"edges":[],"read_only":True,"causal_inference":False}
+    trail["semantic_engineering_graph"] = semantic_graph
     conclusion = build_evidence_aware_conclusion(analytics=analytics, hypotheses=hypotheses, synthesis=synthesis)
     if not synthesis.get("ready_for_reasoning"): return {"available": False, "model": None, "text": "Insufficient source-grounded evidence for engineering reasoning.", "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {"valid": True, "violations": []}}
     context = _reasoning_context(goal=goal, synthesis=synthesis, data_source=data_source, analytics=analytics)
