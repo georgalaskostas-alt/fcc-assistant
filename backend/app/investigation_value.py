@@ -51,6 +51,51 @@ def allocate_hypothesis_branches(*, hypotheses: list[dict[str, Any]], max_branch
         })
     return branches
 
+
+def evolve_hypothesis_branches(*, hypotheses: list[dict[str, Any]],
+                               previous_branches: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Assign a bounded lifecycle state without claiming causal truth."""
+    previous = {
+        str(item.get("branch_id")): item
+        for item in (previous_branches or [])
+        if isinstance(item, dict) and item.get("branch_id")
+    }
+    ranked = rank_hypotheses(hypotheses)
+    if not ranked:
+        return []
+    top_score = float(ranked[0]["score"])
+    lifecycle: list[dict[str, Any]] = []
+    for position, item in enumerate(ranked, start=1):
+        hypothesis = item["hypothesis"]
+        branch_id = str(hypothesis.get("id") or f"branch:{position}")
+        score = float(item["score"])
+        status = str(item["status"])
+        support = len(hypothesis.get("supporting_independent_evidence") or [])
+        contradictions = len(hypothesis.get("contradicting_independent_evidence") or [])
+        previous_score = float((previous.get(branch_id) or {}).get("score") or score)
+        delta = round(score - previous_score, 3)
+        if status == "contradicting_independent_evidence" and contradictions and not support:
+            state = "weaken"
+        elif position > 3 and score < top_score - 2.0:
+            state = "prune"
+        elif support and not contradictions:
+            state = "promote"
+        else:
+            state = "keep"
+        lifecycle.append({
+            "branch_id": branch_id,
+            "priority": position,
+            "score": round(score, 3),
+            "score_delta": delta,
+            "state": state,
+            "status": status,
+            "statement": str(hypothesis.get("statement") or ""),
+            "support_count": support,
+            "contradiction_count": contradictions,
+            "causal_status": "not_established",
+        })
+    return lifecycle
+
 def choose_next_evidence_actions(*, hypothesis: dict[str, Any], synthesis: dict[str, Any], unit_key: str, query: str) -> list[dict[str, Any]]:
     archive = synthesis.get("archive_evidence") if isinstance(synthesis.get("archive_evidence"), dict) else {}
     events = synthesis.get("event_evidence") if isinstance(synthesis.get("event_evidence"), dict) else {}
