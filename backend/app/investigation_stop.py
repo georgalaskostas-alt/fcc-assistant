@@ -24,6 +24,6 @@ def classify_execution_boundary(result:dict[str,Any])->str|None:
     return "source_unavailable"
 
 def normalize_stop_reason(reason:str)->str:
-    mapping={"evidence_saturated":"evidence_sufficient_for_bounded_assessment","max_rounds_reached":"iteration_budget_exhausted"}
+    mapping={"evidence_saturated":"evidence_sufficient_for_bounded_assessment","max_rounds_reached":"iteration_budget_exhausted","no_hypothesis_evidence":"no_new_evidence"}
     normalized=mapping.get(reason,reason)
     return normalized if normalized in STOP_REASONS else "source_unavailable"
