@@ -15,7 +15,7 @@ from .investigation_evidence import merge_new_evidence
 from .investigation_reconciliation import reconcile_follow_up
 from .investigation_budget import InvestigationBudget
 from .investigation_stop import classify_execution_boundary, normalize_stop_reason
-from .investigation_value import score_evidence_gain, evolve_hypothesis_branches
+from .investigation_value import score_evidence_gain, score_process_path_gain, evolve_hypothesis_branches
 from .semantic_engineering_graph import build_semantic_engineering_graph, traverse_semantic_neighbors, trace_process_paths
 from .investigation_graph_planner import semantic_discovery_candidates, semantic_candidates_to_actions, process_path_candidates
 from .site_model import load_site_model
@@ -146,6 +146,14 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
                 *(synthesis.get("measurement_information_gain") or []),
                 *realized_gain,
             ]
+        path_gain=[
+            score_process_path_gain(candidate=dict(action.get("semantic_candidate") or {}),novel_evidence_count=len(novel),before_analytics=analytics,after_analytics=after_analytics)
+            for action in plan.get("actions",[])
+            if isinstance(action,dict) and (action.get("semantic_candidate") or {}).get("path_relationships")
+        ]
+        if path_gain:
+            rounds[-1]["realized_process_path_gain"]=path_gain
+            synthesis["process_path_information_gain"]=[*(synthesis.get("process_path_information_gain") or []),*path_gain]
         next_hypotheses = evaluate_hypotheses(
             hypotheses=build_hypothesis_candidates(after_analytics),
             synthesis=synthesis,
