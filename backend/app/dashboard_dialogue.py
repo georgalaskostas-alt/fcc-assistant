@@ -278,6 +278,8 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
     text = command.strip().casefold().replace("’", "'").replace("‘", "'")
     import unicodedata
     folded_text = "".join(ch for ch in unicodedata.normalize("NFD", text) if unicodedata.category(ch) != "Mn")
+    def _fold(value: str) -> str:
+        return "".join(ch for ch in unicodedata.normalize("NFD", value.casefold()) if unicodedata.category(ch) != "Mn")
     last_widget = state.get("last_widget") if isinstance(state.get("last_widget"), dict) else None
     units = resolve_units(text, site, learned_aliases)
 
@@ -307,7 +309,7 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
         if move_plan is not None:
             return move_plan, move_message
 
-    remove_intent = any(token in text or token in folded_text for token in ("αφαίρε", "αφαιρε", "βγάλε", "βγαλε", "διέγρα", "διεγρα", "διαγρα", "remove", "delete")) or any(token in folded_text for token in ("αφαιρε", "βγαλε", "διεγρα", "διαγρα"))
+    remove_intent = any(_fold(token) in folded_text for token in ("αφαίρε", "βγάλε", "διέγρα", "διαγρα", "remove", "delete"))
     graph_intent = any(token in text for token in ("γράφημα", "γραφημα", "διαγράμ", "διαγραμ", "trend", "chart"))
     global_scope = any(token in text for token in ("από παντού", "απο παντου", "σε όλες τις μονάδες", "σε ολες τις μοναδες", "και από τις δυο μονάδες", "και απο τις δυο μοναδες", "και από τις δύο μονάδες", "και απο τις δυο μοναδες", "όπου υπάρχουν", "οπου υπαρχουν", "παντού", "παντου", "everywhere", "all units"))
     all_scope = any(token in text for token in ("όλα", "ολα", "όλες", "ολες", "και τα δύο", "και τα δυο", "all", "every"))
@@ -319,7 +321,7 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
             return {"action": "remove_widgets", "target_ids": ids, "read_only": True, "requires_confirmation": False}, f"Αφαίρεσα {len(ids)} γραφήματα από {scope_name}."
         return {"action": "answer", "read_only": True, "requires_confirmation": False}, "Δεν υπάρχουν γραφήματα για αφαίρεση."
 
-    previous_batch_ref = any(token in text or "".join(ch for ch in unicodedata.normalize("NFD", token) if unicodedata.category(ch) != "Mn") in folded_text for token in (
+    previous_batch_ref = any(_fold(token) in folded_text for token in (
         "αυτά που έβαλες", "αυτα που εβαλες", "αυτό που έβαλες", "αυτο που εβαλες",
         "αυτό που έβαλε", "αυτο που εβαλε", "αυτά που βάλαμε", "αυτα που βαλαμε",
         "που μόλις έβαλες", "που μολις εβαλες", "ό,τι έβαλες", "ο,τι εβαλες",
