@@ -274,7 +274,11 @@ def _move_plan(
 
 
 def contextual_plan(command: str, site: SiteModel, state: dict[str, object], current_widgets: list[dict[str, object]], learned_aliases: dict[str, str] | None = None) -> tuple[dict[str, object] | None, str | None]:
-    text = command.strip().casefold().replace("’", "'").replace("‘", "'")\n    # Greek tonos must not make deterministic commands brittle.\n    import unicodedata\n    folded_text = "".join(ch for ch in unicodedata.normalize("NFD", text) if unicodedata.category(ch) != "Mn")\n    last_widget = state.get("last_widget") if isinstance(state.get("last_widget"), dict) else None; units = resolve_units(text, site, learned_aliases)
+    text = command.strip().casefold().replace("’", "'").replace("‘", "'")
+    import unicodedata
+    folded_text = "".join(ch for ch in unicodedata.normalize("NFD", text) if unicodedata.category(ch) != "Mn")
+    last_widget = state.get("last_widget") if isinstance(state.get("last_widget"), dict) else None
+    units = resolve_units(text, site, learned_aliases)
 
     restore_intent = any(token in text for token in (
         "βάλε τα πάλι", "βαλε τα παλι", "βάλτα πάλι", "βαλτα παλι",
