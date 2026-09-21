@@ -207,11 +207,12 @@ def score_process_path_gain(*, candidate:dict[str,Any], novel_evidence_count:int
     return {"candidate_kind":candidate.get("kind"),"candidate_key":candidate.get("tag_key") or candidate.get("equipment_key"),"relationships":relationships,"score":round(score,3),"classification":classification,"novel_evidence_count":novel_evidence_count,"new_correlations":correlation_gain,"causal_status":"not_established"}
 
 
-def path_feedback_index(history:list[dict[str,Any]])->dict[tuple[str,tuple[str,...]],dict[str,Any]]:
-    """Summarize realized path value so future rounds avoid repeatedly low-value directions."""
+def path_feedback_index(history:list[dict[str,Any]],branch_id:str|None=None)->dict[tuple[str,tuple[str,...]],dict[str,Any]]:
+    """Summarize realized path value, optionally isolated to one hypothesis branch."""
     index:dict[tuple[str,tuple[str,...]],dict[str,Any]]={}
     for item in history:
         if not isinstance(item,dict):continue
+        if branch_id is not None and str(item.get("hypothesis_branch_id") or "")!=str(branch_id):continue
         key=str(item.get("candidate_key") or "");relationships=tuple(str(x) for x in item.get("relationships") or [])
         if not key:continue
         slot=index.setdefault((key,relationships),{"attempts":0,"useful":0,"limited":0,"no_gain":0,"score_total":0.0})
