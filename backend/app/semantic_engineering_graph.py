@@ -37,9 +37,22 @@ def build_semantic_engineering_graph(*, unit_key:str, site:SiteModel, hypotheses
                 if item.section_key not in configured_sections:node(sid,"section",item.section_key,section_key=item.section_key)
                 edge(eid,sid,"belongs_to_section")
         for stream in unit.streams:
-            stream_id=f"stream:{unit_key}:{stream.key}";node(stream_id,"stream",stream.name,stream_key=stream.key)
+            stream_id=f"stream:{unit_key}:{stream.key}";node(stream_id,"stream",stream.name,stream_key=stream.key,engineering_relationships=list(stream.relationships))
             if stream.from_equipment:edge(f"equipment:{unit_key}:{stream.from_equipment}",stream_id,"feeds_stream")
             if stream.to_equipment:edge(stream_id,f"equipment:{unit_key}:{stream.to_equipment}","feeds_equipment")
+        def configured_node_id(kind:str,key:str)->str:
+            return {
+                "equipment":f"equipment:{unit_key}:{key}",
+                "stream":f"stream:{unit_key}:{key}",
+                "section":f"section:{unit_key}:{key}",
+                "measurement":f"measurement:{key}",
+                "tag":f"tag:{key}",
+            }.get(kind,f"{kind}:{unit_key}:{key}")
+        for relationship in unit.relationships:
+            source=configured_node_id(relationship.source_kind,relationship.source_key)
+            target=configured_node_id(relationship.target_kind,relationship.target_key)
+            edge(source,target,relationship.relation)
+            if relationship.bidirectional:edge(target,source,relationship.relation)
         for tag in unit.tags:
             tid=f"tag:{tag.key}";mid=f"measurement:{tag.semantic}"
             equipment_key=tag.equipment_key
