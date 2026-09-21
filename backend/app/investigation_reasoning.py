@@ -42,7 +42,18 @@ def _tag_from_history_item(item: dict[str, Any]) -> str | None:
         if marker in lowered:
             start = lowered.index(marker) + len(marker); return description[start:].strip().rstrip(".") or None
     provenance = item.get("provenance")
-    if isinstance(provenance, dict) and provenance.get("tag_key"): return str(provenance["tag_key"])
+    if isinstance(provenance, dict) and provenance.get("tag_key"):
+        return str(provenance["tag_key"])
+    data = item.get("data")
+    if isinstance(data, dict):
+        tag = data.get("tag")
+        if isinstance(tag, dict):
+            key = tag.get("key") or tag.get("tag_key")
+            if key:
+                return str(key)
+        key = data.get("tag_key")
+        if key:
+            return str(key)
     return None
 
 
