@@ -5,6 +5,7 @@ manufacture confidence or turn association into causation.
 """
 from __future__ import annotations
 from typing import Any
+from .investigation_sources import collect_canonical_sources
 
 
 def _confidence(*, support: int, contradictions: int, missing: int) -> dict[str, Any]:
@@ -72,17 +73,7 @@ def build_evidence_aware_conclusion(*, analytics: dict[str, Any],
         else:
             unresolved.append(item)
 
-    evidence_package = synthesis.get("evidence_package") if isinstance(synthesis.get("evidence_package"), list) else []
-    sources = []
-    for evidence in evidence_package:
-        if not isinstance(evidence, dict):
-            continue
-        sources.append({
-            "evidence_id": evidence.get("stable_evidence_id") or evidence.get("evidence_id"),
-            "tool": evidence.get("tool"),
-            "description": evidence.get("description"),
-            "provenance": dict(evidence.get("provenance") or {}),
-        })
+    sources = collect_canonical_sources(synthesis)
 
     limitations = [str(value) for value in (synthesis.get("limitations") or [])]
     if not facts:
