@@ -18,6 +18,19 @@ def test_reconciles_events_and_episodes():
       {"step":{"tool_name":"find_similar_episodes"},"status":"succeeded","result":{"data":[{"episode":{"id":"P1"},"similarity":.8}]}}
     ]}
     counts=reconcile_follow_up(synthesis,{"run":run})
-    assert counts=={"archive_added":0,"events_added":1,"episodes_added":1}
+    assert counts=={"archive_added":0,"events_added":1,"episodes_added":1,"tags_added":0,"histories_added":0}
     assert synthesis["event_evidence"]["count"]==1
     assert synthesis["similar_episodes"]["count"]==1
+
+
+def test_reconciles_discovered_tags_and_history_without_duplicates():
+    synthesis={}
+    run={"executions":[
+      {"step":{"tool_name":"search_tags"},"status":"succeeded","result":{"data":[{"key":"regenerator_dp","label":"Regenerator DP"}]}},
+      {"step":{"tool_name":"get_history"},"status":"succeeded","result":{"data":{"tag_key":"regenerator_dp","start_time":"s","end_time":"e","data":[1,2,3]}}}
+    ]}
+    counts=reconcile_follow_up(synthesis,{"run":run})
+    assert counts["tags_added"]==1
+    assert counts["histories_added"]==1
+    assert synthesis["discovered_tags"]["items"][0]["key"]=="regenerator_dp"
+    assert synthesis["history_evidence"]["count"]==1
