@@ -9,7 +9,7 @@ def _kind(item:dict[str,Any],fallback:str="evidence")->str:
 
 def _normalize(item:dict[str,Any],origin:str,fallback:str)->dict[str,Any]:
     data=item.get("data") if isinstance(item.get("data"),dict) else {}
-    return {"evidence_id":str(item.get("stable_evidence_id") or item.get("evidence_id") or evidence_identity(item)),"source_kind":_kind(item,fallback),"tool":item.get("tool"),"description":item.get("description") or data.get("title") or data.get("name"),"provenance":dict(item.get("provenance") or {}),"origin":origin}
+    return {"evidence_id":str(item.get("stable_evidence_id") or item.get("evidence_id") or evidence_identity(item)),"source_kind":_kind(item,fallback),"tool":item.get("tool"),"description":item.get("description") or data.get("title") or data.get("name"),"provenance":dict(item.get("provenance") or {}),"origin":origin,"data":data}
 
 def collect_canonical_sources(synthesis:dict[str,Any])->list[dict[str,Any]]:
     collected=[];seen=set()
@@ -43,3 +43,19 @@ def resolve_source_ids(refs:list[Any],sources:list[dict[str,Any]])->list[str]:
         key=str(value)
         if key in valid and key not in resolved:resolved.append(key)
     return resolved
+
+
+def source_drilldown(source:dict[str,Any])->dict[str,Any]:
+    """Return a bounded, read-only detail view suitable for engineer inspection."""
+    kind=str(source.get("source_kind") or "evidence");data=dict(source.get("data") or {});prov=dict(source.get("provenance") or {})
+    detail={"evidence_id":source.get("evidence_id"),"source_kind":kind,"description":source.get("description"),"provenance":prov,"read_only":True}
+    if kind=="historian":
+        detail["historian"]={"tag_key":prov.get("tag_key") or data.get("tag_key"),"start_time":prov.get("start_time") or data.get("start_time"),"end_time":prov.get("end_time") or data.get("end_time"),"points":data.get("points") or data.get("items") or []}
+    elif kind=="technical_archive":
+        detail["document"]={"document_id":prov.get("document_id") or data.get("document_id"),"revision":prov.get("revision") or data.get("revision"),"page":prov.get("page") or data.get("page"),"title":data.get("title"),"status":data.get("status"),"excerpt":data.get("text") or data.get("excerpt")}
+    elif kind=="alarms_events":
+        detail["event"]={"event_id":prov.get("event_id") or data.get("event_id"),"timestamp":data.get("timestamp") or data.get("time"),"tag_key":data.get("tag_key"),"message":data.get("message") or data.get("description"),"state":data.get("state")}
+    elif kind=="previous_incident":
+        detail["incident"]={"episode_id":prov.get("episode_id") or data.get("episode_id") or data.get("id"),"title":data.get("title") or data.get("name"),"start_time":data.get("start_time"),"end_time":data.get("end_time"),"summary":data.get("summary") or data.get("description")}
+    else:detail["evidence"]=data
+    return detail
