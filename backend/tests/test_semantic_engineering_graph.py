@@ -1,5 +1,5 @@
 from backend.app.semantic_engineering_graph import build_semantic_engineering_graph, traverse_semantic_neighbors
-from backend.app.site_model import default_site_model
+from backend.app.site_model import default_site_model, SiteModel, ProcessUnit, ProcessSection, Equipment, ProcessStream, UnitTag
 
 def test_semantic_graph_links_tag_measurement_unit_and_hypothesis():
     graph=build_semantic_engineering_graph(
@@ -35,3 +35,20 @@ def test_semantic_hierarchy_and_bounded_traversal_reach_equipment_section_unit()
     assert "equipment:fcc:regenerator" in ids
     assert neighborhood["bounded"] is True
     assert neighborhood["causal_inference"] is False
+
+
+def test_semantic_graph_uses_configured_equipment_sections_and_streams():
+    site=SiteModel("Configured Refinery",(ProcessUnit(
+        "fcc","FCC",
+        (UnitTag("cat_rate","Catalyst Rate","t/h",(),"catalyst_rate","reactor","cat_circ"),),
+        (),(ProcessSection("rr","Reaction & Regeneration"),),
+        (Equipment("regenerator","Regenerator","rr","regenerator"),Equipment("reactor","Reactor","rr","reactor")),
+        (ProcessStream("cat_circ","Catalyst Circulation","regenerator","reactor"),),
+    ),))
+    graph=build_semantic_engineering_graph(unit_key="fcc",site=site,hypotheses=[],evidence_graph={"nodes":[],"edges":[]})
+    edges={(e["from"],e["to"],e["relation"]) for e in graph["edges"]}
+    assert ("equipment:fcc:regenerator","stream:fcc:cat_circ","feeds_stream") in edges
+    assert ("stream:fcc:cat_circ","equipment:fcc:reactor","feeds_equipment") in edges
+    assert ("measurement:catalyst_rate","equipment:fcc:reactor","measurement_of") in edges
+    assert ("measurement:catalyst_rate","stream:fcc:cat_circ","measurement_of_stream") in edges
+    assert ("equipment:fcc:reactor","section:fcc:rr","belongs_to_section") in edges
