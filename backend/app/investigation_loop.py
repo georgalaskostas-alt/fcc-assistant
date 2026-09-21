@@ -21,6 +21,9 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
                                        time_window: dict[str, Any], episode_context: dict[str, Any],
                                        max_rounds: int = 3, max_total_tool_calls: int = 7) -> dict[str, Any]:
     budget = InvestigationBudget(max_rounds=max_rounds, max_actions_per_round=3, max_total_tool_calls=max_total_tool_calls)
+    # Make the caller-resolved window available to every planning round. This keeps
+    # discovery and historian reads on the same explicit bounded interval.
+    synthesis.setdefault("time_window", dict(time_window))
     rounds: list[dict[str, Any]] = []
     seen_plans: set[str] = set()
     stop_reason = "max_rounds_reached"
