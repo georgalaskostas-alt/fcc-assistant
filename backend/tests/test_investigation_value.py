@@ -41,3 +41,29 @@ def test_measurement_candidate_ranking_excludes_already_resolved_tags():
         resolved_tags=["a"],
     )
     assert [item["tag_key"] for item in ranked]==["b"]
+
+
+def test_realized_information_gain_rewards_new_series_and_correlations():
+    from backend.app.investigation_value import score_evidence_gain
+    before={"summaries":{"a":{"count":10}},"correlations":[],"temporal":{}}
+    after={
+        "summaries":{"a":{"count":10},"b":{"count":10}},
+        "correlations":[{"left":"a","right":"b","r":0.7}],
+        "temporal":{"b":{"available":True}},
+    }
+    gain=score_evidence_gain(before_analytics=before,after_analytics=after,tag_key="b")
+    assert gain["classification"]=="useful_information_gain"
+    assert gain["new_series"] is True
+    assert gain["new_correlations"]==1
+    assert gain["score"] > 0
+
+
+def test_realized_information_gain_marks_empty_historian_read():
+    from backend.app.investigation_value import score_evidence_gain
+    gain=score_evidence_gain(
+        before_analytics={"summaries":{},"correlations":[]},
+        after_analytics={"summaries":{"x":{"count":0}},"correlations":[],"temporal":{}},
+        tag_key="x",
+    )
+    assert gain["classification"]=="no_usable_data"
+    assert gain["score"]==0
