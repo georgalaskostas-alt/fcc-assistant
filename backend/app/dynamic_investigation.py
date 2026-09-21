@@ -152,17 +152,30 @@ class DynamicInvestigator:
         # historian payloads, and remains inside the authorized unit.
         episode_context: dict[str, float | str] = {}
         for evidence in combined.get("evidence_package", []):
-            if not isinstance(evidence, dict): continue
-            description = str(evidence.get("description") or "")
-            marker = "historian evidence for "
-            lowered = description.casefold()
-            if marker not in lowered: continue
-            tag = description[lowered.index(marker) + len(marker):].strip().rstrip(".")
+            if not isinstance(evidence, dict) or evidence.get("tool") != "get_history":
+                continue
             data = evidence.get("data")
-            rows = data.get("values", data.get("Values", [])) if isinstance(data, dict) else []
-            if isinstance(rows, list) and rows:
+            if not isinstance(data, dict):
+                continue
+            tag_meta = data.get("tag") if isinstance(data.get("tag"), dict) else {}
+            tag = str(tag_meta.get("key") or data.get("tag_key") or "").strip()
+            if not tag:
+                description = str(evidence.get("description") or "")
+                marker = "historian evidence for "
+                lowered = description.casefold()
+                if marker in lowered:
+                    tag = description[lowered.index(marker) + len(marker):].strip().rstrip(".")
+            payload = data.get("data", data)
+            rows = payload if isinstance(payload, list) else next(
+                (payload.get(key) for key in ("values", "Values", "items", "Items")
+                 if isinstance(payload, dict) and isinstance(payload.get(key), list)),
+                [],
+            )
+            if isinstance(rows, list) and rows and tag:
                 row = rows[-1]
                 value = row.get("value", row.get("Value")) if isinstance(row, dict) else row
+                if isinstance(value, dict):
+                    value = value.get("Value", value.get("value"))
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     episode_context[f"state.{tag}"] = float(value)
         similar_step = AgentStep(
