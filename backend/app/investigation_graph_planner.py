@@ -1,6 +1,7 @@
 """Turn bounded semantic neighborhoods into governed evidence-discovery suggestions."""
 from __future__ import annotations
 from typing import Any
+from .investigation_value import path_feedback_index
 
 def semantic_discovery_candidates(*, neighborhood:dict[str,Any], synthesis:dict[str,Any], limit:int=4)->list[dict[str,Any]]:
     resolved={str(x) for x in synthesis.get("resolved_tags") or []}
@@ -30,9 +31,9 @@ def semantic_candidates_to_actions(*, candidates:list[dict[str,Any]], unit_key:s
     actions=[]
     for item in candidates:
         if item.get("kind")=="measurement":
-            actions.append({"tool":"search_tags","value":6,"reason":item["reason"],"arguments":{"query":item["query"]},"semantic_candidate":item})
+            actions.append({"tool":"search_tags","value":int(round(float(item.get("adaptive_value") or 6))),"reason":item["reason"],"arguments":{"query":item["query"]},"semantic_candidate":item})
         elif item.get("kind")=="equipment":
-            actions.append({"tool":"search_archive","value":5,"reason":item["reason"],"arguments":{"query":item["query"],"unit_key":unit_key,"equipment_key":item["equipment_key"],"limit":6,"approved_only":True},"semantic_candidate":item})
+            actions.append({"tool":"search_archive","value":int(round(float(item.get("adaptive_value") or 5))),"reason":item["reason"],"arguments":{"query":item["query"],"unit_key":unit_key,"equipment_key":item["equipment_key"],"limit":6,"approved_only":True},"semantic_candidate":item})
     return actions
 
 
@@ -49,9 +50,17 @@ def process_path_candidates(*, process_paths:dict[str,Any], graph:dict[str,Any],
                 candidates.append({"kind":"equipment","equipment_key":node.get("equipment_key"),"query":node.get("label"),"path_relationships":relations,"reason":"Reached through configured process-path relationships; inspect approved engineering context."});break
             if node.get("kind")=="tag" and str(node.get("tag_key") or "") not in resolved:
                 candidates.append({"kind":"measurement","tag_key":node.get("tag_key"),"query":node.get("label"),"path_relationships":relations,"reason":"Reached through configured process-path relationships; inspect governed measurement."});break
+    feedback=path_feedback_index(list(synthesis.get("process_path_information_gain") or []))
     unique=[];seen=set()
     for item in candidates:
         fp=(item["kind"],item.get("tag_key") or item.get("equipment_key"))
         if fp in seen or not fp[1]:continue
-        seen.add(fp);unique.append(item)
+        seen.add(fp)
+        history=feedback.get((str(fp[1]),tuple(str(x) for x in item.get("path_relationships") or [])),{})
+        if int(history.get("no_gain") or 0)>=1 and int(history.get("useful") or 0)==0:continue
+        item["prior_path_attempts"]=int(history.get("attempts") or 0)
+        item["prior_path_mean_gain"]=float(history.get("mean_score") or 0.0)
+        item["adaptive_value"]=round(6.0+min(3.0,item["prior_path_mean_gain"])-min(3,item["prior_path_attempts"])*0.5,3)
+        unique.append(item)
+    unique.sort(key=lambda x:(-float(x.get("adaptive_value") or 0.0),str(x.get("equipment_key") or x.get("tag_key") or "")))
     return unique[:max(0,limit)]
