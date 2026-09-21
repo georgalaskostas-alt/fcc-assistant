@@ -302,7 +302,7 @@ def contextual_plan(command: str, site: SiteModel, state: dict[str, object], cur
         if move_plan is not None:
             return move_plan, move_message
 
-    remove_intent = any(token in text for token in ("αφαίρε", "αφαιρε", "βγάλε", "βγαλε", "διέγρα", "διεγρα", "remove", "delete"))
+    remove_intent = any(token in text for token in ("αφαίρε", "αφαιρε", "βγάλε", "βγαλε", "διέγρα", "διεγρα", "διαγρα", "remove", "delete"))
     graph_intent = any(token in text for token in ("γράφημα", "γραφημα", "διαγράμ", "διαγραμ", "trend", "chart"))
     global_scope = any(token in text for token in ("από παντού", "απο παντου", "σε όλες τις μονάδες", "σε ολες τις μοναδες", "και από τις δυο μονάδες", "και απο τις δυο μοναδες", "και από τις δύο μονάδες", "και απο τις δυο μοναδες", "όπου υπάρχουν", "οπου υπαρχουν", "παντού", "παντου", "everywhere", "all units"))
     all_scope = any(token in text for token in ("όλα", "ολα", "όλες", "ολες", "και τα δύο", "και τα δυο", "all", "every"))
