@@ -263,8 +263,9 @@ def _move_plan(
         }, f"Δεν μπορώ να κάνω ασφαλή αντιστοίχιση όλων των μεταβλητών στη {target.name}. Δεν μετέφερα τίποτα. Χωρίς αντιστοίχιση: {joined}{suffix}."
     if not steps:
         return {"action": "answer", "read_only": True, "requires_confirmation": False}, f"Τα επιλεγμένα γραφήματα βρίσκονται ήδη στη μονάδα {target.name}."
+    target_label = target.key.upper() if target.key.casefold() in {"fcc", "hcu", "vdu"} else target.name
     if len(steps) == 1:
-        return steps[0], f"Μετέφερα το γράφημα στη μονάδα {target.name}."
+        return steps[0], f"Μετέφερα το γράφημα στη μονάδα {target_label}."
     return {
         "action": "transaction",
         "steps": steps,
