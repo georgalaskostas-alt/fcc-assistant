@@ -1,4 +1,5 @@
 from app.process_analytics import lagged_pearson, temporal_profile
+from app.investigation_reasoning import build_deterministic_analytics
 
 
 def test_temporal_profile_reports_direction_and_onset():
