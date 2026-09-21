@@ -26,15 +26,39 @@ def build_semantic_engineering_graph(*, unit_key:str, site:SiteModel, hypotheses
     refinery_id="refinery:site";uid=f"unit:{unit_key}"
     node(refinery_id,"refinery",site.name);node(uid,"unit",unit.name if unit else unit_key);edge(uid,refinery_id,"belongs_to_refinery")
     if unit:
+        configured_sections={section.key:section for section in unit.sections}
+        configured_equipment={item.key:item for item in unit.equipment}
+        for section in unit.sections:
+            sid=f"section:{unit_key}:{section.key}";node(sid,"section",section.name,section_key=section.key);edge(sid,uid,"belongs_to_unit")
+        for item in unit.equipment:
+            eid=f"equipment:{unit_key}:{item.key}";node(eid,"equipment",item.name,equipment_key=item.key,equipment_type=item.equipment_type)
+            if item.section_key:
+                sid=f"section:{unit_key}:{item.section_key}"
+                if item.section_key not in configured_sections:node(sid,"section",item.section_key,section_key=item.section_key)
+                edge(eid,sid,"belongs_to_section")
+        for stream in unit.streams:
+            stream_id=f"stream:{unit_key}:{stream.key}";node(stream_id,"stream",stream.name,stream_key=stream.key)
+            if stream.from_equipment:edge(f"equipment:{unit_key}:{stream.from_equipment}",stream_id,"feeds_stream")
+            if stream.to_equipment:edge(stream_id,f"equipment:{unit_key}:{stream.to_equipment}","feeds_equipment")
         for tag in unit.tags:
             tid=f"tag:{tag.key}";mid=f"measurement:{tag.semantic}"
-            equipment_key,equipment_label=_equipment_for_semantic(tag.semantic);eid=f"equipment:{unit_key}:{equipment_key}"
-            section_key,section_label=_section_for_equipment(equipment_key);sid=f"section:{unit_key}:{section_key}"
+            equipment_key=tag.equipment_key
+            if equipment_key and equipment_key in configured_equipment:
+                equipment_label=configured_equipment[equipment_key].name
+            elif equipment_key:
+                equipment_label=equipment_key
+            else:
+                equipment_key,equipment_label=_equipment_for_semantic(tag.semantic)
+            eid=f"equipment:{unit_key}:{equipment_key}"
+            if equipment_key not in configured_equipment:
+                section_key,section_label=_section_for_equipment(equipment_key);sid=f"section:{unit_key}:{section_key}"
+                node(eid,"equipment",equipment_label,equipment_key=equipment_key);node(sid,"section",section_label,section_key=section_key);edge(eid,sid,"belongs_to_section");edge(sid,uid,"belongs_to_unit")
             node(tid,"tag",tag.label,engineering_unit=tag.unit,tag_key=tag.key)
             node(mid,"measurement",tag.semantic,semantic_key=tag.semantic)
-            node(eid,"equipment",equipment_label,equipment_key=equipment_key)
-            node(sid,"section",section_label,section_key=section_key)
-            edge(tid,mid,"measures");edge(mid,eid,"measurement_of");edge(eid,sid,"belongs_to_section");edge(sid,uid,"belongs_to_unit")
+            edge(tid,mid,"measures");edge(mid,eid,"measurement_of")
+            if tag.stream_key:
+                stream_id=f"stream:{unit_key}:{tag.stream_key}"
+                edge(mid,stream_id,"measurement_of_stream")
     for item in evidence_graph.get("nodes",[]):
         if not isinstance(item,dict):continue
         eid=str(item.get("id") or "");kind=str(item.get("kind") or "")
