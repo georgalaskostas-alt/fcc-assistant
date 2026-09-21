@@ -50,7 +50,7 @@ def process_path_candidates(*, process_paths:dict[str,Any], graph:dict[str,Any],
                 candidates.append({"kind":"equipment","equipment_key":node.get("equipment_key"),"query":node.get("label"),"path_relationships":relations,"reason":"Reached through configured process-path relationships; inspect approved engineering context."});break
             if node.get("kind")=="tag" and str(node.get("tag_key") or "") not in resolved:
                 candidates.append({"kind":"measurement","tag_key":node.get("tag_key"),"query":node.get("label"),"path_relationships":relations,"reason":"Reached through configured process-path relationships; inspect governed measurement."});break
-    feedback=path_feedback_index(list(synthesis.get("process_path_information_gain") or []))
+    feedback=path_feedback_index(list(synthesis.get("process_path_information_gain") or []),branch_id=str(synthesis.get("_active_path_branch_id")) if synthesis.get("_active_path_branch_id") else None)
     unique=[];seen=set()
     for item in candidates:
         fp=(item["kind"],item.get("tag_key") or item.get("equipment_key"))
@@ -84,7 +84,8 @@ def branch_process_path_candidates(*, hypotheses:list[dict[str,Any]], graph:dict
             node=nodes.get(node_id,{})
             if node.get("kind") in {"equipment","stream"} and node_id not in starts:starts.append(node_id)
         paths=trace_fn(graph=graph,start_ids=starts[:4],max_depth=4,max_paths=16)
-        candidates=process_path_candidates(process_paths=paths,graph=graph,synthesis=synthesis,limit=limit_per_branch)
+        branch_synthesis=dict(synthesis);branch_synthesis["_active_path_branch_id"]=branch_id
+        candidates=process_path_candidates(process_paths=paths,graph=graph,synthesis=branch_synthesis,limit=limit_per_branch)
         for candidate in candidates:
             item=dict(candidate);item["hypothesis_branch_id"]=branch_id
             item["hypothesis_statement"]=str(hypothesis.get("statement") or "")
