@@ -32,7 +32,9 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
         hypotheses = evaluate_hypotheses(hypotheses=build_hypothesis_candidates(analytics), synthesis=synthesis)
         plan = plan_follow_up(goal=goal, unit_key=unit_key, synthesis=synthesis, hypotheses=hypotheses, max_actions=3, round_index=round_index)
         if not plan.get("needed"):
-            stop_reason = "evidence_saturated"
+            # No actionable governed follow-up is not, by itself, proof that evidence is sufficient.
+            has_evidence = bool(synthesis.get("evidence") or synthesis.get("executions") or synthesis.get("history"))
+            stop_reason = "evidence_saturated" if hypotheses and has_evidence else "no_new_evidence"
             break
         fingerprint = json.dumps(plan.get("actions", []), sort_keys=True, default=str)
         if fingerprint in seen_plans:
