@@ -1,6 +1,7 @@
 """Reconcile autonomous follow-up tool results into structured investigation state."""
 from __future__ import annotations
 from typing import Any
+from .investigation_value import rank_measurement_candidates
 
 
 def _successful_data(run: dict[str, Any], tool: str) -> list[Any]:
@@ -71,15 +72,16 @@ def reconcile_follow_up(synthesis: dict[str, Any], result: dict[str, Any]) -> di
         items = _dedupe([*before, *tags], ("key", "tag_key", "id"))
         current.update({"attempted": True, "items": items, "count": len(items)})
         synthesis["discovered_tags"] = current
-        resolved = {str(value) for value in (synthesis.get("resolved_tags") or [])}
-        pending = []
-        for row in items:
-            if not isinstance(row, dict):
-                continue
-            key = str(row.get("key") or row.get("tag_key") or "").strip()
-            if key and key not in resolved:
-                pending.append(key)
-        synthesis["pending_history_tags"] = list(dict.fromkeys(pending))
+        resolved = [str(value) for value in (synthesis.get("resolved_tags") or [])]
+        focus = str(synthesis.get("investigation_focus") or synthesis.get("goal") or "")
+        ranked = rank_measurement_candidates(
+            candidates=items,
+            focus=focus,
+            resolved_tags=resolved,
+            limit=12,
+        )
+        synthesis["measurement_candidate_ranking"] = ranked
+        synthesis["pending_history_tags"] = [item["tag_key"] for item in ranked]
 
     if histories:
         current = synthesis.get("history_evidence") if isinstance(synthesis.get("history_evidence"), dict) else {}
