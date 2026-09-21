@@ -34,3 +34,17 @@ def test_reconciles_discovered_tags_and_history_without_duplicates():
     assert counts["histories_added"]==1
     assert synthesis["discovered_tags"]["items"][0]["key"]=="regenerator_dp"
     assert synthesis["history_evidence"]["count"]==1
+
+
+def test_reconciliation_queues_discovered_tags_by_information_value():
+    synthesis={"goal":"Investigate regenerator temperature","resolved_tags":[]}
+    run={"executions":[{
+      "step":{"tool_name":"search_tags"},"status":"succeeded",
+      "result":{"data":[
+        {"key":"feed_flow","label":"Feed Flow","semantic_key":"feed_flow","unit":"m3/h"},
+        {"key":"regenerator_temp","label":"Regenerator Temperature","semantic_key":"regenerator_temperature","unit":"C"},
+      ]}
+    }]}
+    reconcile_follow_up(synthesis,{"run":run})
+    assert synthesis["pending_history_tags"][0]=="regenerator_temp"
+    assert synthesis["measurement_candidate_ranking"][0]["tag_key"]=="regenerator_temp"
