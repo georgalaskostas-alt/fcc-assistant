@@ -116,3 +116,24 @@ def traverse_semantic_neighbors(*, graph:dict[str,Any], start_ids:list[str], max
             if neighbor not in visited and len(visited)<max_nodes:
                 visited.add(neighbor);frontier.append((neighbor,depth+1))
     return {"start_ids":[x for x in start_ids if x in nodes],"nodes":[nodes[x] for x in visited],"paths":paths,"max_depth":max_depth,"bounded":True,"causal_inference":False}
+
+
+def trace_process_paths(*, graph:dict[str,Any], start_ids:list[str], max_depth:int=4, max_paths:int=24)->dict[str,Any]:
+    """Traverse directed engineering paths. Relationship edges express configured context, never proven causality."""
+    allowed={"feeds_stream","feeds_equipment","upstream_of","downstream_of","pressure_influence","temperature_influence","flow_influence","heat_influence","material_flow","signal_context"}
+    adjacency:dict[str,list[tuple[str,str]]]={}
+    for item in graph.get("edges",[]):
+        if not isinstance(item,dict):continue
+        source,target,relation=str(item.get("from") or ""),str(item.get("to") or ""),str(item.get("relation") or "")
+        if source and target and relation in allowed:adjacency.setdefault(source,[]).append((target,relation))
+    paths=[];queue=[(start,[start],[]) for start in start_ids]
+    while queue and len(paths)<max_paths:
+        current,nodes,relations=queue.pop(0)
+        if len(relations)>=max_depth:continue
+        for target,relation in adjacency.get(current,[]):
+            if target in nodes:continue
+            new_nodes=nodes+[target];new_relations=relations+[relation]
+            paths.append({"nodes":new_nodes,"relationships":new_relations,"depth":len(new_relations),"causal_status":"not_established"})
+            queue.append((target,new_nodes,new_relations))
+            if len(paths)>=max_paths:break
+    return {"start_ids":start_ids,"paths":paths,"bounded":True,"directed":True,"causal_inference":False}
