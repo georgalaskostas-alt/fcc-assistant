@@ -34,3 +34,40 @@ def test_real_historian_payload_keeps_tag_identity_in_analytics():
     analytics=build_deterministic_analytics(synthesis)
     assert "regenerator_dp" in analytics["summaries"]
     assert analytics["summaries"]["regenerator_dp"]["count"]==3
+
+def test_planner_resolves_greek_yesterday_as_previous_local_calendar_day():
+    from datetime import datetime, timezone
+    from app.investigation_planner import InvestigationPlanner
+
+    planner = InvestigationPlanner(
+        now_provider=lambda: datetime(2026, 9, 22, 7, 41, 16, tzinfo=timezone.utc),
+        site_timezone="Europe/Athens",
+    )
+
+    intent = planner.understand(
+        "Γιατί ανέβηκε το ΔP του regenerator χθες;",
+        unit_key="fcc",
+    )
+
+    assert intent.period_interpretation == "previous_local_calendar_day"
+    assert intent.start_time == "2026-09-20T21:00:00+00:00"
+    assert intent.end_time == "2026-09-21T21:00:00+00:00"
+
+
+def test_planner_resolves_english_yesterday_as_previous_local_calendar_day():
+    from datetime import datetime, timezone
+    from app.investigation_planner import InvestigationPlanner
+
+    planner = InvestigationPlanner(
+        now_provider=lambda: datetime(2026, 9, 22, 7, 41, 16, tzinfo=timezone.utc),
+        site_timezone="Europe/Athens",
+    )
+
+    intent = planner.understand(
+        "Why did regenerator DP increase yesterday?",
+        unit_key="fcc",
+    )
+
+    assert intent.period_interpretation == "previous_local_calendar_day"
+    assert intent.start_time == "2026-09-20T21:00:00+00:00"
+    assert intent.end_time == "2026-09-21T21:00:00+00:00"

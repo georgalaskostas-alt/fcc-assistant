@@ -43,7 +43,13 @@ class InvestigationPlanner:
         except ZoneInfoNotFoundError as exc:
             raise ValueError(f"Unknown refinery site timezone: {self.site_timezone}") from exc
 
-    def understand(self, goal: str, *, unit_key: str) -> InvestigationIntent:
+    def understand(
+        self,
+        goal: str,
+        *,
+        unit_key: str,
+        inherited_time_window: dict[str, str] | None = None,
+    ) -> InvestigationIntent:
         text = goal.strip()
         if not text:
             raise ValueError("Investigation goal is required")
@@ -57,13 +63,40 @@ class InvestigationPlanner:
         now_local = supplied_now.astimezone(self._site_tz)
         lowered = _search_text(text)
 
-        # `_search_text` removes Greek diacritics, so match normalized Greek tokens.
-        if "χθεσ" in lowered or "χτεσ" in lowered or "yesterday" in lowered:
+        yesterday_tokens = (
+            _search_text("χθες"),
+            _search_text("χτες"),
+            "yesterday",
+        )
+        has_explicit_period = (
+            any(token in lowered for token in yesterday_tokens)
+            or "τελευταιεσ 24" in lowered
+            or "τελευταια 24" in lowered
+            or "last 24" in lowered
+        )
+
+        if inherited_time_window and not has_explicit_period:
+            start_raw = inherited_time_window.get("start")
+            end_raw = inherited_time_window.get("end")
+            if not start_raw or not end_raw:
+                raise ValueError("Inherited investigation time window requires start and end")
+            start = datetime.fromisoformat(start_raw)
+            end = datetime.fromisoformat(end_raw)
+            period = inherited_time_window.get("interpretation") or "inherited"
+        elif any(token in lowered for token in yesterday_tokens):
             day = now_local.date() - timedelta(days=1)
             start_local = datetime.combine(day, datetime.min.time(), tzinfo=self._site_tz)
             end_local = start_local + timedelta(days=1)
-            start, end, period = start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc), "previous_local_calendar_day"
-        elif "τελευταιεσ 24" in lowered or "τελευταια 24" in lowered or "last 24" in lowered:
+            start, end, period = (
+                start_local.astimezone(timezone.utc),
+                end_local.astimezone(timezone.utc),
+                "previous_local_calendar_day",
+            )
+        elif (
+            "τελευταιεσ 24" in lowered
+            or "τελευταια 24" in lowered
+            or "last 24" in lowered
+        ):
             end = supplied_now.astimezone(timezone.utc)
             start = end - timedelta(hours=24)
             period = "rolling_24h"

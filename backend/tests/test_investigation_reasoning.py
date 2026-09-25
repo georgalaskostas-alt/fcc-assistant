@@ -71,3 +71,23 @@ def test_validator_rejects_process_control_action():
     result = validate_reasoning_text("Increase the controller setpoint to reduce the deviation.")
     assert result["valid"] is False
     assert any(item["type"] == "process_control_action" for item in result["violations"])
+
+
+def test_extrema_with_timestamps_are_deterministic():
+    from backend.app.investigation_reasoning import _extrema_with_timestamps
+
+    payload = {
+        "values": [
+            {"timestamp": "2026-09-21T00:00:00+03:00", "value": 0.72},
+            {"timestamp": "2026-09-21T08:15:00+03:00", "value": 0.9281},
+            {"timestamp": "2026-09-21T12:30:00+03:00", "value": 0.6955},
+            {"timestamp": "2026-09-21T23:59:00+03:00", "value": 0.84},
+        ]
+    }
+
+    result = _extrema_with_timestamps(payload)
+
+    assert result["max"] == 0.9281
+    assert result["max_timestamp"] == "2026-09-21T08:15:00+03:00"
+    assert result["min"] == 0.6955
+    assert result["min_timestamp"] == "2026-09-21T12:30:00+03:00"

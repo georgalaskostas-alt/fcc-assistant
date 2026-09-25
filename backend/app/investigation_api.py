@@ -27,9 +27,15 @@ class InvestigationContinueRequest(BaseModel):
     unit_key: str = Field(min_length=1, max_length=80)
 
 
+class InvestigationPreviousContext(BaseModel):
+    resolved_tags: list[str] = Field(default_factory=list, max_length=12)
+    time_window: dict[str, str] | None = None
+
+
 class InvestigationRequest(BaseModel):
     goal: str = Field(min_length=3, max_length=4000)
     unit_key: str = Field(min_length=1, max_length=80)
+    previous_context: InvestigationPreviousContext | None = None
 
 
 
@@ -69,7 +75,17 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
         registry = build_refinery_tool_registry(tag_service=tag_service)
         identity = active_identity()
         context = _local_context(identity, request.unit_key)
-        result = await DynamicInvestigator(registry).investigate(goal=request.goal, unit_key=request.unit_key, context=context)
+        previous_context = (
+            request.previous_context.model_dump()
+            if request.previous_context
+            else None
+        )
+        result = await DynamicInvestigator(registry).investigate(
+            goal=request.goal,
+            unit_key=request.unit_key,
+            context=context,
+            previous_context=previous_context,
+        )
 
         time_window = result.synthesis.get("time_window") if isinstance(result.synthesis, dict) else None
         build = runtime_build_identity()

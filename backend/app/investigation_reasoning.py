@@ -84,12 +84,94 @@ def _trend_points(payload: Any, *, max_points: int = 120) -> list[dict[str, Any]
     return sampled[:max_points]
 
 
+def _extrema_with_timestamps(payload: Any) -> dict[str, Any]:
+    """Return deterministic extrema and their source timestamps."""
+    current = payload
+
+    for _ in range(3):
+        if not isinstance(current, dict):
+            break
+
+        nested = current.get("data")
+        if isinstance(nested, (dict, list)):
+            current = nested
+            continue
+
+        break
+
+    if isinstance(current, list):
+        rows = current
+    elif isinstance(current, dict):
+        rows = next(
+            (
+                current.get(key)
+                for key in ("values", "Values", "items", "Items")
+                if isinstance(current.get(key), list)
+            ),
+            [],
+        )
+    else:
+        rows = []
+
+    points: list[tuple[float, str | None]] = []
+
+    for row in rows:
+        if isinstance(row, dict):
+            value = row.get("value", row.get("Value"))
+            timestamp = row.get("timestamp", row.get("Timestamp"))
+
+            if isinstance(value, dict):
+                value = value.get("Value", value.get("value"))
+        else:
+            value = row
+            timestamp = None
+
+        if isinstance(value, bool):
+            continue
+
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+
+        points.append(
+            (
+                numeric,
+                str(timestamp) if timestamp is not None else None,
+            )
+        )
+
+    if not points:
+        return {
+            "min": None,
+            "min_timestamp": None,
+            "max": None,
+            "max_timestamp": None,
+        }
+
+    min_value, min_timestamp = min(points, key=lambda point: point[0])
+    max_value, max_timestamp = max(points, key=lambda point: point[0])
+
+    return {
+        "min": min_value,
+        "min_timestamp": min_timestamp,
+        "max": max_value,
+        "max_timestamp": max_timestamp,
+    }
+
+
 def build_deterministic_analytics(synthesis: dict[str, Any]) -> dict[str, Any]:
     histories = [item for item in synthesis.get("evidence_package", []) if item.get("tool") == "get_history"]
     summaries: dict[str, Any] = {}; deviations: dict[str, Any] = {}; temporal: dict[str, Any] = {}; trends: dict[str, Any] = {}; series: list[tuple[str, str, Any]] = []; evidence_labels: dict[str, str] = {}
     for item in histories:
         evidence_id = str(item.get("evidence_id", "history")); tag_key = _tag_from_history_item(item) or evidence_id; evidence_labels[evidence_id] = tag_key; payload = _history_payload(item)
-        summaries[tag_key] = {"evidence_id": evidence_id, **summarize_series(payload)}; deviations[tag_key] = {"evidence_id": evidence_id, **detect_deviation(payload)}; temporal[tag_key] = {"evidence_id": evidence_id, **temporal_profile(payload)}; trends[tag_key] = {"evidence_id": evidence_id, "points": _trend_points(payload)}; series.append((evidence_id, tag_key, payload))
+        summary = summarize_series(payload)
+        summary.update(_extrema_with_timestamps(payload))
+        summaries[tag_key] = {"evidence_id": evidence_id, **summary}
+        deviations[tag_key] = {"evidence_id": evidence_id, **detect_deviation(payload)}
+        temporal[tag_key] = {"evidence_id": evidence_id, **temporal_profile(payload)}
+        trends[tag_key] = {"evidence_id": evidence_id, "points": _trend_points(payload)}
+        series.append((evidence_id, tag_key, payload))
     correlations = []
     for (left_id, left_tag, left), (right_id, right_tag, right) in combinations(series, 2): correlations.append({"left": left_tag, "right": right_tag, "left_evidence_id": left_id, "right_evidence_id": right_id, **pearson(left, right), "lagged": lagged_pearson(left, right)})
     return {"evidence_labels": evidence_labels, "summaries": summaries, "deviations": deviations, "temporal": temporal, "correlations": correlations, "trends": trends}
@@ -109,6 +191,10 @@ def build_structured_claims(analytics: dict[str, Any], *, data_quality: str | No
         evidence_id = str(summary.get("evidence_id") or "")
         start, end, delta = summary.get("first"), summary.get("last"), summary.get("delta")
         statement = f"{tag}: {summary.get('count')} samples; mean={summary.get('mean')}, min={summary.get('min')}, max={summary.get('max')}"
+        if summary.get("min_timestamp") is not None:
+            statement += f", min_timestamp={summary.get('min_timestamp')}"
+        if summary.get("max_timestamp") is not None:
+            statement += f", max_timestamp={summary.get('max_timestamp')}"
         if start is not None and end is not None: statement += f", first={start}, last={end}"
         if delta is not None: statement += f", delta={delta}"
         claims.append({"id": f"observation:{tag}", "type": "measured_fact", "statement": statement, "evidence_ids": [evidence_id] if evidence_id else [], "evidence_status": evidence_status, "confidence": "high", "required_evidence": []})
@@ -138,8 +224,48 @@ def _compact_discovery(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _reasoning_context(*, goal: str, synthesis: dict[str, Any], data_source: dict[str, Any], analytics: dict[str, Any]) -> dict[str, Any]:
-    discovery = [_compact_discovery(item) for item in synthesis.get("discovery_evidence", []) if isinstance(item, dict)]; llm_analytics = {key: value for key, value in analytics.items() if key != "trends"}
-    return {"goal": goal, "data_source": {key: data_source.get(key) for key in ("mode", "data_quality", "source", "process_writes") if key in data_source}, "time_window": synthesis.get("time_window"), "resolved_tags": synthesis.get("resolved_tags", []), "deterministic_analytics": llm_analytics, "discovery_evidence": discovery, "archive_evidence": synthesis.get("archive_evidence", {}), "event_evidence": synthesis.get("event_evidence", {}), "similar_episodes": synthesis.get("similar_episodes", {}), "limitations": synthesis.get("limitations", [])}
+    discovery = [
+        _compact_discovery(item)
+        for item in synthesis.get("discovery_evidence", [])
+        if isinstance(item, dict)
+    ]
+    llm_analytics = {
+        key: value
+        for key, value in analytics.items()
+        if key != "trends"
+    }
+
+    # Extrema timestamps remain authoritative deterministic evidence,
+    # but raw historian timestamps are not sent to the generative model.
+    summaries = llm_analytics.get("summaries")
+    if isinstance(summaries, dict):
+        llm_analytics["summaries"] = {
+            tag: {
+                key: value
+                for key, value in summary.items()
+                if key not in {"min_timestamp", "max_timestamp"}
+            }
+            if isinstance(summary, dict)
+            else summary
+            for tag, summary in summaries.items()
+        }
+
+    return {
+        "goal": goal,
+        "data_source": {
+            key: data_source.get(key)
+            for key in ("mode", "data_quality", "source", "process_writes")
+            if key in data_source
+        },
+        "time_window": synthesis.get("time_window"),
+        "resolved_tags": synthesis.get("resolved_tags", []),
+        "deterministic_analytics": llm_analytics,
+        "discovery_evidence": discovery,
+        "archive_evidence": synthesis.get("archive_evidence", {}),
+        "event_evidence": synthesis.get("event_evidence", {}),
+        "similar_episodes": synthesis.get("similar_episodes", {}),
+        "limitations": synthesis.get("limitations", []),
+    }
 
 
 def validate_reasoning_text(text: str) -> dict[str, Any]:
@@ -175,6 +301,148 @@ def _validated_fallback(*, analytics: dict[str, Any], data_source: dict[str, Any
     return "\n".join(lines)
 
 
+def _is_deterministic_statistical_followup(
+    goal: str,
+    synthesis: dict[str, Any],
+) -> bool:
+    """Identify bounded descriptive follow-ups answerable from historian analytics."""
+    import re
+    import unicodedata
+
+    if not synthesis.get("followup_fast_path"):
+        return False
+
+    def normalize(value: str) -> str:
+        decomposed = unicodedata.normalize("NFD", value.casefold())
+        value = "".join(
+            ch for ch in decomposed
+            if unicodedata.category(ch) != "Mn"
+        )
+        return re.sub(r"[^a-z0-9α-ω]+", " ", value).strip()
+
+    text = normalize(goal)
+    tokens = set(text.split())
+
+    statistical_tokens = {
+        "μεγιστο", "μεγιστη", "μεγιστος",
+        "ελαχιστο", "ελαχιστη", "ελαχιστος",
+        "μεσο", "μεση", "μεσος", "μεσου",
+        "maximum", "max",
+        "minimum", "min",
+        "average", "mean",
+    }
+
+    statistical_stems = (
+        "μεγιστ",
+        "ελαχιστ",
+        "μεσ",
+    )
+
+    return bool(tokens & statistical_tokens) or any(
+        token.startswith(statistical_stems)
+        for token in tokens
+    )
+
+
+def _deterministic_statistical_text(
+    goal: str,
+    analytics: dict[str, Any],
+    *,
+    simulated: bool,
+) -> str:
+    """Render bounded statistical evidence without invoking a generative model."""
+    import re
+    import unicodedata
+
+    def normalize(value: str) -> str:
+        decomposed = unicodedata.normalize("NFD", value.casefold())
+        value = "".join(
+            ch for ch in decomposed
+            if unicodedata.category(ch) != "Mn"
+        )
+        return re.sub(r"[^a-z0-9α-ω]+", " ", value).strip()
+
+    text = normalize(goal)
+    summaries = analytics.get("summaries", {})
+    lines: list[str] = []
+
+    wants_max = any(
+        token in text.split()
+        for token in ("μεγιστο", "μεγιστη", "μεγιστος", "maximum", "max")
+    )
+    wants_min = any(
+        token in text.split()
+        for token in ("ελαχιστο", "ελαχιστη", "ελαχιστος", "minimum", "min")
+    )
+    wants_mean = any(
+        token in ("average", "mean") or token.startswith("μεσ")
+        for token in text.split()
+    )
+
+    greek = any("\u0370" <= ch <= "\u03ff" for ch in goal)
+
+    for tag, summary in summaries.items():
+        if not isinstance(summary, dict) or not summary.get("count"):
+            continue
+
+        if greek:
+            parts = [str(tag)]
+
+            if wants_max:
+                part = f"μέγιστο={summary.get('max')}"
+                if summary.get("max_timestamp") is not None:
+                    part += f" στις {summary.get('max_timestamp')}"
+                parts.append(part)
+
+            if wants_min:
+                part = f"ελάχιστο={summary.get('min')}"
+                if summary.get("min_timestamp") is not None:
+                    part += f" στις {summary.get('min_timestamp')}"
+                parts.append(part)
+
+            if wants_mean:
+                parts.append(f"μέσος όρος={summary.get('mean')}")
+
+            lines.append(" · ".join(parts))
+        else:
+            parts = [str(tag)]
+
+            if wants_max:
+                part = f"maximum={summary.get('max')}"
+                if summary.get("max_timestamp") is not None:
+                    part += f" at {summary.get('max_timestamp')}"
+                parts.append(part)
+
+            if wants_min:
+                part = f"minimum={summary.get('min')}"
+                if summary.get("min_timestamp") is not None:
+                    part += f" at {summary.get('min_timestamp')}"
+                parts.append(part)
+
+            if wants_mean:
+                parts.append(f"mean={summary.get('mean')}")
+
+            lines.append(" · ".join(parts))
+
+    if not lines:
+        return (
+            "Δεν υπάρχουν επαρκή αριθμητικά δεδομένα για τον ζητούμενο υπολογισμό."
+            if greek
+            else
+            "Insufficient numerical evidence for the requested calculation."
+        )
+
+    if simulated:
+        lines.append(
+            "SIMULATED DEVELOPMENT DATA: δεν αποτελεί λειτουργικό συμπέρασμα μονάδας."
+            if greek
+            else
+            "SIMULATED DEVELOPMENT DATA: this is not an operational plant conclusion."
+        )
+
+    return "\n".join(lines)
+
+
 async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], data_source: dict[str, Any]) -> dict[str, Any]:
     analytics = build_deterministic_analytics(synthesis)
     claims = build_structured_claims(analytics, data_quality=str(data_source.get("data_quality") or ""))
@@ -195,7 +463,41 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
         graph=semantic_graph, start_ids=hypothesis_ids, max_depth=3, max_nodes=32
     )
     conclusion = build_evidence_aware_conclusion(analytics=analytics, hypotheses=hypotheses, synthesis=synthesis)
-    if not synthesis.get("ready_for_reasoning"): return {"available": False, "model": None, "text": "Insufficient source-grounded evidence for engineering reasoning.", "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {"valid": True, "violations": []}}
+
+    if _is_deterministic_statistical_followup(goal, synthesis):
+        return {
+            "available": True,
+            "model": None,
+            "mode": "deterministic-statistical-followup",
+            "text": _deterministic_statistical_text(
+                goal,
+                analytics,
+                simulated=data_source.get("data_quality") == "SIMULATED",
+            ),
+            "analytics": analytics,
+            "claims": claims,
+            "hypotheses": hypotheses,
+            "evidence_conclusion": conclusion,
+            "stop_decision": stop_decision,
+            "follow_up": follow_up,
+            "investigation_trail": trail,
+            "validation": {"valid": True, "violations": []},
+        }
+
+    if not synthesis.get("ready_for_reasoning"):
+        return {
+            "available": False,
+            "model": None,
+            "text": "Insufficient source-grounded evidence for engineering reasoning.",
+            "analytics": analytics,
+            "claims": claims,
+            "hypotheses": hypotheses,
+            "evidence_conclusion": conclusion,
+            "stop_decision": stop_decision,
+            "follow_up": follow_up,
+            "investigation_trail": trail,
+            "validation": {"valid": True, "violations": []},
+        }
     context = _reasoning_context(goal=goal, synthesis=synthesis, data_source=data_source, analytics=analytics)
     try:
         response = await LocalAIClient().generate("Produce a concise evidence-grounded engineering assessment. Report measured observations first. Treat correlations only as associations. Put possible mechanisms only under hypotheses and state what additional evidence would validate or reject each hypothesis.", context, system_prompt=INVESTIGATION_SYSTEM_PROMPT, temperature=0.05)
