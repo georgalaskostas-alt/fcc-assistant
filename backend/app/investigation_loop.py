@@ -89,7 +89,13 @@ async def run_autonomous_evidence_loop(*, registry: ToolRegistry, context: ToolC
             plan["semantic_candidates"]=graph_candidates
         if not plan.get("needed"):
             # No actionable governed follow-up is not, by itself, proof that evidence is sufficient.
-            has_evidence = bool(synthesis.get("evidence") or synthesis.get("executions") or synthesis.get("history"))
+            has_evidence = bool(
+                synthesis.get("evidence_package")
+                or synthesis.get("discovery_evidence")
+                or synthesis.get("archive_evidence", {}).get("count")
+                or synthesis.get("event_evidence", {}).get("count")
+                or synthesis.get("similar_episodes", {}).get("count")
+            )
             stop_reason = "evidence_saturated" if hypotheses and has_evidence else "no_new_evidence"
             break
         fingerprint = json.dumps(plan.get("actions", []), sort_keys=True, default=str)
