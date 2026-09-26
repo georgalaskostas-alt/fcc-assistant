@@ -83,3 +83,15 @@ def test_adaptive_branch_budget_preserves_exploration_for_untried_branch():
     allocation=adaptive_branch_tool_budget(branches=branches,remaining_calls=3,path_gain_history=history,max_actions=3)
     assert allocation.get("h2",0)==1
     assert allocation.get("h1",0)>=1
+
+
+def test_loop_recognizes_canonical_evidence_package_as_existing_evidence():
+    import inspect
+    from backend.app import investigation_loop
+
+    source = inspect.getsource(investigation_loop.run_autonomous_evidence_loop)
+
+    # The canonical investigation state stores governed evidence here.  A stop
+    # decision must not look only for legacy synthesis keys.
+    assert 'synthesis.get("evidence_package")' in source
+    assert 'synthesis.get("discovery_evidence")' in source
