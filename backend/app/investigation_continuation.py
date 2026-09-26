@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from .agent_tools import ToolContext, ToolRegistry
 from .investigation_loop import run_autonomous_evidence_loop
-from .investigation_store import InvestigationStore
+from .investigation_store import EvidenceRecord, InvestigationStore
 from .investigation_reasoning import reason_about_investigation
 from .investigation_access import authorize_investigation
 
@@ -37,6 +37,37 @@ async def continue_saved_investigation(*, registry:ToolRegistry,store:Investigat
         synthesis=synthesis,time_window={"start":window.get("start",""),"end":window.get("end","")},
         episode_context={},max_rounds=max_rounds)
     synthesis["autonomous_investigation"]=loop
+
+    # Persist genuinely new governed evidence before checkpointing.  Without
+    # this, a continuation can discover useful evidence for the current answer
+    # but the next resume reconstructs its state from the older store contents.
+    existing_source_ids = {e.source_id for e in item.evidence}
+    for evidence in synthesis.get("evidence_package", []):
+        if not isinstance(evidence, dict):
+            continue
+        source_id = str(
+            evidence.get("stable_evidence_id")
+            or evidence.get("evidence_id")
+            or ""
+        ).strip()
+        if not source_id or source_id in existing_source_ids:
+            continue
+        payload = evidence.get("data") if isinstance(evidence.get("data"), dict) else {}
+        provenance = evidence.get("provenance") if isinstance(evidence.get("provenance"), dict) else {}
+        store.add_evidence(
+            item.id,
+            EvidenceRecord(
+                source_type=str(evidence.get("tool") or "tool"),
+                source_id=source_id,
+                summary=str(evidence.get("description") or evidence.get("tool") or "Investigation evidence"),
+                provenance=provenance,
+                payload=payload,
+            ),
+        )
+        existing_source_ids.add(source_id)
+    item = store.get(item.id) or item
+    synthesis["evidence_count"] = len(item.evidence)
+
     reasoning=await reason_about_investigation(goal=item.goal,synthesis=synthesis,data_source=data_source)
     trail=reasoning.get("investigation_trail") if isinstance(reasoning.get("investigation_trail"),dict) else {}
     item=store.save_checkpoint(item.id,trail=trail,resume_context={
