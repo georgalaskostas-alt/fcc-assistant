@@ -141,7 +141,7 @@ async def continue_investigation(request: InvestigationContinueRequest) -> dict[
         tag_service, source = investigation_tag_service()
         registry = build_refinery_tool_registry(tag_service=tag_service)
         identity = active_identity()
-        context = _local_context(identity.actor_id, request.unit_key)
+        context = _local_context(identity, request.unit_key)
         service = InvestigationService(registry=registry, store=InvestigationStore())
         result = await service.continue_from_conversation(
             user_id=identity.actor_id, utterance=request.utterance, context=context,
