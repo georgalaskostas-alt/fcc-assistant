@@ -163,8 +163,34 @@ def _extrema_with_timestamps(payload: Any) -> dict[str, Any]:
 def build_deterministic_analytics(synthesis: dict[str, Any]) -> dict[str, Any]:
     histories = [item for item in synthesis.get("evidence_package", []) if item.get("tool") == "get_history"]
     summaries: dict[str, Any] = {}; deviations: dict[str, Any] = {}; temporal: dict[str, Any] = {}; trends: dict[str, Any] = {}; series: list[tuple[str, str, Any]] = []; evidence_labels: dict[str, str] = {}
+    # Resume checkpoints can contain legacy autonomous historian records whose
+    # persisted description/provenance did not carry a semantic tag key.  Do
+    # not promote their opaque evidence IDs into process-variable names.  When
+    # their payload is identical to an already identified historian series,
+    # bind them to that canonical tag and keep only one analytical series.
+    canonical_payload_tags: list[tuple[Any, str]] = []
+    seen_analytical_series: set[tuple[str, str]] = set()
     for item in histories:
-        evidence_id = str(item.get("evidence_id", "history")); tag_key = _tag_from_history_item(item) or evidence_id; evidence_labels[evidence_id] = tag_key; payload = _history_payload(item)
+        evidence_id = str(item.get("evidence_id", "history"))
+        payload = _history_payload(item)
+        tag_key = _tag_from_history_item(item)
+        if tag_key is None:
+            tag_key = next(
+                (known_tag for known_payload, known_tag in canonical_payload_tags if known_payload == payload),
+                None,
+            )
+        if tag_key is None:
+            # The evidence remains available in provenance/canonical sources,
+            # but an opaque ID is not a process tag and must not generate
+            # spurious hypotheses or correlations.
+            continue
+        evidence_labels[evidence_id] = tag_key
+        canonical_payload_tags.append((payload, tag_key))
+        payload_fingerprint = repr(payload)
+        analytical_key = (tag_key, payload_fingerprint)
+        if analytical_key in seen_analytical_series:
+            continue
+        seen_analytical_series.add(analytical_key)
         summary = summarize_series(payload)
         summary.update(_extrema_with_timestamps(payload))
         summaries[tag_key] = {"evidence_id": evidence_id, **summary}
