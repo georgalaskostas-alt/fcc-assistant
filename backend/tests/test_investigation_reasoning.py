@@ -19,6 +19,37 @@ def test_reasoning_context_does_not_include_raw_historian_arrays():
     assert "t1999" not in str(context)
 
 
+def test_reasoning_context_compacts_large_deviation_arrays():
+    analytics = {
+        "summaries": {"regenerator_dp": {"count": 721, "mean": 0.85}},
+        "temporal": {"regenerator_dp": {"available": True, "direction": "increasing"}},
+        "correlations": [],
+        "trends": {"regenerator_dp": {"points": [{"x": str(i), "y": float(i)} for i in range(120)]}},
+        "evidence_labels": {"history": "regenerator_dp"},
+        "deviations": {
+            "regenerator_dp": {
+                "available": True,
+                "count": 721,
+                "mean": 0.85,
+                "stdev": 0.05,
+                "sigma": 3.0,
+                "deviations": [{"index": i, "value": float(i), "z_score": 4.0} for i in range(500)],
+            }
+        },
+    }
+    context = _reasoning_context(
+        goal="why",
+        synthesis={"time_window": {}, "resolved_tags": ["regenerator_dp"], "limitations": []},
+        data_source={"mode": "simulated", "data_quality": "SIMULATED"},
+        analytics=analytics,
+    )
+    compact = context["deterministic_analytics"]
+    assert "trends" not in compact
+    assert "evidence_labels" not in compact
+    assert "deviations" not in compact["deviations"]["regenerator_dp"]
+    assert compact["deviations"]["regenerator_dp"]["deviation_count"] == 500
+
+
 def test_correlations_use_semantic_tag_labels_and_keep_evidence_ids():
     left = [{"Value": float(i)} for i in range(10)]; right = [{"Value": float(i * 2)} for i in range(10)]
     synthesis = {"evidence_package": [
