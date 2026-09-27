@@ -13,7 +13,7 @@ from .dynamic_investigation import DynamicInvestigator
 from .engineering_claim_guard import claims_only_text, validate_engineering_narrative
 from .investigation_data_source import investigation_tag_service
 from .investigation_reasoning import reason_about_investigation
-from .investigation_store import InvestigationStore
+from .investigation_store import EvidenceRecord, InvestigationStore
 from .investigation_service import InvestigationService
 from .investigation_continuation import continue_saved_investigation
 from .refinery_model import AccessGrant, RefineryScope, ScopeKind, UnitScope, default_engineering_domains
@@ -98,6 +98,49 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
 
         reasoning = await reason_about_investigation(goal=request.goal, synthesis=result.synthesis, data_source=source)
 
+        # Every initial run is durable.  The dynamic investigator owns the rich
+        # evidence workflow, while the service/store own persistence and resume.
+        # Persist the governed evidence package and checkpoint the exact context
+        # needed by /saved and /continue.
+        store = InvestigationStore()
+        saved = store.create(
+            goal=request.goal,
+            user_id=identity.actor_id,
+            unit_key=request.unit_key,
+        )
+        seen_source_ids: set[str] = set()
+        for evidence in result.synthesis.get("evidence_package", []):
+            if not isinstance(evidence, dict):
+                continue
+            source_id = str(
+                evidence.get("stable_evidence_id")
+                or evidence.get("evidence_id")
+                or ""
+            ).strip()
+            if not source_id or source_id in seen_source_ids:
+                continue
+            payload = evidence.get("data") if isinstance(evidence.get("data"), dict) else {}
+            provenance = evidence.get("provenance") if isinstance(evidence.get("provenance"), dict) else {}
+            store.add_evidence(
+                saved.id,
+                EvidenceRecord(
+                    source_type=str(evidence.get("tool") or "tool"),
+                    source_id=source_id,
+                    summary=str(evidence.get("description") or evidence.get("tool") or "Investigation evidence"),
+                    provenance=provenance,
+                    payload=payload,
+                ),
+            )
+            seen_source_ids.add(source_id)
+        service = InvestigationService(registry=registry, store=store)
+        saved = service.checkpoint(
+            saved.id,
+            trail=reasoning.get("investigation_trail")
+            if isinstance(reasoning.get("investigation_trail"), dict)
+            else {},
+            synthesis=result.synthesis,
+        )
+
         # A prompt is not a safety boundary. Re-check the final generated text
         # against evidence actually returned by governed tools before display.
         final_validation = validate_engineering_narrative(str(reasoning.get("text") or ""), allowed_units=_source_units(result.synthesis))
@@ -120,6 +163,7 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
             "analysis": result.analysis,
             "synthesis": result.synthesis,
             "reasoning": reasoning,
+            "investigation": saved.to_dict(),
         }
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
