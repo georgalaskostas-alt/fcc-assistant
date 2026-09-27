@@ -25,6 +25,7 @@ router = APIRouter(prefix="/api/v1/investigations", tags=["investigations"])
 class InvestigationContinueRequest(BaseModel):
     utterance: str = Field(min_length=2, max_length=4000)
     unit_key: str = Field(min_length=1, max_length=80)
+    investigation_id: str | None = Field(default=None, min_length=4, max_length=120)
 
 
 class InvestigationPreviousContext(BaseModel):
@@ -186,7 +187,26 @@ async def continue_investigation(request: InvestigationContinueRequest) -> dict[
         registry = build_refinery_tool_registry(tag_service=tag_service)
         identity = active_identity()
         context = _local_context(identity, request.unit_key)
-        service = InvestigationService(registry=registry, store=InvestigationStore())
+        store = InvestigationStore()
+        if request.investigation_id:
+            item = store.get(request.investigation_id)
+            if item is None:
+                raise ValueError("Unknown investigation")
+            result = await continue_saved_investigation(
+                registry=registry,
+                store=store,
+                investigation_id=request.investigation_id,
+                context=context,
+                data_source=source,
+            )
+            return {
+                "mode":"local",
+                "data_source":source,
+                "read_only_process_access":True,
+                "status":"continued",
+                **result,
+            }
+        service = InvestigationService(registry=registry, store=store)
         result = await service.continue_from_conversation(
             user_id=identity.actor_id, utterance=request.utterance, context=context,
             data_source=source, unit_key=request.unit_key)
