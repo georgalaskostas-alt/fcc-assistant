@@ -255,10 +255,27 @@ def _reasoning_context(*, goal: str, synthesis: dict[str, Any], data_source: dic
         for item in synthesis.get("discovery_evidence", [])
         if isinstance(item, dict)
     ]
+    # Keep the generative prompt deliberately bounded. Full deterministic
+    # analytics remain available to the UI/audit trail, but large per-sample
+    # deviation arrays, trend points and evidence-label maps add no reasoning
+    # value and can overflow the embedded model's finite context window.
     llm_analytics = {
-        key: value
-        for key, value in analytics.items()
-        if key != "trends"
+        "summaries": analytics.get("summaries", {}),
+        "temporal": analytics.get("temporal", {}),
+        "correlations": analytics.get("correlations", []),
+        "deviations": {
+            tag: {
+                key: value
+                for key, value in item.items()
+                if key != "deviations"
+            } | {
+                "deviation_count": len(item.get("deviations", []))
+                if isinstance(item.get("deviations"), list)
+                else 0
+            }
+            for tag, item in analytics.get("deviations", {}).items()
+            if isinstance(item, dict)
+        },
     }
 
     # Extrema timestamps remain authoritative deterministic evidence,
