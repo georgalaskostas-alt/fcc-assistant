@@ -76,4 +76,10 @@ async def continue_saved_investigation(*, registry:ToolRegistry,store:Investigat
         "autonomous_rounds_completed":int(resume.get("autonomous_rounds_completed") or 0)+int(loop.get("rounds_completed") or 0),
         "evidence_count":synthesis.get("evidence_count",0),
     })
-    return {"investigation":item.to_dict(),"continuation":loop,"reasoning":reasoning,"read_only":True}
+    return {
+        "investigation":item.to_dict(),
+        "continuation":loop,
+        "synthesis":synthesis,
+        "reasoning":reasoning,
+        "read_only":True,
+    }
