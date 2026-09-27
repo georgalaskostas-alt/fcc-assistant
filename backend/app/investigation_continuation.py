@@ -24,7 +24,7 @@ async def continue_saved_investigation(*, registry:ToolRegistry,store:Investigat
         "resolved_tags":list(resume.get("resolved_tags") or []),
         "last_autonomous_focus":resume.get("last_autonomous_focus"),
         "autonomous_rounds_completed":int(resume.get("autonomous_rounds_completed") or 0),
-        "evidence_package":[{"evidence_id":e.source_id,"description":e.summary,"data":e.payload,"provenance":e.provenance} for e in item.evidence],
+        "evidence_package":[{"evidence_id":e.source_id,"tool":e.source_type,"description":e.summary,"data":e.payload,"provenance":e.provenance} for e in item.evidence],
         "evidence_count":len(item.evidence),
         "archive_evidence":{},
         "event_evidence":{},
