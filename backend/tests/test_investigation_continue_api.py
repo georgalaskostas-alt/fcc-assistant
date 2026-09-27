@@ -138,3 +138,62 @@ def test_run_endpoint_persists_initial_dynamic_investigation(monkeypatch, tmp_pa
     assert saved[0].resume_context["evidence_count"] == 1
     assert len(saved[0].evidence) == 1
     assert result["investigation"]["id"] == saved[0].id
+
+
+def test_continue_request_accepts_exact_investigation_id():
+    request = InvestigationContinueRequest(
+        utterance="continue this investigation",
+        unit_key="fcc",
+        investigation_id="inv-1234",
+    )
+    assert request.investigation_id == "inv-1234"
+
+
+def test_continue_endpoint_resumes_exact_selected_investigation(monkeypatch, tmp_path):
+    from backend.app import investigation_api
+
+    identity = ActiveIdentity(
+        actor_id="alice",
+        source="test",
+        authenticated=True,
+        unit_ids=frozenset({"fcc"}),
+    )
+    store_path = tmp_path / "investigations.json"
+    real_store = investigation_api.InvestigationStore
+    store = real_store(store_path)
+    selected = store.create(goal="Selected DP investigation", user_id="alice", unit_key="fcc")
+    store.create(goal="Another DP investigation", user_id="alice", unit_key="fcc")
+
+    monkeypatch.setattr(investigation_api, "active_identity", lambda: identity)
+    monkeypatch.setattr(investigation_api, "InvestigationStore", lambda: real_store(store_path))
+    monkeypatch.setattr(
+        investigation_api,
+        "investigation_tag_service",
+        lambda: (object(), {"mode":"simulated","data_quality":"SIMULATED"}),
+    )
+    monkeypatch.setattr(investigation_api, "build_refinery_tool_registry", lambda tag_service: object())
+
+    captured = {}
+    async def fake_continue_saved_investigation(**kwargs):
+        captured["investigation_id"] = kwargs["investigation_id"]
+        return {"investigation":{"id":kwargs["investigation_id"]},"continuation":{"rounds_completed":0},"reasoning":{}}
+
+    monkeypatch.setattr(
+        investigation_api,
+        "continue_saved_investigation",
+        fake_continue_saved_investigation,
+    )
+
+    result = asyncio.run(
+        investigation_api.continue_investigation(
+            InvestigationContinueRequest(
+                utterance="continue selected investigation",
+                unit_key="fcc",
+                investigation_id=selected.id,
+            )
+        )
+    )
+
+    assert captured["investigation_id"] == selected.id
+    assert result["status"] == "continued"
+    assert result["investigation"]["id"] == selected.id
