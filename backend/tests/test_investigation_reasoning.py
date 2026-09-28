@@ -122,3 +122,13 @@ def test_extrema_with_timestamps_are_deterministic():
     assert result["max_timestamp"] == "2026-09-21T08:15:00+03:00"
     assert result["min"] == 0.6955
     assert result["min_timestamp"] == "2026-09-21T12:30:00+03:00"
+
+
+def test_validator_repair_contract_keeps_unsafe_wording_fail_closed():
+    unsafe = validate_reasoning_text("Temperature drove DP higher.")
+    safe = validate_reasoning_text(
+        "Temperature and DP moved together in the analyzed window. "
+        "A process mechanism remains an unconfirmed hypothesis requiring independent evidence."
+    )
+    assert unsafe["valid"] is False
+    assert safe == {"valid": True, "violations": []}
