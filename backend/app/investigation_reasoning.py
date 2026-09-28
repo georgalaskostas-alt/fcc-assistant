@@ -546,7 +546,33 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
         response = await LocalAIClient().generate("Produce a concise evidence-grounded engineering assessment. Report measured observations first. Treat correlations only as associations. Put possible mechanisms only under hypotheses and state what additional evidence would validate or reject each hypothesis.", context, system_prompt=INVESTIGATION_SYSTEM_PROMPT, temperature=0.05)
         validation = validate_reasoning_text(response.text)
         if not validation["valid"]:
-            return {"available": False, "model": response.model, "text": _validated_fallback(analytics=analytics, data_source=data_source), "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": validation}
+            # Keep the deterministic gate fail-closed, but give the local model
+            # one bounded chance to rewrite unsafe epistemic wording. This is a
+            # wording repair only: the same compact evidence context is used and
+            # no rejected narrative is exposed to the engineering UI.
+            violation_types = sorted({
+                str(item.get("type") or "")
+                for item in validation.get("violations", [])
+                if isinstance(item, dict) and item.get("type")
+            })
+            repair_prompt = (
+                "Rewrite the engineering assessment using only the supplied evidence. "
+                "The previous draft was rejected by the deterministic safety validator "
+                f"for these wording classes: {', '.join(violation_types) or 'invalid wording'}. "
+                "Do not make causal claims, do not claim statistical significance, and do not "
+                "recommend process-control changes. Report observations and associations first; "
+                "put mechanisms only as unconfirmed hypotheses with the evidence needed to test them."
+            )
+            repaired = await LocalAIClient().generate(
+                repair_prompt,
+                context,
+                system_prompt=INVESTIGATION_SYSTEM_PROMPT,
+                temperature=0.0,
+            )
+            repaired_validation = validate_reasoning_text(repaired.text)
+            if repaired_validation["valid"]:
+                return {"available": True, "model": repaired.model, "text": repaired.text, "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {**repaired_validation, "repaired_after_rejection": True, "initial_violation_types": violation_types}}
+            return {"available": False, "model": repaired.model, "text": _validated_fallback(analytics=analytics, data_source=data_source), "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {**repaired_validation, "repair_attempted": True, "initial_violation_types": violation_types}}
         return {"available": True, "model": response.model, "text": response.text, "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": validation}
     except LocalAIError as exc:
         return {"available": False, "model": None, "text": f"Local reasoning model unavailable: {exc}", "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {"valid": True, "violations": []}}
