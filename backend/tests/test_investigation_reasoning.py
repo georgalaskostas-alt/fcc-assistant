@@ -132,3 +132,15 @@ def test_validator_repair_contract_keeps_unsafe_wording_fail_closed():
     )
     assert unsafe["valid"] is False
     assert safe == {"valid": True, "violations": []}
+
+
+def test_validation_diagnostics_preserve_rejected_lines():
+    rejected = validate_reasoning_text(
+        "Temperature drove DP higher. The deviation was statistically significant."
+    )
+    assert rejected["valid"] is False
+    assert {item["type"] for item in rejected["violations"]} == {
+        "unsupported_causality",
+        "unsupported_statistical_significance",
+    }
+    assert all(item["text"] for item in rejected["violations"])
