@@ -317,12 +317,17 @@ def validate_reasoning_text(text: str) -> dict[str, Any]:
     violations: list[dict[str, str]] = []
     for line in text.splitlines():
         clean = line.strip()
-        if not clean: continue
-        if any(pattern.search(clean) for pattern in CAUSAL_PATTERNS): violations.append({"type": "unsupported_causality", "text": clean})
-        if SIGNIFICANCE_PATTERN.search(clean): violations.append({"type": "unsupported_statistical_significance", "text": clean})\n        if UNSUPPORTED_SHAPE_PATTERN.search(clean): violations.append({"type": "unsupported_trend_shape", "text": clean})
-        if CONTROL_ACTION_PATTERN.search(clean): violations.append({"type": "process_control_action", "text": clean})
+        if not clean:
+            continue
+        if any(pattern.search(clean) for pattern in CAUSAL_PATTERNS):
+            violations.append({"type": "unsupported_causality", "text": clean})
+        if SIGNIFICANCE_PATTERN.search(clean):
+            violations.append({"type": "unsupported_statistical_significance", "text": clean})
+        if UNSUPPORTED_SHAPE_PATTERN.search(clean):
+            violations.append({"type": "unsupported_trend_shape", "text": clean})
+        if CONTROL_ACTION_PATTERN.search(clean):
+            violations.append({"type": "process_control_action", "text": clean})
     return {"valid": not violations, "violations": violations}
-
 
 def _validated_fallback(*, analytics: dict[str, Any], data_source: dict[str, Any]) -> str:
     summaries = analytics.get("summaries", {}); correlations = analytics.get("correlations", [])
