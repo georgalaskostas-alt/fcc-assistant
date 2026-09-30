@@ -144,3 +144,17 @@ def test_validation_diagnostics_preserve_rejected_lines():
         "unsupported_statistical_significance",
     }
     assert all(item["text"] for item in rejected["violations"])
+
+
+def test_validator_rejects_hedged_causal_language_without_independent_evidence():
+    result = validate_reasoning_text(
+        "Temperature rise may drive DP increase, but this is an association, not causation."
+    )
+    assert result["valid"] is False
+    assert any(item["type"] == "unsupported_causality" for item in result["violations"])
+
+
+def test_validator_rejects_unfitted_trend_shape_language():
+    result = validate_reasoning_text("Regenerator temperature rose exponentially during the window.")
+    assert result["valid"] is False
+    assert any(item["type"] == "unsupported_trend_shape" for item in result["violations"])
