@@ -27,9 +27,9 @@ Respond in the same language as the user's goal."""
 
 CAUSAL_PATTERNS = (
     re.compile(r"\b(caus(?:e|ed|es|ing)|drove|driven|drives|explains?|responsible for|resulted in|led to|triggered)\b", re.I),
-    re.compile(r"\b(likely|probably|probably)\s+(?:caused|drove|explains?|triggered|led to)\b", re.I),
+    re.compile(r"\b(likely|probably|possibly|may|might|could)\s+(?:cause|caused|drive|drove|explain|explains?|trigger|triggered|lead|led)\b", re.I),
 )
-SIGNIFICANCE_PATTERN = re.compile(r"\b(statistically significant|statistical significance|significant deviation(?:s)?)\b", re.I)
+SIGNIFICANCE_PATTERN = re.compile(r"\b(statistically significant|statistical significance|significant deviation(?:s)?)\b", re.I)\nUNSUPPORTED_SHAPE_PATTERN = re.compile(r"\b(exponential(?:ly)?|linear(?:ly)?|logarithmic(?:ally)?|quadratic(?:ally)?)\b", re.I)
 CONTROL_ACTION_PATTERN = re.compile(r"\b(change|adjust|increase|decrease|raise|lower|open|close|move|set)\b.{0,45}\b(setpoint|valve|controller|output|dcs|plc|sis)\b", re.I)
 
 
@@ -318,7 +318,7 @@ def validate_reasoning_text(text: str) -> dict[str, Any]:
         clean = line.strip()
         if not clean: continue
         if any(pattern.search(clean) for pattern in CAUSAL_PATTERNS): violations.append({"type": "unsupported_causality", "text": clean})
-        if SIGNIFICANCE_PATTERN.search(clean): violations.append({"type": "unsupported_statistical_significance", "text": clean})
+        if SIGNIFICANCE_PATTERN.search(clean): violations.append({"type": "unsupported_statistical_significance", "text": clean})\n        if UNSUPPORTED_SHAPE_PATTERN.search(clean): violations.append({"type": "unsupported_trend_shape", "text": clean})
         if CONTROL_ACTION_PATTERN.search(clean): violations.append({"type": "process_control_action", "text": clean})
     return {"valid": not violations, "violations": violations}
 
