@@ -22,6 +22,7 @@ Correlation is association, never proof or evidence of causation. Never say a co
 Do not claim statistical significance unless a significance test and its result are explicitly supplied.
 Do not infer that the event in the user's question occurred merely because the user asked about it; describe only measured changes present in evidence.
 Do not recommend changing DCS/PLC/SIS setpoints, valves, controller parameters or closed-loop controls.
+Do not describe a trend as exponential, linear, logarithmic or quadratic unless that fitted trend classification is explicitly supplied by deterministic analytics.
 Process access is read-only. If data_quality is SIMULATED, prominently state that this is a development demonstration, not an operational plant conclusion.
 Respond in the same language as the user's goal."""
 
@@ -565,8 +566,10 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
                 "Rewrite the engineering assessment using only the supplied evidence. "
                 "The previous draft was rejected by the deterministic safety validator "
                 f"for these wording classes: {', '.join(violation_types) or 'invalid wording'}. "
-                "Do not make causal claims, do not claim statistical significance, and do not "
-                "recommend process-control changes. Report observations and associations first; "
+                "Do not make causal claims, do not claim statistical significance, do not describe "
+                "trend shape as exponential, linear, logarithmic or quadratic unless explicitly "
+                "supplied by deterministic analytics, and do not recommend process-control changes. "
+                "Report observations and associations first; "
                 "put mechanisms only as unconfirmed hypotheses with the evidence needed to test them."
             )
             repaired = await LocalAIClient().generate(
