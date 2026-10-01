@@ -47,12 +47,15 @@ def reconcile_follow_up(synthesis: dict[str, Any], result: dict[str, Any]) -> di
     tags = _successful_data(run, "search_tags")
     histories = _successful_data(run, "get_history")
 
+    archive_added = 0
     if archive:
         current = synthesis.get("archive_evidence") if isinstance(synthesis.get("archive_evidence"), dict) else {}
-        items = _dedupe([*(current.get("items") or []), *archive], ("record_id", "document_id", "id"))
+        before = _dedupe(list(current.get("items") or []), ("record_id", "document_id", "id"))
+        items = _dedupe([*before, *archive], ("record_id", "document_id", "id"))
         current.update({"attempted": True, "items": items, "count": len(items), "approved_only": True})
         synthesis["archive_evidence"] = current
-        synthesis["archive_evidence_useful"] = True
+        synthesis["archive_evidence_useful"] = bool(items)
+        archive_added = max(0, len(items) - len(before))
 
     if events:
         current = synthesis.get("event_evidence") if isinstance(synthesis.get("event_evidence"), dict) else {}
@@ -102,7 +105,7 @@ def reconcile_follow_up(synthesis: dict[str, Any], result: dict[str, Any]) -> di
         synthesis["pending_history_tags"] = [key for key in pending if key not in set(read_keys)]
 
     return {
-        "archive_added": len(archive),
+        "archive_added": archive_added,
         "events_added": len(events),
         "episodes_added": len(episodes),
         "tags_added": len(tags),
