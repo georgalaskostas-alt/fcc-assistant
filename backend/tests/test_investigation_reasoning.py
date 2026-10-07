@@ -158,3 +158,12 @@ def test_validator_rejects_unfitted_trend_shape_language():
     result = validate_reasoning_text("Regenerator temperature rose exponentially during the window.")
     assert result["valid"] is False
     assert any(item["type"] == "unsupported_trend_shape" for item in result["violations"])
+
+
+def test_validator_matches_final_guard_for_mechanism_and_baseline_language():
+    mechanism = validate_reasoning_text("The temperature rise was linked to the DP increase.")
+    baseline = validate_reasoning_text("DP remained within normal operating variability.")
+    assert mechanism["valid"] is False
+    assert any(item["type"] == "unsupported_causality" for item in mechanism["violations"])
+    assert baseline["valid"] is False
+    assert any(item["type"] == "unsupported_baseline" for item in baseline["violations"])
