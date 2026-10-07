@@ -44,12 +44,16 @@ def _usable_rows(item:dict[str,Any])->list[Any]:
     if tool=="search_alarms_events":
         if isinstance(data,list):return data
         if isinstance(data,dict):
+            if data.get("event_id") is not None or data.get("id") is not None:
+                return [data]
             rows=data.get("events",data.get("hits",data.get("items",[])))
             return rows if isinstance(rows,list) else []
         return []
     if tool=="find_similar_episodes":
         if isinstance(data,list):return data
         if isinstance(data,dict):
+            if data.get("episode_id") is not None or data.get("id") is not None:
+                return [data]
             rows=data.get("episodes",data.get("hits",data.get("items",[])))
             return rows if isinstance(rows,list) else []
         return []
