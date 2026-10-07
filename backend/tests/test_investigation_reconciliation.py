@@ -48,3 +48,16 @@ def test_reconciliation_queues_discovered_tags_by_information_value():
     reconcile_follow_up(synthesis,{"run":run})
     assert synthesis["pending_history_tags"][0]=="regenerator_temp"
     assert synthesis["measurement_candidate_ranking"][0]["tag_key"]=="regenerator_temp"
+
+
+def test_empty_archive_wrapper_is_not_reconciled_as_evidence():
+    synthesis={"archive_evidence":{"attempted":True,"items":[],"count":0}}
+    counts=reconcile_follow_up(synthesis,{"run":_run("search_archive",{"hits":[],"count":0})})
+    assert counts["archive_added"]==0
+    assert synthesis["archive_evidence"]["count"]==0
+
+def test_archive_wrapper_unwraps_actual_hits():
+    synthesis={"archive_evidence":{"attempted":True,"items":[],"count":0}}
+    counts=reconcile_follow_up(synthesis,{"run":_run("search_archive",{"hits":[{"document_id":"D2","revision":"B"}],"count":1})})
+    assert counts["archive_added"]==1
+    assert synthesis["archive_evidence"]["items"][0]["document_id"]=="D2"
