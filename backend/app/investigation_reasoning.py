@@ -27,9 +27,10 @@ Process access is read-only. If data_quality is SIMULATED, prominently state tha
 Respond in the same language as the user's goal."""
 
 CAUSAL_PATTERNS = (
-    re.compile(r"\b(caus(?:e|ed|es|ing)|drove|driven|drives|explains?|responsible for|resulted in|led to|triggered)\b", re.I),
+    re.compile(r"\b(caus(?:e|ed|es|ing)|drove|driven|drives|explains?|responsible for|resulted in|led to|triggered|influenc(?:e|ed|es|ing)|linked to|suggests? (?:a )?(?:possible )?mechanism)\b", re.I),
     re.compile(r"\b(likely|probably|possibly|may|might|could)\s+(?:cause|caused|drive|drove|explain|explains?|trigger|triggered|lead|led)\b", re.I),
 )
+UNSUPPORTED_BASELINE_PATTERN = re.compile(r"\b(within (?:the )?.{0,35}variability|within normal|normal range|normal operating|expected range)\b", re.I)
 SIGNIFICANCE_PATTERN = re.compile(r"\b(statistically significant|statistical significance|significant deviation(?:s)?)\b", re.I)
 UNSUPPORTED_SHAPE_PATTERN = re.compile(r"\b(exponential(?:ly)?|linear(?:ly)?|logarithmic(?:ally)?|quadratic(?:ally)?)\b", re.I)
 CONTROL_ACTION_PATTERN = re.compile(r"\b(change|adjust|increase|decrease|raise|lower|open|close|move|set)\b.{0,45}\b(setpoint|valve|controller|output|dcs|plc|sis)\b", re.I)
@@ -322,6 +323,8 @@ def validate_reasoning_text(text: str) -> dict[str, Any]:
             continue
         if any(pattern.search(clean) for pattern in CAUSAL_PATTERNS):
             violations.append({"type": "unsupported_causality", "text": clean})
+        if UNSUPPORTED_BASELINE_PATTERN.search(clean):
+            violations.append({"type": "unsupported_baseline", "text": clean})
         if SIGNIFICANCE_PATTERN.search(clean):
             violations.append({"type": "unsupported_statistical_significance", "text": clean})
         if UNSUPPORTED_SHAPE_PATTERN.search(clean):
@@ -566,7 +569,7 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
                 "Rewrite the engineering assessment using only the supplied evidence. "
                 "The previous draft was rejected by the deterministic safety validator "
                 f"for these wording classes: {', '.join(violation_types) or 'invalid wording'}. "
-                "Do not make causal claims, do not claim statistical significance, do not describe "
+                "Do not make causal or mechanism claims, do not claim a normal/expected operating baseline, do not claim statistical significance, do not describe "
                 "trend shape as exponential, linear, logarithmic or quadratic unless explicitly "
                 "supplied by deterministic analytics, and do not recommend process-control changes. "
                 "Report observations and associations first; "
