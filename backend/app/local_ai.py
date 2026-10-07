@@ -91,7 +91,21 @@ class LocalAIClient:
                 p=r.json()
         except LocalAIError:raise
         except Exception as exc:raise LocalAIError(f"Embedded local AI request failed: {type(exc).__name__}: {exc}") from exc
-        try:text=p["choices"][0]["message"]["content"]
-        except (KeyError,IndexError,TypeError) as exc:raise LocalAIError("Embedded local AI returned an invalid response") from exc
-        if not isinstance(text,str) or not text.strip():raise LocalAIError("Embedded local AI returned an empty response")
+        try:
+            message=p["choices"][0]["message"]
+            text=message.get("content")
+            # Qwen reasoning models can place the useful completion in
+            # reasoning_content while returning an empty content field.
+            if (not isinstance(text,str) or not text.strip()) and isinstance(message.get("reasoning_content"),str):
+                text=message.get("reasoning_content")
+        except (KeyError,IndexError,TypeError,AttributeError) as exc:
+            raise LocalAIError("Embedded local AI returned an invalid response") from exc
+        if not isinstance(text,str) or not text.strip():
+            finish_reason=""
+            try:
+                finish_reason=str(p["choices"][0].get("finish_reason") or "")
+            except (KeyError,IndexError,TypeError,AttributeError):
+                pass
+            suffix=f" (finish_reason={finish_reason})" if finish_reason else ""
+            raise LocalAIError(f"Embedded local AI returned an empty response{suffix}")
         return LocalAIResponse(model=self.model,text=text.strip())
