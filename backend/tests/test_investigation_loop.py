@@ -95,3 +95,18 @@ def test_loop_recognizes_canonical_evidence_package_as_existing_evidence():
     # decision must not look only for legacy synthesis keys.
     assert 'synthesis.get("evidence_package")' in source
     assert 'synthesis.get("discovery_evidence")' in source
+
+
+def test_empty_search_wrapper_is_not_novel_evidence():
+    from backend.app.investigation_evidence import merge_new_evidence
+    incoming=[{"tool":"search_archive","data":{"hits":[],"count":0},"provenance":{"scope_id":"fcc"}}]
+    merged,novel=merge_new_evidence([],incoming)
+    assert merged==[]
+    assert novel==[]
+
+def test_nonempty_search_wrapper_remains_evidence():
+    from backend.app.investigation_evidence import merge_new_evidence
+    incoming=[{"tool":"search_archive","data":{"hits":[{"document_id":"D1"}]},"provenance":{"scope_id":"fcc"}}]
+    merged,novel=merge_new_evidence([],incoming)
+    assert len(merged)==1
+    assert len(novel)==1
