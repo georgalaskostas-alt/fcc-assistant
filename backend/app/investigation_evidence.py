@@ -31,6 +31,36 @@ def evidence_identity(item:dict[str,Any])->str:
     payload={"tool":tool,"data":data,"provenance":provenance}
     return "evidence:"+hashlib.sha256(_stable(payload).encode("utf-8")).hexdigest()[:24]
 
+def _usable_rows(item:dict[str,Any])->list[Any]:
+    """Return concrete evidence rows; successful empty search wrappers are not evidence."""
+    tool=str(item.get("tool") or "")
+    data=item.get("data")
+    if tool=="search_archive":
+        if isinstance(data,list):return data
+        if isinstance(data,dict):
+            rows=data.get("hits",data.get("items",[]))
+            return rows if isinstance(rows,list) else []
+        return []
+    if tool=="search_alarms_events":
+        if isinstance(data,list):return data
+        if isinstance(data,dict):
+            rows=data.get("events",data.get("hits",data.get("items",[])))
+            return rows if isinstance(rows,list) else []
+        return []
+    if tool=="find_similar_episodes":
+        if isinstance(data,list):return data
+        if isinstance(data,dict):
+            rows=data.get("episodes",data.get("hits",data.get("items",[])))
+            return rows if isinstance(rows,list) else []
+        return []
+    return [data] if data is not None else []
+
+def is_usable_evidence(item:dict[str,Any])->bool:
+    tool=str(item.get("tool") or "")
+    if tool in {"search_archive","search_alarms_events","find_similar_episodes"}:
+        return bool(_usable_rows(item))
+    return True
+
 def merge_new_evidence(existing:list[dict[str,Any]],incoming:list[dict[str,Any]])->tuple[list[dict[str,Any]],list[dict[str,Any]]]:
     seen={evidence_identity(x) for x in existing if isinstance(x,dict)}
     merged=list(existing);new=[]
