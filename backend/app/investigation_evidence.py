@@ -65,7 +65,7 @@ def merge_new_evidence(existing:list[dict[str,Any]],incoming:list[dict[str,Any]]
     seen={evidence_identity(x) for x in existing if isinstance(x,dict)}
     merged=list(existing);new=[]
     for item in incoming:
-        if not isinstance(item,dict):continue
+        if not isinstance(item,dict) or not is_usable_evidence(item):continue
         identity=evidence_identity(item)
         if identity in seen:continue
         enriched=dict(item);enriched["stable_evidence_id"]=identity
