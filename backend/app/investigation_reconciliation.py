@@ -17,6 +17,18 @@ def _successful_data(run: dict[str, Any], tool: str) -> list[Any]:
         data = result.get("data")
         if isinstance(data, list):
             rows.extend(data)
+        elif isinstance(data, dict) and tool == "search_archive":
+            nested = data.get("hits", data.get("items", []))
+            if isinstance(nested, list):
+                rows.extend(nested)
+        elif isinstance(data, dict) and tool == "search_alarms_events":
+            nested = data.get("events", data.get("hits", data.get("items", [])))
+            if isinstance(nested, list):
+                rows.extend(nested)
+        elif isinstance(data, dict) and tool == "find_similar_episodes":
+            nested = data.get("episodes", data.get("hits", data.get("items", [])))
+            if isinstance(nested, list):
+                rows.extend(nested)
         elif data is not None:
             rows.append(data)
     return rows
