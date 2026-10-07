@@ -63,9 +63,18 @@ def _source_units(synthesis: dict[str, object]) -> set[str]:
         if not isinstance(rows, list): continue
         for row in rows:
             if not isinstance(row, dict): continue
-            for key in ("engineering_unit", "unit_of_measure", "uom"):
-                value = row.get(key)
-                if value: allowed.add(str(value).casefold())
+            candidates = [row]
+            tag = row.get("tag")
+            if isinstance(tag, dict):
+                candidates.append(tag)
+            metadata = row.get("metadata")
+            if isinstance(metadata, dict):
+                candidates.append(metadata)
+            for candidate in candidates:
+                for key in ("engineering_unit", "unit_of_measure", "uom", "unit", "units"):
+                    value = candidate.get(key)
+                    if value:
+                        allowed.add(str(value).casefold())
     return allowed
 
 
