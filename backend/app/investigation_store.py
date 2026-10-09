@@ -128,6 +128,14 @@ class InvestigationStore:
             items = [item for item in items if item.status == status]
         return sorted(items, key=lambda item: item.updated_at, reverse=True)
 
+    def delete(self, investigation_id: str) -> bool:
+        payload = self._load()
+        if investigation_id not in payload:
+            return False
+        del payload[investigation_id]
+        self._save(payload)
+        return True
+
     def update(self, investigation: Investigation) -> Investigation:
         investigation.updated_at = self._now()
         payload = self._load()
