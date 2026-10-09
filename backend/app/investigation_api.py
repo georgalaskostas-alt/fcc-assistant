@@ -189,6 +189,20 @@ def list_saved_investigations(unit_key: str) -> dict[str, object]:
     return {"count":len(items),"items":[item.to_dict() for item in items],"local_only":True,
             "identity_source":identity.source}
 
+@router.delete("/saved/{investigation_id}")
+def delete_saved_investigation(investigation_id: str, unit_key: str) -> dict[str, object]:
+    identity = active_identity()
+    context = _local_context(identity, unit_key)
+    store = InvestigationStore()
+    item = store.get(investigation_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+    if item.id not in {visible.id for visible in visible_investigations([item], context)}:
+        raise HTTPException(status_code=403, detail="Investigation is not accessible")
+    if not store.delete(investigation_id):
+        raise HTTPException(status_code=404, detail="Investigation not found")
+    return {"deleted": True, "id": investigation_id, "local_only": True}
+
 @router.post("/continue")
 async def continue_investigation(request: InvestigationContinueRequest) -> dict[str, object]:
     try:
