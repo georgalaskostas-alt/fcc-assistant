@@ -553,7 +553,7 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
         }
     context = _reasoning_context(goal=goal, synthesis=synthesis, data_source=data_source, analytics=analytics)
     try:
-        response = await LocalAIClient().generate("Produce a concise evidence-grounded engineering assessment. Report measured observations first. Treat correlations only as associations. Put possible mechanisms only under hypotheses and state what additional evidence would validate or reject each hypothesis.", context, system_prompt=INVESTIGATION_SYSTEM_PROMPT, temperature=0.05)
+        response = await LocalAIClient().generate("Produce a concise descriptive engineering assessment from the supplied evidence only. Use sections Observations, Associations, Missing evidence, Limitations. Do not speculate about mechanisms or causes. Do not assert operating limits, normality, significance, or control actions. Include evidence IDs for each observation and state explicitly when causality is not established.", context, system_prompt=INVESTIGATION_SYSTEM_PROMPT, temperature=0.05)
         validation = validate_reasoning_text(response.text)
         if not validation["valid"]:
             # Keep the deterministic gate fail-closed, but give the local model
@@ -572,8 +572,10 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
                 "Do not make causal or mechanism claims, do not claim a normal/expected operating baseline, do not claim statistical significance, do not describe "
                 "trend shape as exponential, linear, logarithmic or quadratic unless explicitly "
                 "supplied by deterministic analytics, and do not recommend process-control changes. "
-                "Report observations and associations first; "
-                "put mechanisms only as unconfirmed hypotheses with the evidence needed to test them."
+                "Use only the headings Observations, Associations, Missing evidence, and Limitations. "
+                "Do not propose any physical mechanism, causal hypothesis, or unsupported operating interpretation. "
+                "Avoid even negative statements containing prohibited terms such as statistical significance. "
+                "Use only descriptive quantities and source IDs already supplied in the evidence."
             )
             repaired = await LocalAIClient().generate(
                 repair_prompt,
