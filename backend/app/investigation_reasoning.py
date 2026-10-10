@@ -333,6 +333,18 @@ def validate_reasoning_text(text: str) -> dict[str, Any]:
             violations.append({"type": "process_control_action", "text": clean})
     return {"valid": not violations, "violations": violations}
 
+def _validation_diagnostics(initial: dict[str, Any], repaired: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Summarize both validation passes without exposing rejected model output."""
+    def counts(result: dict[str, Any]) -> dict[str, int]:
+        summary: dict[str, int] = {}
+        for item in result.get("violations", []):
+            if isinstance(item, dict):
+                kind = str(item.get("type") or "unknown")
+                summary[kind] = summary.get(kind, 0) + 1
+        return summary
+    return {"initial_counts": counts(initial), "repair_counts": counts(repaired) if repaired is not None else None}
+
+
 def _validated_fallback(*, analytics: dict[str, Any], data_source: dict[str, Any]) -> str:
     summaries = analytics.get("summaries", {}); correlations = analytics.get("correlations", [])
     lines = ["Bounded engineering assessment: the model narrative was rejected by deterministic evidence validation, so only validated evidence is shown.", "", "Validated observations:"]
@@ -585,8 +597,8 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
             )
             repaired_validation = validate_reasoning_text(repaired.text)
             if repaired_validation["valid"]:
-                return {"available": True, "model": repaired.model, "text": repaired.text, "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {**repaired_validation, "repair_attempted": True, "repaired_after_rejection": True, "initial_violation_types": violation_types, "initial_violations": validation.get("violations", [])}}
-            return {"available": False, "model": repaired.model, "text": _validated_fallback(analytics=analytics, data_source=data_source), "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {**repaired_validation, "repair_attempted": True, "initial_violation_types": violation_types, "initial_violations": validation.get("violations", []), "repair_violations": repaired_validation.get("violations", [])}}
+                return {"available": True, "model": repaired.model, "text": repaired.text, "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {**repaired_validation, "repair_attempted": True, "repaired_after_rejection": True, "initial_violation_types": violation_types, "initial_violations": validation.get("violations", []), "diagnostics": _validation_diagnostics(validation, repaired_validation)}}
+            return {"available": False, "model": repaired.model, "text": _validated_fallback(analytics=analytics, data_source=data_source), "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {**repaired_validation, "repair_attempted": True, "initial_violation_types": violation_types, "initial_violations": validation.get("violations", []), "repair_violations": repaired_validation.get("violations", []), "diagnostics": _validation_diagnostics(validation, repaired_validation)}}
         return {"available": True, "model": response.model, "text": response.text, "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": validation}
     except LocalAIError as exc:
         return {"available": False, "model": None, "text": f"Local reasoning model unavailable: {exc}", "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {"valid": True, "violations": []}}
