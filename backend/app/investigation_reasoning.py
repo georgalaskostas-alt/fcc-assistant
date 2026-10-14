@@ -323,19 +323,20 @@ def validate_reasoning_text(text: str) -> dict[str, Any]:
             continue
         # A narrow absence-of-evidence statement is not itself a causal claim.
         # Only exempt a negative evidence-availability clause, never a proposed mechanism.
-        evidence_absence = bool(re.search(
-            r"\b(?:no|without)\s+(?:approved\s+)?(?:technical\s+)?(?:archive\s+)?(?:knowledge|evidence|historical\s+events|independent\s+event\s+evidence)\b", clean, re.I
+        absence_of_explanation = bool(re.search(
+            r"\\bno\\s+(?:(?:independent|approved|relevant|technical|event|alarm|historical|archive)\\s+)*(?:evidence|knowledge|events?|alarms?)\\b[^.;]*\\b(?:to\\s+explain|linked\\s+to)\\b",
+            clean, re.I,
         ))
-        explanatory_absence = bool(re.search(r"\b(?:to\s+explain|linked\s+to)\b", clean, re.I))
-        other_causal_terms = re.sub(r"\b(?:to\s+explain|linked\s+to)\b", "", clean, flags=re.I)
-        safe_absence = evidence_absence and explanatory_absence and not any(
-            pattern.search(other_causal_terms) for pattern in CAUSAL_PATTERNS
-        )
-        if not safe_absence and any(pattern.search(clean) for pattern in CAUSAL_PATTERNS):
+        remaining = re.sub(r"\\bto\\s+explain\\b|\\blinked\\s+to\\b", "", clean, flags=re.I) if absence_of_explanation else clean
+        if any(pattern.search(remaining) for pattern in CAUSAL_PATTERNS):
             violations.append({"type": "unsupported_causality", "text": clean})
         if UNSUPPORTED_BASELINE_PATTERN.search(clean):
             violations.append({"type": "unsupported_baseline", "text": clean})
-        if SIGNIFICANCE_PATTERN.search(clean):
+        no_significance_claim = bool(re.search(
+            r"\\bno\\s+(?:statistical\\s+significance|statistically\\s+significant)\\s+claims?\\s+(?:are\\s+)?made\\b",
+            clean, re.I,
+        ))
+        if SIGNIFICANCE_PATTERN.search(clean) and not no_significance_claim:
             violations.append({"type": "unsupported_statistical_significance", "text": clean})
         if UNSUPPORTED_SHAPE_PATTERN.search(clean):
             violations.append({"type": "unsupported_trend_shape", "text": clean})
