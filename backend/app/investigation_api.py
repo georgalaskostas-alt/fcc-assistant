@@ -153,7 +153,9 @@ async def run_investigation(request: InvestigationRequest) -> dict[str, object]:
 
         # A prompt is not a safety boundary. Re-check the final generated text
         # against evidence actually returned by governed tools before display.
-        final_validation = validate_engineering_narrative(str(reasoning.get("text") or ""), allowed_units=_source_units(result.synthesis))
+        approved_units = _source_units(result.synthesis)
+        final_validation = validate_engineering_narrative(str(reasoning.get("text") or ""), allowed_units=approved_units)
+        reasoning["unit_grounding_diagnostics"] = {"approved_units": sorted(approved_units), "source": "search_tags discovery evidence", "unit_count": len(approved_units)}
         reasoning["final_validation"] = final_validation
         if not final_validation["valid"]:
             reasoning["available"] = False
