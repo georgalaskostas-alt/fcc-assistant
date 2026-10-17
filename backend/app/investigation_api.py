@@ -75,6 +75,10 @@ def _source_units(synthesis: dict[str, object]) -> set[str]:
                     value = candidate.get(key)
                     if value:
                         allowed.add(str(value).casefold())
+    # The approved catalog uses "c" for Celsius; the narrative may render it as °C.
+    # Expand only known equivalent spellings, never infer a unit from a tag name.
+    if "c" in allowed:
+        allowed.update({"°c", "degc"})
     return allowed
 
 
