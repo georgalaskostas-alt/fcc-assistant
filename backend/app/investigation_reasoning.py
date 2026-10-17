@@ -598,6 +598,9 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
                 "Use only the headings Observations, Associations, Missing evidence, and Limitations. "
                 "Do not propose any physical mechanism, causal hypothesis, or unsupported operating interpretation. "
                 "Avoid even negative statements containing prohibited terms such as statistical significance. "
+                "When an evidence search has no usable results, say only: No independent alarm/event evidence was retrieved from the available search. "
+                "Do not write that no events occurred or that no events could explain a trend. "
+                "Do not use the words explain, cause, caused, could explain, or linked to in Missing evidence or Limitations. "
                 "Use only descriptive quantities and source IDs already supplied in the evidence."
             )
             repaired = await LocalAIClient().generate(
