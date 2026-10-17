@@ -323,11 +323,17 @@ def validate_reasoning_text(text: str) -> dict[str, Any]:
             continue
         # A narrow absence-of-evidence statement is not itself a causal claim.
         # Only exempt a negative evidence-availability clause, never a proposed mechanism.
-        absence_of_explanation = bool(re.search(
-            r"\\bno\\s+(?:(?:independent|approved|relevant|technical|event|alarm|historical|archive)\\s+)*(?:evidence|knowledge|events?|alarms?)\\b[^.;]*\\b(?:to\\s+explain|linked\\s+to)\\b",
+        # Exempt only a negated evidence-availability clause, not a causal explanation.
+        # Use real regex word boundaries (raw strings require \b, not \\b).
+        absence_match = re.search(
+            r"\bno\s+(?:(?:independent|approved|relevant|technical|event|alarm|historical|archive)\s+)*(?:evidence|knowledge|events?|alarms?)\b"
+            r"(?:\s+(?:was|were)\s+(?:found|retrieved|identified))?\s+to\s+explain\b",
             clean, re.I,
-        ))
-        remaining = re.sub(r"\\bto\\s+explain\\b|\\blinked\\s+to\\b", "", clean, flags=re.I) if absence_of_explanation else clean
+        )
+        remaining = (
+            clean[:absence_match.start()] + clean[absence_match.end():]
+            if absence_match else clean
+        )
         if any(pattern.search(remaining) for pattern in CAUSAL_PATTERNS):
             violations.append({"type": "unsupported_causality", "text": clean})
         if UNSUPPORTED_BASELINE_PATTERN.search(clean):
