@@ -197,3 +197,25 @@ def test_quantitative_gate_keeps_grounded_descriptive_association():
         {"correlations": [{"r": 0.9866}]},
     )
     assert result == {"valid": True, "violations": []}
+
+
+def test_quantitative_gate_rejects_reverse_order_lag_and_numeric_uncertainty():
+    from backend.app.investigation_reasoning import validate_narrative_against_evidence
+
+    for narrative in (
+        "The O2 response followed 7 samples later.",
+        "After 7 samples, O2 changed.",
+        "The signal lagged by 12 minutes.",
+        "Pressure average +/- 0.03 bar.",
+        "Pressure standard deviation was 0.03 bar.",
+    ):
+        result = validate_narrative_against_evidence(narrative, {})
+        assert not result["valid"], narrative
+
+
+def test_quantitative_gate_does_not_reject_unquantified_sequencing():
+    from backend.app.investigation_reasoning import validate_quantitative_narrative
+    result = validate_quantitative_narrative(
+        "Two variables changed over the studied interval. Correlation is not causation.", {}
+    )
+    assert result == {"valid": True, "violations": []}
