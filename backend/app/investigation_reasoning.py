@@ -351,32 +351,30 @@ def validate_reasoning_text(text: str) -> dict[str, Any]:
     return {"valid": not violations, "violations": violations}
 
 def validate_quantitative_narrative(text: str, analytics: dict[str, Any]) -> dict[str, Any]:
-    """Reject ungrounded uncertainty and sample-lag claims before display.
+    """Fail closed on unsupported AI dispersion and quantified temporal sequencing.
 
-    The ordinary wording validator cannot establish whether a numerical
-    standard deviation or lag was actually computed. Require the corresponding
-    deterministic metric rather than trusting fluent model prose.
+    These descriptions require deterministic, source-grounded calculations.
+    Until a metric-to-tag verification contract exists, numeric lead/lag
+    claims and model-authored dispersion values are not displayed.
     """
     violations: list[dict[str, str]] = []
-    deviations = analytics.get("deviations") or {}
-    correlations = analytics.get("correlations") or []
-    temporal = analytics.get("temporal") or {}
     for line in text.splitlines():
         clean = line.strip()
         if not clean:
             continue
-        # A reported +/- dispersion must have an explicitly computed stdev
-        # for the named variable. The compact LLM context currently omits
-        # deviation statistics, so reject such model-generated values.
-        if re.search(r"(?:±|\\+/-|\\bstdev\\b|\\bstandard deviation\\b)", clean, re.I):
+        if re.search(r"(?:±|\+/-|\bstdev\b|\bstandard deviation\b)", clean, re.I):
             violations.append({"type": "unverified_dispersion", "text": clean})
-        # A temporal onset difference is not a cross-correlation or proof of
-        # lead/lag. Do not let the model manufacture a lag interpretation.
-        if re.search(r"\\b(?:preced(?:e|ed|es)|lag(?:ged)?|lead(?:s|ing)?|follow(?:s|ed)?)\\b.{0,80}\\b\\d+\\s*(?:samples?|minutes?|hours?)\\b", clean, re.I):
+
+        time_quantity = r"\b\d+(?:\.\d+)?\s*(?:samples?|minutes?|hours?|seconds?|days?)\b"
+        sequencing = r"\b(?:preced(?:e|ed|es|ing)|lag(?:s|ged|ging)?|lead(?:s|ing)?|led|follow(?:s|ed|ing)?|before|after|earlier|later)\b"
+        # Both orders are used in model responses, e.g.
+        # "preceded O2 fall by 7 samples" and "7 samples later".
+        quantified_sequence = (
+            re.search(sequencing + r".{0,120}" + time_quantity, clean, re.I)
+            or re.search(time_quantity + r".{0,120}" + sequencing, clean, re.I)
+        )
+        if quantified_sequence:
             violations.append({"type": "unverified_temporal_lag", "text": clean})
-        if re.search(r"\\b\\d+\\s*(?:samples?|minutes?|hours?)\\b.{0,80}\\b(?:preced(?:e|ed|es)|lag(?:ged)?|lead(?:s|ing)?|follow(?:s|ed)?)\\b", clean, re.I):
-            if not any(v["type"] == "unverified_temporal_lag" and v["text"] == clean for v in violations):
-                violations.append({"type": "unverified_temporal_lag", "text": clean})
     return {"valid": not violations, "violations": violations}
 
 
