@@ -167,3 +167,33 @@ def test_validator_matches_final_guard_for_mechanism_and_baseline_language():
     assert any(item["type"] == "unsupported_causality" for item in mechanism["violations"])
     assert baseline["valid"] is False
     assert any(item["type"] == "unsupported_baseline" for item in baseline["violations"])
+
+
+def test_quantitative_gate_rejects_unverified_dispersion():
+    from backend.app.investigation_reasoning import validate_narrative_against_evidence
+    result = validate_narrative_against_evidence(
+        "Regenerator DP mean 0.85 bar (±0.072 bar).",
+        {"summaries": {"regenerator_dp": {"mean": 0.85}}},
+    )
+    assert result["valid"] is False
+    assert any(v["type"] == "unverified_dispersion" for v in result["violations"])
+
+
+def test_quantitative_gate_rejects_unverified_sample_lag():
+    from backend.app.investigation_reasoning import validate_narrative_against_evidence
+    result = validate_narrative_against_evidence(
+        "DP rise preceded O2 fall by 7 samples.",
+        {"temporal": {"regenerator_dp": {"onset_index": 180}, "regenerator_o2": {"onset_index": 187}}},
+    )
+    assert result["valid"] is False
+    assert any(v["type"] == "unverified_temporal_lag" for v in result["violations"])
+
+
+def test_quantitative_gate_keeps_grounded_descriptive_association():
+    from backend.app.investigation_reasoning import validate_narrative_against_evidence
+    result = validate_narrative_against_evidence(
+        "Regenerator temperature and DP moved together (Pearson r=0.9866). "
+        "This does not establish causation.",
+        {"correlations": [{"r": 0.9866}]},
+    )
+    assert result == {"valid": True, "violations": []}
