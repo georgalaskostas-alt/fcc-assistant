@@ -350,6 +350,43 @@ def validate_reasoning_text(text: str) -> dict[str, Any]:
             violations.append({"type": "process_control_action", "text": clean})
     return {"valid": not violations, "violations": violations}
 
+def validate_quantitative_narrative(text: str, analytics: dict[str, Any]) -> dict[str, Any]:
+    """Reject ungrounded uncertainty and sample-lag claims before display.
+
+    The ordinary wording validator cannot establish whether a numerical
+    standard deviation or lag was actually computed. Require the corresponding
+    deterministic metric rather than trusting fluent model prose.
+    """
+    violations: list[dict[str, str]] = []
+    deviations = analytics.get("deviations") or {}
+    correlations = analytics.get("correlations") or []
+    temporal = analytics.get("temporal") or {}
+    for line in text.splitlines():
+        clean = line.strip()
+        if not clean:
+            continue
+        # A reported +/- dispersion must have an explicitly computed stdev
+        # for the named variable. The compact LLM context currently omits
+        # deviation statistics, so reject such model-generated values.
+        if re.search(r"(?:±|\\+/-|\\bstdev\\b|\\bstandard deviation\\b)", clean, re.I):
+            violations.append({"type": "unverified_dispersion", "text": clean})
+        # A temporal onset difference is not a cross-correlation or proof of
+        # lead/lag. Do not let the model manufacture a lag interpretation.
+        if re.search(r"\\b(?:preced(?:e|ed|es)|lag(?:ged)?|lead(?:s|ing)?|follow(?:s|ed)?)\\b.{0,80}\\b\\d+\\s*(?:samples?|minutes?|hours?)\\b", clean, re.I):
+            violations.append({"type": "unverified_temporal_lag", "text": clean})
+        if re.search(r"\\b\\d+\\s*(?:samples?|minutes?|hours?)\\b.{0,80}\\b(?:preced(?:e|ed|es)|lag(?:ged)?|lead(?:s|ing)?|follow(?:s|ed)?)\\b", clean, re.I):
+            if not any(v["type"] == "unverified_temporal_lag" and v["text"] == clean for v in violations):
+                violations.append({"type": "unverified_temporal_lag", "text": clean})
+    return {"valid": not violations, "violations": violations}
+
+
+def validate_narrative_against_evidence(text: str, analytics: dict[str, Any]) -> dict[str, Any]:
+    wording = validate_reasoning_text(text)
+    quantitative = validate_quantitative_narrative(text, analytics)
+    violations = wording["violations"] + quantitative["violations"]
+    return {"valid": not violations, "violations": violations}
+
+
 def _validation_diagnostics(initial: dict[str, Any], repaired: dict[str, Any] | None = None) -> dict[str, Any]:
     """Summarize both validation passes without exposing rejected model output."""
     def counts(result: dict[str, Any]) -> dict[str, int]:
@@ -583,7 +620,7 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
     context = _reasoning_context(goal=goal, synthesis=synthesis, data_source=data_source, analytics=analytics)
     try:
         response = await LocalAIClient().generate("Produce a concise descriptive engineering assessment from the supplied evidence only. Use sections Observations, Associations, Missing evidence, Limitations. Do not speculate about mechanisms or causes. Do not assert operating limits, normality, significance, or control actions. Include evidence IDs for each observation and state explicitly when causality is not established.", context, system_prompt=INVESTIGATION_SYSTEM_PROMPT, temperature=0.05)
-        validation = validate_reasoning_text(response.text)
+        validation = validate_narrative_against_evidence(response.text, analytics)
         if not validation["valid"]:
             # Keep the deterministic gate fail-closed, but give the local model
             # one bounded chance to rewrite unsafe epistemic wording. This is a
@@ -607,7 +644,8 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
                 "When an evidence search has no usable results, say only: No independent alarm/event evidence was retrieved from the available search. "
                 "Do not write that no events occurred or that no events could explain a trend. "
                 "Do not use the words explain, cause, caused, could explain, or linked to in Missing evidence or Limitations. "
-                "Use only descriptive quantities and source IDs already supplied in the evidence."
+                "Use only descriptive quantities and source IDs already supplied in the evidence. "
+                "Do not report plus/minus uncertainty, standard deviations, or numerical sample/time lags. "
             )
             repaired = await LocalAIClient().generate(
                 repair_prompt,
@@ -615,7 +653,7 @@ async def reason_about_investigation(*, goal: str, synthesis: dict[str, Any], da
                 system_prompt=INVESTIGATION_SYSTEM_PROMPT,
                 temperature=0.0,
             )
-            repaired_validation = validate_reasoning_text(repaired.text)
+            repaired_validation = validate_narrative_against_evidence(repaired.text, analytics)
             if repaired_validation["valid"]:
                 return {"available": True, "model": repaired.model, "text": repaired.text, "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {**repaired_validation, "repair_attempted": True, "repaired_after_rejection": True, "initial_violation_types": violation_types, "initial_violations": validation.get("violations", []), "diagnostics": _validation_diagnostics(validation, repaired_validation)}}
             return {"available": False, "model": repaired.model, "text": _validated_fallback(analytics=analytics, data_source=data_source), "analytics": analytics, "claims": claims, "hypotheses": hypotheses, "evidence_conclusion": conclusion, "stop_decision": stop_decision, "follow_up": follow_up, "investigation_trail": trail, "validation": {**repaired_validation, "repair_attempted": True, "initial_violation_types": violation_types, "initial_violations": validation.get("violations", []), "repair_violations": repaired_validation.get("violations", []), "diagnostics": _validation_diagnostics(validation, repaired_validation)}}
