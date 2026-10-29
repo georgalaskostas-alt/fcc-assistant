@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileSearch, ShieldCheck, Upload } from "lucide-react";
-import { api, PidInspectionResult } from "./api";
+import { api, PidInspectionResult, PidOcrResult } from "./api";
 import "./PidIntelligenceView.css";
 
 export function PidIntelligenceView() {
@@ -9,6 +9,25 @@ export function PidIntelligenceView() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [ocr, setOcr] = useState<PidOcrResult | null>(null);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!file) { setPreviewUrl(null); return; }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  async function runOcr() {
+    if (!file || ocrBusy) return;
+    setOcrBusy(true); setOcrError(null); setOcr(null);
+    try { setOcr(await api.ocrPidPage(file, page)); }
+    catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
+    finally { setOcrBusy(false); }
+  }
+
 
   async function inspect() {
     if (!file || busy) return;
@@ -46,6 +65,9 @@ export function PidIntelligenceView() {
           <input type="file" accept=".pdf,application/pdf" onChange={(event) => {
             setFile(event.target.files?.[0] ?? null);
             setResult(null);
+            setOcr(null);
+            setOcrError(null);
+            setPage(1);
             setError(null);
           }}/>
         </label>
@@ -57,6 +79,26 @@ export function PidIntelligenceView() {
       </div>}
       {error && <div role="alert" className="error-banner">{error}</div>}
 
+      {previewUrl && <section className="pid-preview-panel">
+        <div className="pid-table-head"><h3>Drawing preview</h3><span className="pid-muted">Local PDF viewer · original file unchanged</span></div>
+        <iframe title="P&ID PDF preview" src={previewUrl} className="pid-pdf-frame"/>
+        <div className="pid-ocr-controls">
+          <label>OCR page <input type="number" min={1} max={result?.pages.length ?? 100} value={page}
+            onChange={(event) => { setPage(Number(event.target.value)); setOcr(null); }}/></label>
+          <button type="button" className="secondary-button" disabled={!result || ocrBusy || page < 1 || page > result.pages.length}
+            onClick={() => void runOcr()}>{ocrBusy ? "Running local OCR…" : "Run local OCR on page"}</button>
+          <small>Optional local Tesseract OCR. No cloud processing.</small>
+        </div>
+        {ocrError && <div role="alert" className="error-banner">{ocrError}</div>}
+        {ocr && <div className="pid-ocr-output"><h3>OCR candidates · page {ocr.page} ({ocr.candidates.length})</h3>
+          <p className="pid-muted">{ocr.warning}</p>
+          {ocr.candidates.length ? <div className="pid-tag-list">{ocr.candidates.map((item,index) =>
+            <div className="pid-tag-row" key={index}><strong>{item.tag}</strong>
+              <span>OCR confidence {item.confidence.toFixed(0)}%</span>
+              <small>Position {Math.round(item.box.x * 100)}% × {Math.round(item.box.y * 100)}%</small></div>
+          )}</div> : <p className="pid-muted">No candidate tags detected. OCR may miss rotated or low-resolution text.</p>}
+        </div>}
+      </section>}
       {result && <div className="pid-results">
         <div className="pid-summary">
           <article><small>PDF pages</small><strong>{result.pages.length}</strong></article>
