@@ -29,3 +29,11 @@
 .pid-limitations strong {color:#eaf3ff;}
 .pid-limitations li {margin:7px 0;line-height:1.5;}
 @media(max-width:900px) {.pid-upload-panel {flex-wrap:wrap;}.pid-file-picker {width:100%;}.pid-intro {flex-wrap:wrap;}.pid-selection {flex-wrap:wrap;}.pid-tag-row {grid-template-columns:1fr 1fr;}.pid-tag-row small {grid-column:1/-1;}}
+
+.pid-preview-panel {display:grid;gap:15px;background:#0a1a2a;border:1px solid #294663;border-radius:14px;padding:18px;min-width:0;}
+.pid-pdf-frame {width:100%;height:min(68vh,720px);min-height:420px;border:1px solid #2b4968;border-radius:9px;background:#f4f4f4;}
+.pid-ocr-controls {display:flex;align-items:center;flex-wrap:wrap;gap:12px;color:#c1d7ec;}
+.pid-ocr-controls label {display:flex;align-items:center;gap:9px;}
+.pid-ocr-controls input {width:75px;padding:9px;background:#10263b;color:#fff;border:1px solid #3d668b;border-radius:7px;}
+.pid-ocr-controls small {color:#9eb6ce;}
+.pid-ocr-output {display:grid;gap:12px;}
