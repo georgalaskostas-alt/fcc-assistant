@@ -46,3 +46,22 @@ def test_non_pdf_upload_rejected():
         files={"file": ("drawing.txt", b"test", "text/plain")},
     )
     assert response.status_code == 422
+
+
+def test_ocr_rejects_invalid_page_before_external_dependencies():
+    response = TestClient(app).post(
+        "/api/v1/pid/ocr",
+        data={"page": "2"},
+        files={"file": ("example.pdf", _pdf(), "application/pdf")},
+    )
+    assert response.status_code == 422
+    assert "outside" in response.json()["detail"]
+
+
+def test_ocr_rejects_non_pdf_upload():
+    response = TestClient(app).post(
+        "/api/v1/pid/ocr",
+        data={"page": "1"},
+        files={"file": ("drawing.txt", b"test", "text/plain")},
+    )
+    assert response.status_code == 422
