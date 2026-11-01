@@ -365,10 +365,17 @@ export function PidIntelligenceView() {
               <input aria-label="Line standard example" value={standardExample}
                 onChange={event => setStandardExample(event.target.value)}/>
             </label>
-            <div className="pid-review-actions">
-              <button type="button" onClick={() => setLineNumberPattern('^\\\\d{1,2}"-\\\\d+-\\\\d{6}-[A-Z] && !compiledLinePattern ? "Invalid or overly long regex." :
-              `${lineNumberCandidates.length} OCR labels match the configured line-number format.`}
-              {" "}No line-number suggestions are generated until a valid format is entered.</small>
+            <button type="button" onClick={saveLineStandard}>Save / update standard</button>
+            <label>Saved profiles <select aria-label="Saved line standards" value="" onChange={event => {
+              const item = savedStandards.find(entry => entry.name === event.target.value);
+              if(item){setStandardName(item.name);setLineNumberPattern(item.pattern);setStandardExample(item.example);}
+            }}><option value="">Choose profile…</option>
+              {savedStandards.map(item => <option key={item.name} value={item.name}>{item.name}</option>)}
+            </select></label>
+            <button type="button" onClick={() => deleteLineStandard(standardName)}>Delete named profile</button>
+            <small>{compiledLinePattern?.test(standardExample.trim()) ? "Example matches format." : "Example does not match format."}</small>
+            <small>{lineNumberPattern.trim() && !compiledLinePattern ? "Invalid regex." : `${lineNumberCandidates.length} matching OCR labels.`}</small>
+            {standardMessage && <small role="status">{standardMessage}</small>}
           </div>
           {selectedVisualPath !== null && <div className="pid-review-panel">
             <strong>Nearby line-number labels · unverified spatial suggestions</strong>
