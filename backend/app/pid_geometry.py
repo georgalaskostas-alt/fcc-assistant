@@ -30,6 +30,7 @@ def detect_line_segments(image: Image.Image, *, min_length: int = 65,
             "x2": round(x2 / width, 6), "y2": round(y2 / height, 6),
             "orientation": "horizontal" if y1 == y2 else "vertical",
             "status": "unverified_visual_segment",
+            "region_hint": ("title_block_candidate" if (x1+x2)/(2*width)>0.74 and (y1+y2)/(2*height)>0.85 else "drawing_area_candidate"),
         })
 
     for y in range(0, height, 2):
