@@ -61,15 +61,47 @@ def inspect_pid_pdf(content: bytes) -> dict[str, object]:
     }
 
 
+
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
+MAX_IMAGE_PIXELS = 25_000_000
+
+
+def normalize_drawing(content: bytes, filename: str) -> bytes:
+    """Convert supported raster photos to a one-page PDF for the existing OCR pipeline."""
+    name = filename.lower()
+    if name.endswith(".pdf"):
+        return content
+    if not name.endswith(IMAGE_EXTENSIONS):
+        raise ValueError("Upload PDF, PNG, JPG or JPEG")
+    is_png = content.startswith(bytes([137, 80, 78, 71, 13, 10, 26, 10]))
+    is_jpeg = content.startswith(bytes([255, 216, 255]))
+    if not (is_png or is_jpeg):
+        raise ValueError("Invalid PNG/JPEG image")
+    try:
+        import fitz
+        image = fitz.open(stream=content, filetype="png" if is_png else "jpeg")
+        try:
+            page = image[0]
+            if page.rect.width * page.rect.height > MAX_IMAGE_PIXELS:
+                raise ValueError("Image dimensions exceed safety limit")
+            pdf_bytes = image.convert_to_pdf()
+        finally:
+            image.close()
+        return pdf_bytes
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("Could not read image") from exc
+
 @router.post("/inspect")
 async def inspect_pid(file: UploadFile = File(...)) -> dict[str, object]:
-    if not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(status_code=422, detail="Upload a PDF file")
+    if not (file.filename or "").lower().endswith((".pdf",) + IMAGE_EXTENSIONS):
+        raise HTTPException(status_code=422, detail="Upload PDF, PNG, JPG or JPEG")
     payload = await file.read(MAX_PDF_BYTES + 1)
     if len(payload) > MAX_PDF_BYTES:
         raise HTTPException(status_code=413, detail="PDF exceeds 20 MB limit")
     try:
-        return inspect_pid_pdf(payload)
+        return inspect_pid_pdf(normalize_drawing(payload, file.filename or ""))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -155,7 +187,7 @@ async def ocr_pid(file: UploadFile = File(...), page: int = Form(1)) -> dict[str
     if len(payload) > MAX_PDF_BYTES:
         raise HTTPException(status_code=413, detail="PDF exceeds 20 MB limit")
     try:
-        return ocr_pid_page(payload, page)
+        return ocr_pid_page(normalize_drawing(payload, file.filename or ""), page)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:
