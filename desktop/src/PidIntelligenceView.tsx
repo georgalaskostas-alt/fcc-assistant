@@ -24,6 +24,17 @@ export function PidIntelligenceView() {
   const [selectedVisualPath, setSelectedVisualPath] = useState<number | null>(null);
   const [pathEquipment, setPathEquipment] = useState<Record<string, string>>({});
   const [lineNumberPattern, setLineNumberPattern] = useState("");
+  const [standardName, setStandardName] = useState("FCC line numbering");
+  const [standardExample, setStandardExample] = useState('10"-0-425112-B');
+  const [savedStandards, setSavedStandards] = useState<Array<{name:string;pattern:string;example:string}>>(() => {
+    try {
+      const value: unknown = JSON.parse(localStorage.getItem("fcc-pid-line-standards-v1") ?? "[]");
+      return Array.isArray(value) ? value.filter((item): item is {name:string;pattern:string;example:string} =>
+        typeof item?.name === "string" && typeof item?.pattern === "string" && typeof item?.example === "string").slice(0,30) : [];
+    } catch { return []; }
+  });
+  const [standardMessage, setStandardMessage] = useState("");
+
   const [pathLineNumbers, setPathLineNumbers] = useState<Record<string, string>>({});
   const [symbolMode, setSymbolMode] = useState<"off" | "equipment" | "valve" | "instrument" | "connector">("off");
   const [symbolAnnotations, setSymbolAnnotations] = useState<Array<{x:number;y:number;kind:"equipment" | "valve" | "instrument" | "connector";tag:string}>>([]);
@@ -80,6 +91,24 @@ export function PidIntelligenceView() {
     };
   });
   const visualPaths = reconstructVisualPaths(ocr?.topology?.proposals ?? [], topologyReviews);
+  function saveLineStandard() {
+    const name = standardName.trim();
+    if (!name || name.length > 80 || !compiledLinePattern || !compiledLinePattern.test(standardExample.trim())) {
+      setStandardMessage("Provide a name, valid pattern and a matching example."); return;
+    }
+    const next = [...savedStandards.filter(item => item.name !== name), {
+      name, pattern: lineNumberPattern, example: standardExample.trim(),
+    }].slice(-30);
+    try { localStorage.setItem("fcc-pid-line-standards-v1", JSON.stringify(next)); }
+    catch { setStandardMessage("Could not save locally."); return; }
+    setSavedStandards(next); setStandardMessage("Saved locally on this device.");
+  }
+  function deleteLineStandard(name:string) {
+    const next = savedStandards.filter(item => item.name !== name);
+    try { localStorage.setItem("fcc-pid-line-standards-v1", JSON.stringify(next)); }
+    catch { setStandardMessage("Could not update local storage."); return; }
+    setSavedStandards(next); setStandardMessage("Profile deleted.");
+  }
   const compiledLinePattern = (() => {
     if (!lineNumberPattern.trim() || lineNumberPattern.length > 160) return null;
     try { return new RegExp(lineNumberPattern, "i"); } catch { return null; }
