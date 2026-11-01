@@ -48,13 +48,15 @@ export function PidIntelligenceView() {
     entry.tag.toLowerCase().includes(filter.trim().toLowerCase()),
   );
   const textPages = result?.pages.filter((entry) => entry.text_available).length ?? 0;
+  const isPhoto = Boolean(file && /\\.(png|jpe?g)$/i.test(file.name));
+  const candidateTotal = (result?.candidate_tags.length ?? 0) + (ocr?.candidates.length ?? 0);
 
   return (
     <section className="pid-workspace">
       <div className="pid-intro">
         <div><span className="eyebrow">P&ID INTELLIGENCE · PHASE 1</span>
-          <h2>PDF drawing inspection</h2>
-          <p>Read-only candidate tag discovery from the PDF text layer. No topology or design corrections are inferred.</p>
+          <h2>P&ID drawing inspection</h2>
+          <p>Read-only discovery of candidate tags from PDFs and photos. OCR results require verification; no diagram topology is inferred.</p>
         </div>
         <span className="pid-readonly"><ShieldCheck size={16}/> Read-only</span>
       </div>
@@ -117,17 +119,17 @@ export function PidIntelligenceView() {
       </section>}
       {result && <div className="pid-results">
         <div className="pid-summary">
-          <article><small>PDF pages</small><strong>{result.pages.length}</strong></article>
+          <article><small>Drawing pages</small><strong>{result.pages.length}</strong></article>
           <article><small>Pages with selectable text</small><strong>{textPages}</strong></article>
-          <article><small>Candidate tags</small><strong>{result.candidate_tags.length}</strong></article>
+          <article><small>Candidate tags (text + OCR)</small><strong>{candidateTotal}</strong></article>
         </div>
-        {textPages === 0 && <div className="pid-notice">No selectable text was found. Run local OCR to attempt recognition of labels in the drawing.</div>}
-        <div className="pid-table-head"><h3>Unverified tag candidates</h3>
+        {textPages === 0 && !ocr && <div className="pid-notice">No selectable text was found. Run local OCR to attempt recognition of labels in the drawing.</div>}
+        <div className="pid-table-head"><h3>Text-layer tag candidates</h3>
           <input aria-label="Filter candidate tags" placeholder="Filter by tag…" value={filter} onChange={(event) => setFilter(event.target.value)}/>
         </div>
         {tags.length > 0 ? <div className="pid-tag-list">{tags.map((entry) =>
           <div className="pid-tag-row" key={entry.tag}><strong>{entry.tag}</strong><span>Page {entry.pages.join(", ")}</span><small>Unverified candidate</small></div>
-        )}</div> : <p className="pid-muted">No matching candidate tags were found in the available PDF text layer.</p>}
+        )}</div> : <p className="pid-muted">No matching tags in the text layer. OCR results are shown above.</p>}
         <div className="pid-limitations"><strong>Current limitations</strong>
           <ul>{result.limitations.map((item) => <li key={item}>{item}</li>)}</ul>
         </div>
