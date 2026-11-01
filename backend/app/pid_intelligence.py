@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import base64
 import re
 import shutil
 import subprocess
@@ -94,7 +95,8 @@ def ocr_pid_page(content: bytes, page_number: int = 1) -> dict[str, object]:
             pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
             with tempfile.TemporaryDirectory(prefix="fcc-pid-ocr-") as temp_dir:
                 image_path = Path(temp_dir) / "page.png"
-                pixmap.save(str(image_path))
+                image_bytes = pixmap.tobytes("png")
+                image_path.write_bytes(image_bytes)
                 completed = subprocess.run(
                     ["tesseract", str(image_path), "stdout", "-l", "eng", "--psm", "11", "tsv"],
                     capture_output=True, text=True, timeout=90, check=False,
@@ -103,7 +105,8 @@ def ocr_pid_page(content: bytes, page_number: int = 1) -> dict[str, object]:
                 raise RuntimeError("Local OCR process failed")
             rows = completed.stdout.splitlines()
             if not rows:
-                return {"page": page_number, "engine": "tesseract-local", "candidates": [], "read_only": True}
+                return {"page": page_number, "engine": "tesseract-local", "candidates": [], "read_only": True,
+                        "preview_png_base64": base64.b64encode(image_bytes).decode("ascii")}
             import csv
             candidates = []
             seen = set()
@@ -134,6 +137,7 @@ def ocr_pid_page(content: bytes, page_number: int = 1) -> dict[str, object]:
                 })
             return {
                 "page": page_number, "engine": "tesseract-local",
+                "preview_png_base64": base64.b64encode(image_bytes).decode("ascii"),
                 "candidates": candidates[:500], "read_only": True,
                 "warning": "OCR labels and coordinates are unverified. No diagram topology is inferred.",
             }
