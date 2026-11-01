@@ -234,6 +234,14 @@ export function PidIntelligenceView() {
               {visualPaths.map((path, index) => <option key={index} value={index}>Path #{index + 1} · {path.segmentIds.length} segments · {path.proposalIds.length} accepted pairs</option>)}
             </select>
           </label>
+          {selectedPathKey !== null && <div className="pid-review-panel">
+            <label>Engineer-annotated equipment tag (not automatically verified)
+              <input aria-label="Equipment tag for selected visual path" maxLength={40}
+                placeholder="e.g. MP02S" value={pathEquipment[selectedPathKey] ?? ""}
+                onChange={event => setPathEquipment(previous => ({...previous, [selectedPathKey]: event.target.value.toUpperCase().replace(/[^A-Z0-9_/-]/g, "")}))}/>
+            </label>
+            <small>Manual annotation only. Does not establish suction/discharge, flow direction, or instrument connectivity.</small>
+          </div>}
           {selectedVisualPath !== null && visualPaths[selectedVisualPath] && <p className="pid-muted">Green highlight: segments {visualPaths[selectedVisualPath].segmentIds.map(id => id + 1).join(", ")}. Crossings and flow direction remain unresolved.</p>}
         </section>}
         {ocr && <section className="pid-graph-panel">
