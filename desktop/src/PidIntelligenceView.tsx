@@ -306,17 +306,28 @@ export function PidIntelligenceView() {
               {visualPaths.map((path, index) => <option key={index} value={index}>Path #{index + 1} · {path.segmentIds.length} segments · {path.proposalIds.length} accepted pairs</option>)}
             </select>
           </label>
+          <div className="pid-review-panel">
+            <strong>Line number recognition · site-specific format</strong>
+            <label>Line-number regular expression
+              <input aria-label="Line number format" value={lineNumberPattern}
+                placeholder="Enter approved site line-number regex"
+                onChange={event => setLineNumberPattern(event.target.value)} />
+            </label>
+            <small>{lineNumberPattern.trim() && !compiledLinePattern ? "Invalid or overly long regex." :
+              `${lineNumberCandidates.length} OCR labels match the configured line-number format.`}
+              {" "}No line-number suggestions are generated until a valid format is entered.</small>
+          </div>
           {selectedVisualPath !== null && <div className="pid-review-panel">
-            <strong>Nearby OCR labels · unverified spatial suggestions</strong>
-            <p>Candidate labels near segment endpoints. Proximity does not establish equipment identity, physical connectivity, or flow direction.</p>
+            <strong>Nearby line-number labels · unverified spatial suggestions</strong>
+            <p>Only OCR labels matching the configured line-number format are considered. Proximity does not establish line identity or connectivity.</p>
             {spatialSuggestions.filter(item => item.pathIndex === selectedVisualPath).slice(0, 5).map(item =>
               <div key={item.candidateIndex} className="pid-review-actions">
                 <span>{item.tag} · normalized distance {item.distance}</span>
                 <button type="button" onClick={() => {
-                  if (selectedPathKey !== null) setPathEquipment(previous => ({...previous, [selectedPathKey]: corrections[item.candidateIndex] ?? item.tag}));
-                }}>Use label as draft annotation</button>
+                  if (selectedPathKey !== null) setPathLineNumbers(previous => ({...previous, [selectedPathKey]: corrections[item.candidateIndex] ?? item.tag}));
+                }}>Use as draft line number</button>
               </div>)}
-            {!spatialSuggestions.some(item => item.pathIndex === selectedVisualPath) && <small>No OCR label close enough to the path endpoints.</small>}
+            {!spatialSuggestions.some(item => item.pathIndex === selectedVisualPath) && <small>No matching line-number label close enough to the path endpoints.</small>}
           </div>}
           {selectedPathKey !== null && <div className="pid-review-panel">
             <label>Engineer-annotated equipment tag (not automatically verified)
