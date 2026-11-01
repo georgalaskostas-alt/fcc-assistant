@@ -232,6 +232,28 @@ export function PidIntelligenceView() {
           </div>
           <small>Local review only. No drawing changes or automatic AI training.</small>
         </div>}
+        {ocr && <section className="pid-graph-panel">
+          <div className="pid-table-head"><h3>Symbol annotation · engineer-assisted</h3>
+            <button type="button" className="secondary-button" onClick={exportSymbolAnnotations}>Export symbols JSON</button>
+          </div>
+          <p className="pid-muted">Choose a symbol category, then click its center on the drawing. These are manual labels, not automatic symbol recognition.</p>
+          <label>Place symbol
+            <select aria-label="Symbol placement mode" value={symbolMode} onChange={event => setSymbolMode(event.target.value as typeof symbolMode)}>
+              <option value="off">Off · normal review</option>
+              <option value="equipment">Equipment</option>
+              <option value="valve">Valve</option>
+              <option value="instrument">Instrument</option>
+              <option value="connector">Off-page connector</option>
+            </select>
+          </label>
+          <p>{symbolAnnotations.length} manually placed symbols</p>
+          {symbolAnnotations.map((symbol,index) => <div key={index} className="pid-review-actions">
+            <span>#{index+1} · {symbol.kind} · ({symbol.x.toFixed(3)}, {symbol.y.toFixed(3)})</span>
+            <input aria-label={`Symbol ${index+1} tag`} placeholder="Optional tag" maxLength={40} value={symbol.tag}
+              onChange={event => setSymbolAnnotations(previous => previous.map((item,i) => i === index ? {...item,tag:event.target.value.toUpperCase()} : item))}/>
+            <button type="button" onClick={() => setSymbolAnnotations(previous => previous.filter((_,i) => i !== index))}>Remove</button>
+          </div>)}
+        </section>}
         {ocr?.geometry && <section className="pid-graph-panel">
           <div className="pid-table-head"><h3>Visual geometry · experimental</h3>
             <label className="pid-geometry-toggle"><input type="checkbox" checked={showGeometry} onChange={event => setShowGeometry(event.target.checked)}/> Show detected segments on drawing</label>
