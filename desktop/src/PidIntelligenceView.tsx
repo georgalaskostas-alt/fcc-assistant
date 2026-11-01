@@ -104,6 +104,21 @@ export function PidIntelligenceView() {
     link.download = `pid-topology-review-page-${ocr.page}.json`; link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  function exportLineNumberAnnotations() {
+    if (!ocr) return;
+    const annotations = visualPaths.flatMap(path => {
+      const key = path.segmentIds.join(",");
+      const lineNumber = pathLineNumbers[key]?.trim();
+      return lineNumber ? [{line_number: lineNumber, segment_ids: path.segmentIds,
+        status: "manual_unverified_line_association"}] : [];
+    });
+    const payload = {schema_version: 1, page: ocr.page, line_number_pattern: lineNumberPattern,
+      annotations, warning: "Line-number labels and path associations are unverified. No inferred equipment connection."};
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type: "application/json"});
+    const url = URL.createObjectURL(blob); const link = document.createElement("a");
+    link.href = url; link.download = `pid-line-annotations-page-${ocr.page}.json`;
+    link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   function exportConnectivityAnnotations() {
     if (!ocr) return;
     const annotations = visualPaths.flatMap(path => {
@@ -297,7 +312,7 @@ export function PidIntelligenceView() {
           </div>}
         </section>}
         {ocr?.topology && <section className="pid-graph-panel">
-          <div className="pid-table-head"><h3>Connected visual paths · engineer review</h3><button type="button" className="secondary-button" onClick={exportConnectivityAnnotations}>Export equipment annotations</button></div>
+          <div className="pid-table-head"><h3>Connected visual paths · engineer review</h3><button type="button" className="secondary-button" onClick={exportLineNumberAnnotations}>Export line numbers</button><button type="button" className="secondary-button" onClick={exportConnectivityAnnotations}>Export equipment annotations</button></div>
           <p><strong>{visualPaths.length}</strong> grouped paths from accepted endpoint pairs; not verified process or signal connectivity.</p>
           <label className="pid-geometry-toggle">Highlight path
             <select aria-label="Select visual path" value={selectedVisualPath !== null && visualPaths[selectedVisualPath] ? selectedVisualPath : ""}
@@ -328,6 +343,14 @@ export function PidIntelligenceView() {
                 }}>Use as draft line number</button>
               </div>)}
             {!spatialSuggestions.some(item => item.pathIndex === selectedVisualPath) && <small>No matching line-number label close enough to the path endpoints.</small>}
+          </div>}
+          {selectedPathKey !== null && <div className="pid-review-panel">
+            <label>Draft line number (separate from equipment tag)
+              <input aria-label="Draft line number" maxLength={80}
+                value={pathLineNumbers[selectedPathKey] ?? ""}
+                onChange={event => setPathLineNumbers(previous => ({...previous, [selectedPathKey]: event.target.value.toUpperCase()}))}/>
+            </label>
+            <small>Requires checking the line-number leader/placement and site line list before verification.</small>
           </div>}
           {selectedPathKey !== null && <div className="pid-review-panel">
             <label>Engineer-annotated equipment tag (not automatically verified)
