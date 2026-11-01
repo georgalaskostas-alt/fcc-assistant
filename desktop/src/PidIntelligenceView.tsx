@@ -178,7 +178,15 @@ export function PidIntelligenceView() {
         {ocrError && <div role="alert" className="error-banner">{ocrError}</div>}
         {ocr?.preview_png_base64 && <div className="pid-annotated">
           <div className="pid-table-head"><h3>OCR visual verification · page {ocr.page}</h3><span className="pid-muted">Boxes indicate unverified OCR candidates</span></div>
-          <div className="pid-annotated-image">
+          <div className="pid-annotated-image" onClick={event => {
+            if (symbolMode === "off") return;
+            if (event.target !== event.currentTarget && (event.target as HTMLElement).closest("button")) return;
+            const bounds = event.currentTarget.getBoundingClientRect();
+            if (!bounds.width || !bounds.height) return;
+            const x = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+            const y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
+            setSymbolAnnotations(previous => [...previous, {x, y, kind: symbolMode, tag:""}]);
+          }}>
             <img alt={`Rendered P&ID page ${ocr.page} for visual OCR verification`} src={`data:image/png;base64,${ocr.preview_png_base64}`}/>
             {showGeometry && ocr.geometry && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Unverified visual line segments">
               {ocr.geometry.segments.filter(segment => includeTitleBlock || segment.region_hint !== "title_block_candidate").map((segment, index) => <line key={index}
@@ -199,6 +207,7 @@ export function PidIntelligenceView() {
                 return segment ? <line key={id} x1={segment.x1*1000} y1={segment.y1*1000} x2={segment.x2*1000} y2={segment.y2*1000} stroke="#00d9a6" strokeWidth="5" vectorEffect="non-scaling-stroke"/> : null;
               })}
             </svg>}
+            {symbolAnnotations.map((symbol, index) => <span key={index} className="pid-manual-symbol" style={{left:`${symbol.x*100}%`,top:`${symbol.y*100}%`}} title={`Manual ${symbol.kind}: ${symbol.tag || "unlabeled"}`}>{symbol.kind === "valve" ? "V" : symbol.kind === "instrument" ? "I" : symbol.kind === "connector" ? "C" : "E"}</span>)}
             {ocr.candidates.map((item,index) => <button key={index} type="button"
               title={`${item.tag} · OCR ${item.confidence.toFixed(0)}% · not verified`}
               aria-label={`Inspect candidate ${item.tag}`}
