@@ -54,3 +54,7 @@
 .pid-review-actions button {padding:9px 14px;border:1px solid #5684a5;border-radius:7px;background:#183e59;color:#f4f9ff;cursor:pointer;}
 .pid-review-actions button:hover {background:#245779;}
 .pid-review-panel small {color:#a9c4d6;}
+
+.pid-graph-panel {display:grid;gap:10px;padding:18px;border:1px solid #426783;border-radius:10px;background:#102a3d;}
+.pid-graph-panel p {margin:0;line-height:1.6;}
+.pid-graph-panel .pid-table-head {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;}
