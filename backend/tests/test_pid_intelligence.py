@@ -88,3 +88,26 @@ def test_ocr_response_has_matching_raster_and_normalized_coordinates(monkeypatch
     assert 0 <= result["candidates"][0]["box"]["x"] <= 1
     assert 0 <= result["candidates"][0]["box"]["y"] <= 1
     assert result["read_only"] is True
+
+
+def test_png_image_can_be_inspected_as_one_page():
+    import fitz
+    from backend.app.pid_intelligence import normalize_drawing
+    pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 24, 24), False)
+    image = pixmap.tobytes("png")
+    converted = normalize_drawing(image, "drawing.png")
+    assert converted.startswith(b"%PDF-")
+    response = TestClient(app).post(
+        "/api/v1/pid/inspect",
+        files={"file": ("drawing.png", image, "image/png")},
+    )
+    assert response.status_code == 200
+    assert len(response.json()["pages"]) == 1
+
+
+def test_fake_image_is_rejected():
+    response = TestClient(app).post(
+        "/api/v1/pid/inspect",
+        files={"file": ("drawing.jpg", b"not a jpeg", "image/jpeg")},
+    )
+    assert response.status_code == 422
