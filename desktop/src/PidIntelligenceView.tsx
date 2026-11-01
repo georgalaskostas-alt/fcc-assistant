@@ -90,6 +90,22 @@ export function PidIntelligenceView() {
     link.download = `pid-topology-review-page-${ocr.page}.json`; link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  function exportConnectivityAnnotations() {
+    if (!ocr) return;
+    const annotations = visualPaths.flatMap(path => {
+      const key = path.segmentIds.join(",");
+      const equipmentTag = pathEquipment[key]?.trim();
+      return equipmentTag ? [{equipment_tag: equipmentTag, segment_ids: path.segmentIds,
+        proposal_ids: path.proposalIds, status: "manual_unverified_association"}] : [];
+    });
+    const payload = {schema_version: 1, page: ocr.page, annotations,
+      warning: "Manual visual-path associations only. No verified engineering connectivity or flow direction."};
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `pid-connectivity-annotations-page-${ocr.page}.json`;
+    link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   function exportGraphDraft() {
     if (!ocr) return;
     const blob = new Blob([JSON.stringify(graphDraft, null, 2)], { type: "application/json" });
@@ -225,7 +241,7 @@ export function PidIntelligenceView() {
           </div>}
         </section>}
         {ocr?.topology && <section className="pid-graph-panel">
-          <h3>Connected visual paths · engineer review</h3>
+          <div className="pid-table-head"><h3>Connected visual paths · engineer review</h3><button type="button" className="secondary-button" onClick={exportConnectivityAnnotations}>Export equipment annotations</button></div>
           <p><strong>{visualPaths.length}</strong> grouped paths from accepted endpoint pairs; not verified process or signal connectivity.</p>
           <label className="pid-geometry-toggle">Highlight path
             <select aria-label="Select visual path" value={selectedVisualPath !== null && visualPaths[selectedVisualPath] ? selectedVisualPath : ""}
