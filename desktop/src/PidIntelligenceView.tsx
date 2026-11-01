@@ -252,6 +252,18 @@ export function PidIntelligenceView() {
               {visualPaths.map((path, index) => <option key={index} value={index}>Path #{index + 1} · {path.segmentIds.length} segments · {path.proposalIds.length} accepted pairs</option>)}
             </select>
           </label>
+          {selectedVisualPath !== null && <div className="pid-review-panel">
+            <strong>Nearby OCR labels · unverified spatial suggestions</strong>
+            <p>Candidate labels near segment endpoints. Proximity does not establish equipment identity, physical connectivity, or flow direction.</p>
+            {spatialSuggestions.filter(item => item.pathIndex === selectedVisualPath).slice(0, 5).map(item =>
+              <div key={item.candidateIndex} className="pid-review-actions">
+                <span>{item.tag} · normalized distance {item.distance}</span>
+                <button type="button" onClick={() => {
+                  if (selectedPathKey !== null) setPathEquipment(previous => ({...previous, [selectedPathKey]: corrections[item.candidateIndex] ?? item.tag}));
+                }}>Use label as draft annotation</button>
+              </div>)}
+            {!spatialSuggestions.some(item => item.pathIndex === selectedVisualPath) && <small>No OCR label close enough to the path endpoints.</small>}
+          </div>}
           {selectedPathKey !== null && <div className="pid-review-panel">
             <label>Engineer-annotated equipment tag (not automatically verified)
               <input aria-label="Equipment tag for selected visual path" maxLength={40}
