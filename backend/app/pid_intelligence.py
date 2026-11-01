@@ -12,6 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pypdf import PdfReader
 from .pid_ocr_utils import extract_candidates, deduplicate
+from .pid_geometry import detect_line_segments
 
 router = APIRouter(prefix="/api/v1/pid", tags=["pid-intelligence"])
 
@@ -168,10 +169,12 @@ def ocr_pid_page(content: bytes, page_number: int = 1) -> dict[str, object]:
                                         offset_x=left, offset_y=top,
                                     ))
             candidates = deduplicate(candidates + tile_candidates)
+            with Image.open(io.BytesIO(image_bytes)) as geometry_image:
+                geometry = detect_line_segments(geometry_image)
             return {
                 "page": page_number, "engine": "tesseract-local",
                 "preview_png_base64": base64.b64encode(image_bytes).decode("ascii"),
-                "candidates": candidates, "read_only": True,
+                "candidates": candidates, "geometry": geometry, "read_only": True,
                 "warning": "OCR labels and coordinates are unverified. No diagram topology is inferred.",
             }
         finally:
