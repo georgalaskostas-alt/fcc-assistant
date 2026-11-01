@@ -53,6 +53,33 @@ export function PidIntelligenceView() {
   const textPages = result?.pages.filter((entry) => entry.text_available).length ?? 0;
   const isPhoto = Boolean(file && /\\.(png|jpe?g)$/i.test(file.name));
   const candidateTotal = (result?.candidate_tags.length ?? 0) + (ocr?.candidates.length ?? 0);
+  const graphNodes = (ocr?.candidates ?? []).filter((_, index) => reviews[index] !== "incorrect").map((item, index) => {
+    const originalIndex = ocr!.candidates.indexOf(item);
+    return {
+      id: `p${ocr!.page}-ocr-${originalIndex}`,
+      kind: "unknown" as const,
+      tag: corrections[originalIndex] ?? item.tag,
+      original_tag: item.tag,
+      page: ocr!.page,
+      box: [item.box.x, item.box.y, item.box.width, item.box.height],
+      verified: reviews[originalIndex] === "correct",
+      source: "ocr" as const,
+      confidence: item.confidence,
+    };
+  });
+  const graphDraft = { schema_version: 1, read_only: true, nodes: graphNodes, edges: [] as never[],
+    warning: "No process or signal connections have been established. OCR alone cannot prove topology." };
+  function exportGraphDraft() {
+    if (!ocr) return;
+    const blob = new Blob([JSON.stringify(graphDraft, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `pid-graph-page-${ocr.page}.json`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
 
   return (
     <section className="pid-workspace">
@@ -125,6 +152,13 @@ export function PidIntelligenceView() {
           </div>
           <small>Local review only. No drawing changes or automatic AI training.</small>
         </div>}
+        {ocr && <section className="pid-graph-panel">
+          <div className="pid-table-head"><h3>Engineering Graph · draft</h3>
+            <button type="button" className="secondary-button" onClick={exportGraphDraft}>Export graph JSON</button>
+          </div>
+          <p>Nodes: <strong>{graphNodes.length}</strong> · Engineer-verified: <strong>{graphNodes.filter(node => node.verified).length}</strong> · Connections: <strong>0</strong></p>
+          <p className="pid-muted">This is a draft inventory, not a process-flow model. No piping or signal connections are inferred from OCR. Incorrect candidates are excluded; corrected labels are retained with their originals.</p>
+        </section>}
         {ocr && <div className="pid-ocr-output"><h3>OCR candidates · page {ocr.page} ({ocr.candidates.length})</h3>
           <p className="pid-muted">{ocr.warning}</p>
           <p className="pid-muted">Review each candidate. Decisions remain in this session; they do not train the model or change drawings.</p>
