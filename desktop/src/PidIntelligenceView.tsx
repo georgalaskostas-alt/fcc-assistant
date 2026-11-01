@@ -150,6 +150,13 @@ export function PidIntelligenceView() {
                 x2={segment.x2 * 1000} y2={segment.y2 * 1000}
                 stroke="#00b8ff" strokeWidth="1.5" vectorEffect="non-scaling-stroke" opacity="0.8" />)}
             </svg>}
+            {selectedTopology !== null && ocr.topology && ocr.geometry && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Selected endpoint proposal">
+              {[ocr.topology.proposals[selectedTopology]?.segment_a, ocr.topology.proposals[selectedTopology]?.segment_b].filter((id): id is number => id !== undefined).map((id, index) => {
+                const segment = ocr.geometry!.segments[id];
+                return segment ? <line key={id} x1={segment.x1*1000} y1={segment.y1*1000} x2={segment.x2*1000} y2={segment.y2*1000}
+                  stroke={index === 0 ? "#ff9d00" : "#ff2d88"} strokeWidth="4" vectorEffect="non-scaling-stroke"/> : null;
+              })}
+            </svg>}
             {ocr.candidates.map((item,index) => <button key={index} type="button"
               title={`${item.tag} · OCR ${item.confidence.toFixed(0)}% · not verified`}
               aria-label={`Inspect candidate ${item.tag}`}
