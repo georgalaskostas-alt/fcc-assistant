@@ -357,6 +357,101 @@ export function PidIntelligenceView() {
                 placeholder="Enter approved site line-number regex"
                 onChange={event => setLineNumberPattern(event.target.value)} />
             </label>
+            <label>Profile name
+              <input aria-label="Line standard profile name" maxLength={80} value={standardName}
+                onChange={event => setStandardName(event.target.value)}/>
+            </label>
+            <label>Example line number
+              <input aria-label="Line standard example" value={standardExample}
+                onChange={event => setStandardExample(event.target.value)}/>
+            </label>
+            <div className="pid-review-actions">
+              <button type="button" onClick={() => setLineNumberPattern('^\\\\d{1,2}"-\\\\d+-\\\\d{6}-[A-Z] && !compiledLinePattern ? "Invalid or overly long regex." :
+              `${lineNumberCandidates.length} OCR labels match the configured line-number format.`}
+              {" "}No line-number suggestions are generated until a valid format is entered.</small>
+          </div>
+          {selectedVisualPath !== null && <div className="pid-review-panel">
+            <strong>Nearby line-number labels · unverified spatial suggestions</strong>
+            <p>Only OCR labels matching the configured line-number format are considered. Proximity does not establish line identity or connectivity.</p>
+            {spatialSuggestions.filter(item => item.pathIndex === selectedVisualPath).slice(0, 5).map(item =>
+              <div key={item.candidateIndex} className="pid-review-actions">
+                <span>{item.tag} · normalized distance {item.distance}</span>
+                <button type="button" onClick={() => {
+                  if (selectedPathKey !== null) setPathLineNumbers(previous => ({...previous, [selectedPathKey]: corrections[item.candidateIndex] ?? item.tag}));
+                }}>Use as draft line number</button>
+              </div>)}
+            {!spatialSuggestions.some(item => item.pathIndex === selectedVisualPath) && <small>No matching line-number label close enough to the path endpoints.</small>}
+          </div>}
+          {selectedPathKey !== null && <div className="pid-review-panel">
+            <label>Draft line number (separate from equipment tag)
+              <input aria-label="Draft line number" maxLength={80}
+                value={pathLineNumbers[selectedPathKey] ?? ""}
+                onChange={event => setPathLineNumbers(previous => ({...previous, [selectedPathKey]: event.target.value.toUpperCase()}))}/>
+            </label>
+            <small>Requires checking the line-number leader/placement and site line list before verification.</small>
+          </div>}
+          {selectedPathKey !== null && <div className="pid-review-panel">
+            <label>Engineer-annotated equipment tag (not automatically verified)
+              <input aria-label="Equipment tag for selected visual path" maxLength={40}
+                placeholder="e.g. MP02S" value={pathEquipment[selectedPathKey] ?? ""}
+                onChange={event => setPathEquipment(previous => ({...previous, [selectedPathKey]: event.target.value.toUpperCase().replace(/[^A-Z0-9_/-]/g, "")}))}/>
+            </label>
+            <small>Manual annotation only. Does not establish suction/discharge, flow direction, or instrument connectivity.</small>
+          </div>}
+          {selectedVisualPath !== null && visualPaths[selectedVisualPath] && <p className="pid-muted">Green highlight: segments {visualPaths[selectedVisualPath].segmentIds.map(id => id + 1).join(", ")}. Crossings and flow direction remain unresolved.</p>}
+        </section>}
+        {ocr && <section className="pid-graph-panel">
+          <div className="pid-table-head"><h3>Engineering Graph · draft</h3>
+            <button type="button" className="secondary-button" onClick={exportGraphDraft}>Export graph JSON</button>
+          </div>
+          <p>Nodes: <strong>{graphNodes.length}</strong> · Engineer-verified: <strong>{graphNodes.filter(node => node.verified).length}</strong> · Connections: <strong>0</strong></p>
+          <p className="pid-muted">This is a draft inventory, not a process-flow model. No piping or signal connections are inferred from OCR. Incorrect candidates are excluded; corrected labels are retained with their originals.</p>
+        </section>}
+        {ocr && <div className="pid-ocr-output"><h3>OCR candidates · page {ocr.page} ({ocr.candidates.length})</h3>
+          <p className="pid-muted">{ocr.warning}</p>
+          <p className="pid-muted">Review each candidate. Decisions remain in this session; they do not train the model or change drawings.</p>
+          {ocr.candidates.length ? <div className="pid-tag-list">{ocr.candidates.map((item,index) =>
+            <button type="button" className="pid-tag-row pid-tag-button" key={index} onClick={() => {setSelectedCandidate(index); setDraftTag(corrections[index] ?? item.tag);}}><strong>{item.tag}</strong>
+              <span>OCR confidence {item.confidence.toFixed(0)}%</span>
+              <small>Position {Math.round(item.box.x * 100)}% × {Math.round(item.box.y * 100)}%{reviews[index] ? ` · ${reviews[index]}` : ""}</small></button>
+          )}</div> : <p className="pid-muted">No candidate tags detected. OCR may miss rotated or low-resolution text.</p>}
+        </div>}
+      </section>}
+      {result && <div className="pid-results">
+        <div className="pid-summary">
+          <article><small>Drawing pages</small><strong>{result.pages.length}</strong></article>
+          <article><small>Pages with selectable text</small><strong>{textPages}</strong></article>
+          <article><small>Candidate tags (text + OCR)</small><strong>{candidateTotal}</strong></article>
+        </div>
+        {textPages === 0 && !ocr && <div className="pid-notice">No selectable text was found. Run local OCR to attempt recognition of labels in the drawing.</div>}
+        <div className="pid-table-head"><h3>Text-layer tag candidates</h3>
+          <input aria-label="Filter candidate tags" placeholder="Filter by tag…" value={filter} onChange={(event) => setFilter(event.target.value)}/>
+        </div>
+        {tags.length > 0 ? <div className="pid-tag-list">{tags.map((entry) =>
+          <div className="pid-tag-row" key={entry.tag}><strong>{entry.tag}</strong><span>Page {entry.pages.join(", ")}</span><small>Unverified candidate</small></div>
+        )}</div> : <p className="pid-muted">No matching tags in the text layer. OCR results are shown above.</p>}
+        <div className="pid-limitations"><strong>Current limitations</strong>
+          <ul>{result.limitations.map((item) => <li key={item}>{item}</li>)}</ul>
+        </div>
+      </div>}
+    </section>
+  );
+}
+)}>Use example drawing format</button>
+              <button type="button" onClick={saveLineStandard}>Save / update standard</button>
+            </div>
+            <small>{compiledLinePattern?.test(standardExample.trim()) ? "Example matches current format." : "Example does not match current format."}</small>
+            <label>Saved local standards
+              <select aria-label="Saved line standards" defaultValue="" onChange={event => {
+                const selected = savedStandards.find(item => item.name === event.target.value);
+                if (selected) {setStandardName(selected.name); setLineNumberPattern(selected.pattern); setStandardExample(selected.example);}
+              }}>
+                <option value="">Choose saved profile…</option>
+                {savedStandards.map(item => <option key={item.name} value={item.name}>{item.name}</option>)}
+              </select>
+            </label>
+            {savedStandards.some(item => item.name === standardName) && <button type="button" onClick={() => deleteLineStandard(standardName)}>Delete selected profile</button>}
+            {standardMessage && <small role="status">{standardMessage}</small>}
             <small>{lineNumberPattern.trim() && !compiledLinePattern ? "Invalid or overly long regex." :
               `${lineNumberCandidates.length} OCR labels match the configured line-number format.`}
               {" "}No line-number suggestions are generated until a valid format is entered.</small>
