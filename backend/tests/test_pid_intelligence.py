@@ -65,3 +65,26 @@ def test_ocr_rejects_non_pdf_upload():
         files={"file": ("drawing.txt", b"test", "text/plain")},
     )
     assert response.status_code == 422
+
+
+def test_ocr_response_has_matching_raster_and_normalized_coordinates(monkeypatch):
+    """Coordinates must correspond to the exact image shown in the UI."""
+    import base64
+    import subprocess
+    from backend.app import pid_intelligence
+
+    monkeypatch.setattr(pid_intelligence.shutil, "which", lambda name: "/usr/local/bin/tesseract")
+    tsv = (
+        "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+        "5\t1\t1\t1\t1\t1\t20\t30\t50\t15\t93\tPT-1234\n"
+    )
+    monkeypatch.setattr(
+        pid_intelligence.subprocess, "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, tsv, ""),
+    )
+    result = pid_intelligence.ocr_pid_page(_pdf())
+    assert base64.b64decode(result["preview_png_base64"]).startswith(bytes([137, 80, 78, 71]))
+    assert result["candidates"][0]["tag"] == "PT-1234"
+    assert 0 <= result["candidates"][0]["box"]["x"] <= 1
+    assert 0 <= result["candidates"][0]["box"]["y"] <= 1
+    assert result["read_only"] is True
