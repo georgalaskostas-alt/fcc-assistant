@@ -181,8 +181,8 @@ def ocr_pid_page(content: bytes, page_number: int = 1) -> dict[str, object]:
 
 @router.post("/ocr")
 async def ocr_pid(file: UploadFile = File(...), page: int = Form(1)) -> dict[str, object]:
-    if not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(status_code=422, detail="Upload a PDF file")
+    if not (file.filename or "").lower().endswith((".pdf",) + IMAGE_EXTENSIONS):
+        raise HTTPException(status_code=422, detail="Upload PDF, PNG, JPG or JPEG")
     payload = await file.read(MAX_PDF_BYTES + 1)
     if len(payload) > MAX_PDF_BYTES:
         raise HTTPException(status_code=413, detail="PDF exceeds 20 MB limit")
