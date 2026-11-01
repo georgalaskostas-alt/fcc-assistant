@@ -62,3 +62,5 @@
 .pid-geometry-overlay {position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;}
 .pid-geometry-toggle {display:flex;align-items:center;gap:8px;font-size:0.9rem;cursor:pointer;}
 .pid-geometry-toggle input {accent-color:#00b8ff;}
+
+.pid-manual-symbol {position:absolute;transform:translate(-50%,-50%);z-index:3;pointer-events:none;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border:2px solid #ffe082;border-radius:50%;background:#243d53;color:#fff;font-size:11px;font-weight:800;box-shadow:0 0 0 2px #102a3d;}
