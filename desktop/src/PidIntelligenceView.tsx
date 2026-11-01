@@ -21,6 +21,7 @@ export function PidIntelligenceView() {
   const [includeTitleBlock, setIncludeTitleBlock] = useState(false);
   const [selectedTopology, setSelectedTopology] = useState<number | null>(null);
   const [selectedVisualPath, setSelectedVisualPath] = useState<number | null>(null);
+  const [pathEquipment, setPathEquipment] = useState<Record<string, string>>({});
   const [topologyReviews, setTopologyReviews] = useState<Record<number, "accepted" | "rejected">>({});
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
@@ -32,7 +33,7 @@ export function PidIntelligenceView() {
   }, [file]);
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null);
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({});
     try { setOcr(await api.ocrPidPage(file, page)); }
     catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
     finally { setOcrBusy(false); }
@@ -74,6 +75,7 @@ export function PidIntelligenceView() {
     };
   });
   const visualPaths = reconstructVisualPaths(ocr?.topology?.proposals ?? [], topologyReviews);
+  const selectedPathKey = selectedVisualPath !== null && visualPaths[selectedVisualPath] ? visualPaths[selectedVisualPath].segmentIds.join(",") : null;
   const graphDraft = { schema_version: 1, read_only: true, nodes: graphNodes, edges: [] as never[],
     warning: "No process or signal connections have been established. OCR alone cannot prove topology." };
   function exportTopologyReview() {
