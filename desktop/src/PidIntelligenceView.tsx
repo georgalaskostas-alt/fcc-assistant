@@ -152,6 +152,11 @@ export function PidIntelligenceView() {
           </div>
           <small>Local review only. No drawing changes or automatic AI training.</small>
         </div>}
+        {ocr?.geometry && <section className="pid-graph-panel">
+          <h3>Visual geometry · experimental</h3>
+          <p><strong>{ocr.geometry.count}</strong> horizontal/vertical raster segments detected{ocr.geometry.truncated ? " (limit reached)" : ""}.</p>
+          <p className="pid-muted">{ocr.geometry.warning} Text strokes, drawing borders and symbol outlines may be included.</p>
+        </section>}
         {ocr && <section className="pid-graph-panel">
           <div className="pid-table-head"><h3>Engineering Graph · draft</h3>
             <button type="button" className="secondary-button" onClick={exportGraphDraft}>Export graph JSON</button>
