@@ -24,7 +24,7 @@ export function PidIntelligenceView() {
   }, [file]);
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null);
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null); setReviews({});
     try { setOcr(await api.ocrPidPage(file, page)); }
     catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
     finally { setOcrBusy(false); }
@@ -70,6 +70,7 @@ export function PidIntelligenceView() {
             setFile(event.target.files?.[0] ?? null);
             setResult(null);
             setOcr(null);
+            setReviews({});
             setOcrError(null);
             setPage(1);
             setError(null);
@@ -111,10 +112,11 @@ export function PidIntelligenceView() {
         </div>}
         {ocr && <div className="pid-ocr-output"><h3>OCR candidates · page {ocr.page} ({ocr.candidates.length})</h3>
           <p className="pid-muted">{ocr.warning}</p>
+          <p className="pid-muted">Review each candidate. Decisions remain in this session; they do not train the model or change drawings.</p>
           {ocr.candidates.length ? <div className="pid-tag-list">{ocr.candidates.map((item,index) =>
             <button type="button" className="pid-tag-row pid-tag-button" key={index} onClick={() => setSelectedCandidate(index)}><strong>{item.tag}</strong>
               <span>OCR confidence {item.confidence.toFixed(0)}%</span>
-              <small>Position {Math.round(item.box.x * 100)}% × {Math.round(item.box.y * 100)}%</small></button>
+              <small>Position {Math.round(item.box.x * 100)}% × {Math.round(item.box.y * 100)}%{reviews[index] ? ` · ${reviews[index]}` : ""}</small></button>
           )}</div> : <p className="pid-muted">No candidate tags detected. OCR may miss rotated or low-resolution text.</p>}
         </div>}
       </section>}
