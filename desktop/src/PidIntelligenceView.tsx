@@ -168,6 +168,11 @@ export function PidIntelligenceView() {
           <p><strong>{ocr.geometry.count}</strong> horizontal/vertical raster segments detected{ocr.geometry.truncated ? " (limit reached)" : ""}.</p>
           <p className="pid-muted">{ocr.geometry.warning} Text strokes, drawing borders and symbol outlines may be included.</p>
         </section>}
+        {ocr?.topology && <section className="pid-graph-panel">
+          <h3>Topology reconstruction · review proposals</h3>
+          <p><strong>{ocr.topology.count}</strong> nearby endpoint pairs · <strong>0</strong> verified connections{ocr.topology.truncated ? " · limit reached" : ""}</p>
+          <p className="pid-muted">{ocr.topology.warning} No flow direction or instrument signal type is inferred.</p>
+        </section>}
         {ocr && <section className="pid-graph-panel">
           <div className="pid-table-head"><h3>Engineering Graph · draft</h3>
             <button type="button" className="secondary-button" onClick={exportGraphDraft}>Export graph JSON</button>
