@@ -38,7 +38,7 @@ export function PidIntelligenceView() {
     try {
       setResult(await api.inspectPidPdf(file));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "PDF inspection failed");
+      setError(err instanceof Error ? err.message : "Drawing inspection failed");
     } finally {
       setBusy(false);
     }
@@ -61,9 +61,9 @@ export function PidIntelligenceView() {
 
       <div className="pid-upload-panel">
         <FileSearch size={27}/>
-        <div><strong>Choose a P&ID PDF</strong><p>Local processing · PDF up to 20 MB and 100 pages. Use only documents authorized for this environment.</p></div>
-        <label className="pid-file-picker"><Upload size={16}/> Select PDF
-          <input type="file" accept=".pdf,application/pdf" onChange={(event) => {
+        <div><strong>Choose a P&ID PDF or photo</strong><p>Local processing · PDF, PNG or JPEG up to 20 MB. Use only documents authorized for this environment.</p></div>
+        <label className="pid-file-picker"><Upload size={16}/> Select file
+          <input type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" onChange={(event) => {
             setFile(event.target.files?.[0] ?? null);
             setResult(null);
             setOcr(null);
@@ -81,8 +81,8 @@ export function PidIntelligenceView() {
       {error && <div role="alert" className="error-banner">{error}</div>}
 
       {previewUrl && <section className="pid-preview-panel">
-        <div className="pid-table-head"><h3>Drawing preview</h3><span className="pid-muted">Local PDF viewer · original file unchanged</span></div>
-        <iframe title="P&ID PDF preview" src={previewUrl} className="pid-pdf-frame"/>
+        <div className="pid-table-head"><h3>Drawing preview</h3><span className="pid-muted">Local drawing viewer · original file unchanged</span></div>
+        {file?.type.startsWith("image/") ? <img src={previewUrl} alt="P&ID drawing photo" className="pid-photo-preview"/> : <iframe title="P&ID PDF preview" src={previewUrl} className="pid-pdf-frame"/>}
         <div className="pid-ocr-controls">
           <label>OCR page <input type="number" min={1} max={result?.pages.length ?? 100} value={page}
             onChange={(event) => { setPage(Number(event.target.value)); setOcr(null); }}/></label>
@@ -121,7 +121,7 @@ export function PidIntelligenceView() {
           <article><small>Pages with selectable text</small><strong>{textPages}</strong></article>
           <article><small>Candidate tags</small><strong>{result.candidate_tags.length}</strong></article>
         </div>
-        {textPages === 0 && <div className="pid-notice">No selectable text was found. This may be a scanned drawing; run local OCR below to attempt recognition of labels.</div>}
+        {textPages === 0 && <div className="pid-notice">No selectable text was found. Run local OCR to attempt recognition of labels in the drawing.</div>}
         <div className="pid-table-head"><h3>Unverified tag candidates</h3>
           <input aria-label="Filter candidate tags" placeholder="Filter by tag…" value={filter} onChange={(event) => setFilter(event.target.value)}/>
         </div>
