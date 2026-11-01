@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pypdf import PdfReader
-from app.pid_ocr_utils import extract_candidates, deduplicate
+from .pid_ocr_utils import extract_candidates, deduplicate
 
 router = APIRouter(prefix="/api/v1/pid", tags=["pid-intelligence"])
 
