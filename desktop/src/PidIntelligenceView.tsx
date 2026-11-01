@@ -222,6 +222,18 @@ export function PidIntelligenceView() {
             <small>Session-only review. Accepted visual continuations do not create verified process or signal edges.</small>
           </div>}
         </section>}
+        {ocr?.topology && <section className="pid-graph-panel">
+          <h3>Connected visual paths · engineer review</h3>
+          <p><strong>{visualPaths.length}</strong> grouped paths from accepted endpoint pairs; not verified process or signal connectivity.</p>
+          <label className="pid-geometry-toggle">Highlight path
+            <select aria-label="Select visual path" value={selectedVisualPath !== null && visualPaths[selectedVisualPath] ? selectedVisualPath : ""}
+              onChange={event => setSelectedVisualPath(event.target.value === "" ? null : Number(event.target.value))}>
+              <option value="">Select a path…</option>
+              {visualPaths.map((path, index) => <option key={index} value={index}>Path #{index + 1} · {path.segmentIds.length} segments · {path.proposalIds.length} accepted pairs</option>)}
+            </select>
+          </label>
+          {selectedVisualPath !== null && visualPaths[selectedVisualPath] && <p className="pid-muted">Green highlight: segments {visualPaths[selectedVisualPath].segmentIds.map(id => id + 1).join(", ")}. Crossings and flow direction remain unresolved.</p>}
+        </section>}
         {ocr && <section className="pid-graph-panel">
           <div className="pid-table-head"><h3>Engineering Graph · draft</h3>
             <button type="button" className="secondary-button" onClick={exportGraphDraft}>Export graph JSON</button>
