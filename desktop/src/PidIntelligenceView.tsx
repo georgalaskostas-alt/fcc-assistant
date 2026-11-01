@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { FileSearch, ShieldCheck, Upload } from "lucide-react";
 import { api, PidInspectionResult, PidOcrResult } from "./api";
 import "./PidIntelligenceView.css";
+import { reconstructVisualPaths } from "./pidVisualPaths";
 
 export function PidIntelligenceView() {
   const [file, setFile] = useState<File | null>(null);
@@ -19,6 +20,7 @@ export function PidIntelligenceView() {
   const [showGeometry, setShowGeometry] = useState(false);
   const [includeTitleBlock, setIncludeTitleBlock] = useState(false);
   const [selectedTopology, setSelectedTopology] = useState<number | null>(null);
+  const [selectedVisualPath, setSelectedVisualPath] = useState<number | null>(null);
   const [topologyReviews, setTopologyReviews] = useState<Record<number, "accepted" | "rejected">>({});
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
@@ -71,6 +73,7 @@ export function PidIntelligenceView() {
       confidence: item.confidence,
     };
   });
+  const visualPaths = reconstructVisualPaths(ocr?.topology?.proposals ?? [], topologyReviews);
   const graphDraft = { schema_version: 1, read_only: true, nodes: graphNodes, edges: [] as never[],
     warning: "No process or signal connections have been established. OCR alone cannot prove topology." };
   function exportTopologyReview() {
