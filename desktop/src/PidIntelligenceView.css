@@ -37,3 +37,12 @@
 .pid-ocr-controls input {width:75px;padding:9px;background:#10263b;color:#fff;border:1px solid #3d668b;border-radius:7px;}
 .pid-ocr-controls small {color:#9eb6ce;}
 .pid-ocr-output {display:grid;gap:12px;}
+
+.pid-annotated {display:grid;gap:12px;min-width:0;}
+.pid-annotated-image {position:relative;width:100%;max-height:750px;overflow:auto;background:#fff;border:1px solid #40607d;border-radius:8px;line-height:0;}
+.pid-annotated-image img {display:block;width:100%;height:auto;}
+.pid-ocr-box {position:absolute;display:block;border:2px solid #ed9c24;background:rgba(255,179,54,.19);padding:0;min-width:5px;min-height:5px;cursor:pointer;border-radius:2px;}
+.pid-ocr-box:hover,.pid-ocr-box-active {border-color:#00bdfb;background:rgba(0,189,251,.24);z-index:2;}
+.pid-ocr-selection {color:#eaf5ff;background:#12314b;border:1px solid #32719a;border-radius:8px;padding:11px 14px;line-height:1.5;}
+.pid-tag-button {width:100%;font:inherit;text-align:left;color:inherit;cursor:pointer;}
+.pid-tag-button:hover {border-color:#51a7df;background:#163a57;}
