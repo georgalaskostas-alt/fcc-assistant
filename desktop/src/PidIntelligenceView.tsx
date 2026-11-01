@@ -16,6 +16,7 @@ export function PidIntelligenceView() {
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
   const [corrections, setCorrections] = useState<Record<number, string>>({});
   const [draftTag, setDraftTag] = useState("");
+  const [showGeometry, setShowGeometry] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   useEffect(() => {
@@ -128,6 +129,12 @@ export function PidIntelligenceView() {
           <div className="pid-table-head"><h3>OCR visual verification · page {ocr.page}</h3><span className="pid-muted">Boxes indicate unverified OCR candidates</span></div>
           <div className="pid-annotated-image">
             <img alt={`Rendered P&ID page ${ocr.page} for visual OCR verification`} src={`data:image/png;base64,${ocr.preview_png_base64}`}/>
+            {showGeometry && ocr.geometry && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Unverified visual line segments">
+              {ocr.geometry.segments.map((segment, index) => <line key={index}
+                x1={segment.x1 * 1000} y1={segment.y1 * 1000}
+                x2={segment.x2 * 1000} y2={segment.y2 * 1000}
+                stroke="#00b8ff" strokeWidth="1.5" vectorEffect="non-scaling-stroke" opacity="0.8" />)}
+            </svg>}
             {ocr.candidates.map((item,index) => <button key={index} type="button"
               title={`${item.tag} · OCR ${item.confidence.toFixed(0)}% · not verified`}
               aria-label={`Inspect candidate ${item.tag}`}
@@ -153,7 +160,9 @@ export function PidIntelligenceView() {
           <small>Local review only. No drawing changes or automatic AI training.</small>
         </div>}
         {ocr?.geometry && <section className="pid-graph-panel">
-          <h3>Visual geometry · experimental</h3>
+          <div className="pid-table-head"><h3>Visual geometry · experimental</h3>
+            <label className="pid-geometry-toggle"><input type="checkbox" checked={showGeometry} onChange={event => setShowGeometry(event.target.checked)}/> Show detected segments on drawing</label>
+          </div>
           <p><strong>{ocr.geometry.count}</strong> horizontal/vertical raster segments detected{ocr.geometry.truncated ? " (limit reached)" : ""}.</p>
           <p className="pid-muted">{ocr.geometry.warning} Text strokes, drawing borders and symbol outlines may be included.</p>
         </section>}
