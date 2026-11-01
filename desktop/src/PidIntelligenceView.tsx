@@ -3,6 +3,7 @@ import { FileSearch, ShieldCheck, Upload } from "lucide-react";
 import { api, PidInspectionResult, PidOcrResult } from "./api";
 import "./PidIntelligenceView.css";
 import { reconstructVisualPaths } from "./pidVisualPaths";
+import { suggestPathTags } from "./pidSpatialSuggestions";
 
 export function PidIntelligenceView() {
   const [file, setFile] = useState<File | null>(null);
@@ -75,6 +76,7 @@ export function PidIntelligenceView() {
     };
   });
   const visualPaths = reconstructVisualPaths(ocr?.topology?.proposals ?? [], topologyReviews);
+  const spatialSuggestions = suggestPathTags(visualPaths, ocr?.geometry?.segments ?? [], ocr?.candidates ?? []);
   const selectedPathKey = selectedVisualPath !== null && visualPaths[selectedVisualPath] ? visualPaths[selectedVisualPath].segmentIds.join(",") : null;
   const graphDraft = { schema_version: 1, read_only: true, nodes: graphNodes, edges: [] as never[],
     warning: "No process or signal connections have been established. OCR alone cannot prove topology." };
