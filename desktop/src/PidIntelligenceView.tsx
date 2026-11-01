@@ -23,6 +23,8 @@ export function PidIntelligenceView() {
   const [selectedTopology, setSelectedTopology] = useState<number | null>(null);
   const [selectedVisualPath, setSelectedVisualPath] = useState<number | null>(null);
   const [pathEquipment, setPathEquipment] = useState<Record<string, string>>({});
+  const [symbolMode, setSymbolMode] = useState<"off" | "equipment" | "valve" | "instrument" | "connector">("off");
+  const [symbolAnnotations, setSymbolAnnotations] = useState<Array<{x:number;y:number;kind:"equipment" | "valve" | "instrument" | "connector";tag:string}>>([]);
   const [topologyReviews, setTopologyReviews] = useState<Record<number, "accepted" | "rejected">>({});
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
@@ -34,7 +36,7 @@ export function PidIntelligenceView() {
   }, [file]);
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({});
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
     try { setOcr(await api.ocrPidPage(file, page)); }
     catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
     finally { setOcrBusy(false); }
@@ -107,6 +109,17 @@ export function PidIntelligenceView() {
     const link = document.createElement("a");
     link.href = url; link.download = `pid-connectivity-annotations-page-${ocr.page}.json`;
     link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function exportSymbolAnnotations() {
+    if (!ocr) return;
+    const payload = {schema_version: 1, page: ocr.page, symbols: symbolAnnotations.map((symbol, index) => ({
+      id: `p${ocr.page}-manual-symbol-${index}`, ...symbol, source: "engineer_manual",
+      status: "unverified_symbol_annotation",
+    })), warning: "Manual visual annotations, not machine-recognized symbols or proven connectivity."};
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob); const link = document.createElement("a");
+    link.href=url; link.download=`pid-symbol-annotations-page-${ocr.page}.json`; link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   function exportGraphDraft() {
     if (!ocr) return;
