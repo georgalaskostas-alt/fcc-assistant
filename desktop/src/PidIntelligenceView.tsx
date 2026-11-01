@@ -23,6 +23,8 @@ export function PidIntelligenceView() {
   const [selectedTopology, setSelectedTopology] = useState<number | null>(null);
   const [selectedVisualPath, setSelectedVisualPath] = useState<number | null>(null);
   const [pathEquipment, setPathEquipment] = useState<Record<string, string>>({});
+  const [lineNumberPattern, setLineNumberPattern] = useState("");
+  const [pathLineNumbers, setPathLineNumbers] = useState<Record<string, string>>({});
   const [symbolMode, setSymbolMode] = useState<"off" | "equipment" | "valve" | "instrument" | "connector">("off");
   const [symbolAnnotations, setSymbolAnnotations] = useState<Array<{x:number;y:number;kind:"equipment" | "valve" | "instrument" | "connector";tag:string}>>([]);
   const [topologyReviews, setTopologyReviews] = useState<Record<number, "accepted" | "rejected">>({});
@@ -36,7 +38,7 @@ export function PidIntelligenceView() {
   }, [file]);
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
     try { setOcr(await api.ocrPidPage(file, page)); }
     catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
     finally { setOcrBusy(false); }
@@ -78,7 +80,15 @@ export function PidIntelligenceView() {
     };
   });
   const visualPaths = reconstructVisualPaths(ocr?.topology?.proposals ?? [], topologyReviews);
-  const spatialSuggestions = suggestPathTags(visualPaths, ocr?.geometry?.segments ?? [], ocr?.candidates ?? []);
+  const compiledLinePattern = (() => {
+    if (!lineNumberPattern.trim() || lineNumberPattern.length > 160) return null;
+    try { return new RegExp(lineNumberPattern, "i"); } catch { return null; }
+  })();
+  const lineNumberCandidates = (ocr?.candidates ?? []).map((item, index) => ({
+    index, tag: corrections[index] ?? item.tag,
+  })).filter(item => reviews[item.index] !== "incorrect" && compiledLinePattern?.test(item.tag));
+  const spatialSuggestions = suggestPathTags(visualPaths, ocr?.geometry?.segments ?? [], ocr?.candidates ?? [])
+    .filter(item => lineNumberCandidates.some(candidate => candidate.index === item.candidateIndex));
   const selectedPathKey = selectedVisualPath !== null && visualPaths[selectedVisualPath] ? visualPaths[selectedVisualPath].segmentIds.join(",") : null;
   const graphDraft = { schema_version: 1, read_only: true, nodes: graphNodes, edges: [] as never[],
     warning: "No process or signal connections have been established. OCR alone cannot prove topology." };
