@@ -160,6 +160,12 @@ export function PidIntelligenceView() {
                   stroke={index === 0 ? "#ff9d00" : "#ff2d88"} strokeWidth="4" vectorEffect="non-scaling-stroke"/> : null;
               })}
             </svg>}
+            {selectedVisualPath !== null && ocr.geometry && visualPaths[selectedVisualPath] && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Selected visual path">
+              {visualPaths[selectedVisualPath].segmentIds.map(id => {
+                const segment = ocr.geometry!.segments[id];
+                return segment ? <line key={id} x1={segment.x1*1000} y1={segment.y1*1000} x2={segment.x2*1000} y2={segment.y2*1000} stroke="#00d9a6" strokeWidth="5" vectorEffect="non-scaling-stroke"/> : null;
+              })}
+            </svg>}
             {ocr.candidates.map((item,index) => <button key={index} type="button"
               title={`${item.tag} · OCR ${item.confidence.toFixed(0)}% · not verified`}
               aria-label={`Inspect candidate ${item.tag}`}
