@@ -14,6 +14,8 @@ export function PidIntelligenceView() {
   const [ocr, setOcr] = useState<PidOcrResult | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null);
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
+  const [corrections, setCorrections] = useState<Record<number, string>>({});
+  const [draftTag, setDraftTag] = useState("");
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   useEffect(() => {
@@ -24,7 +26,7 @@ export function PidIntelligenceView() {
   }, [file]);
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null); setReviews({});
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null); setReviews({}); setCorrections({});
     try { setOcr(await api.ocrPidPage(file, page)); }
     catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
     finally { setOcrBusy(false); }
@@ -102,7 +104,7 @@ export function PidIntelligenceView() {
             {ocr.candidates.map((item,index) => <button key={index} type="button"
               title={`${item.tag} · OCR ${item.confidence.toFixed(0)}% · not verified`}
               aria-label={`Inspect candidate ${item.tag}`}
-              onClick={() => setSelectedCandidate(index)}
+              onClick={() => {setSelectedCandidate(index); setDraftTag(corrections[index] ?? item.tag);}}
               className={`pid-ocr-box ${selectedCandidate === index ? "pid-ocr-box-active" : ""}`}
               style={{left:`${item.box.x*100}%`,top:`${item.box.y*100}%`,width:`${Math.max(item.box.width*100,0.5)}%`,height:`${Math.max(item.box.height*100,0.5)}%`}} />)}
           </div>
@@ -112,6 +114,10 @@ export function PidIntelligenceView() {
         </div>}
         {ocr && selectedCandidate !== null && ocr.candidates[selectedCandidate] && <div className="pid-review-panel">
           <strong>Engineer review: {ocr.candidates[selectedCandidate].tag}</strong>
+          <label>Corrected tag <input aria-label="Corrected tag" value={draftTag} maxLength={40} onChange={(event) => setDraftTag(event.target.value.toUpperCase())}/></label>
+          <button type="button" disabled={!/^[A-Z0-9][A-Z0-9 _/-]{0,39}$/.test(draftTag.trim())}
+            onClick={() => setCorrections(previous => ({...previous,[selectedCandidate]:draftTag.trim()}))}>Save corrected tag</button>
+          {corrections[selectedCandidate] && <small>Correction: {corrections[selectedCandidate]}</small>}
           <div className="pid-review-actions">
             <button type="button" onClick={() => setReviews(previous => ({...previous, [selectedCandidate]: "correct"}))}>Correct</button>
             <button type="button" onClick={() => setReviews(previous => ({...previous, [selectedCandidate]: "incorrect"}))}>Incorrect</button>
@@ -123,7 +129,7 @@ export function PidIntelligenceView() {
           <p className="pid-muted">{ocr.warning}</p>
           <p className="pid-muted">Review each candidate. Decisions remain in this session; they do not train the model or change drawings.</p>
           {ocr.candidates.length ? <div className="pid-tag-list">{ocr.candidates.map((item,index) =>
-            <button type="button" className="pid-tag-row pid-tag-button" key={index} onClick={() => setSelectedCandidate(index)}><strong>{item.tag}</strong>
+            <button type="button" className="pid-tag-row pid-tag-button" key={index} onClick={() => {setSelectedCandidate(index); setDraftTag(corrections[index] ?? item.tag);}}><strong>{item.tag}</strong>
               <span>OCR confidence {item.confidence.toFixed(0)}%</span>
               <small>Position {Math.round(item.box.x * 100)}% × {Math.round(item.box.y * 100)}%{reviews[index] ? ` · ${reviews[index]}` : ""}</small></button>
           )}</div> : <p className="pid-muted">No candidate tags detected. OCR may miss rotated or low-resolution text.</p>}
