@@ -18,6 +18,8 @@ export function PidIntelligenceView() {
   const [draftTag, setDraftTag] = useState("");
   const [showGeometry, setShowGeometry] = useState(false);
   const [includeTitleBlock, setIncludeTitleBlock] = useState(false);
+  const [selectedTopology, setSelectedTopology] = useState<number | null>(null);
+  const [topologyReviews, setTopologyReviews] = useState<Record<number, "accepted" | "rejected">>({});
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   useEffect(() => {
@@ -28,7 +30,7 @@ export function PidIntelligenceView() {
   }, [file]);
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null); setReviews({}); setCorrections({});
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null);
     try { setOcr(await api.ocrPidPage(file, page)); }
     catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
     finally { setOcrBusy(false); }
@@ -71,6 +73,18 @@ export function PidIntelligenceView() {
   });
   const graphDraft = { schema_version: 1, read_only: true, nodes: graphNodes, edges: [] as never[],
     warning: "No process or signal connections have been established. OCR alone cannot prove topology." };
+  function exportTopologyReview() {
+    if (!ocr?.topology) return;
+    const decisions = ocr.topology.proposals.flatMap((proposal, index) =>
+      topologyReviews[index] ? [{...proposal, review: topologyReviews[index], proposal_index: index}] : []);
+    const payload = {schema_version: 1, page: ocr.page, decisions,
+      warning: "Human review of endpoint proximity only; not certified piping or signal connectivity."};
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a"); link.href = url;
+    link.download = `pid-topology-review-page-${ocr.page}.json`; link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   function exportGraphDraft() {
     if (!ocr) return;
     const blob = new Blob([JSON.stringify(graphDraft, null, 2)], { type: "application/json" });
@@ -101,7 +115,7 @@ export function PidIntelligenceView() {
             setFile(event.target.files?.[0] ?? null);
             setResult(null);
             setOcr(null);
-            setReviews({});
+            setReviews({}); setTopologyReviews({}); setSelectedTopology(null);
             setOcrError(null);
             setPage(1);
             setError(null);
@@ -169,9 +183,28 @@ export function PidIntelligenceView() {
           <p className="pid-muted">{ocr.geometry.warning} Text strokes, drawing borders and symbol outlines may be included.</p>
         </section>}
         {ocr?.topology && <section className="pid-graph-panel">
-          <h3>Topology reconstruction · review proposals</h3>
+          <div className="pid-table-head"><h3>Topology reconstruction · review proposals</h3>
+            <button type="button" className="secondary-button" onClick={exportTopologyReview}>Export topology reviews</button>
+          </div>
           <p><strong>{ocr.topology.count}</strong> nearby endpoint pairs · <strong>0</strong> verified connections{ocr.topology.truncated ? " · limit reached" : ""}</p>
           <p className="pid-muted">{ocr.topology.warning} No flow direction or instrument signal type is inferred.</p>
+          <p>Reviewed: <strong>{Object.keys(topologyReviews).length}</strong> · Accepted: <strong>{Object.values(topologyReviews).filter(value => value === "accepted").length}</strong> · Rejected: <strong>{Object.values(topologyReviews).filter(value => value === "rejected").length}</strong></p>
+          <label className="pid-geometry-toggle">Review endpoint pair
+            <select aria-label="Select topology proposal" value={selectedTopology ?? ""} onChange={event => setSelectedTopology(event.target.value === "" ? null : Number(event.target.value))}>
+              <option value="">Select a proposal…</option>
+              {ocr.topology.proposals.map((proposal, index) => <option key={index} value={index}>#{index + 1} · segments {proposal.segment_a + 1} / {proposal.segment_b + 1}{topologyReviews[index] ? ` · ${topologyReviews[index]}` : ""}</option>)}
+            </select>
+          </label>
+          {selectedTopology !== null && ocr.topology.proposals[selectedTopology] && <div className="pid-review-panel">
+            <strong>Proposal #{selectedTopology + 1}</strong>
+            <p>Segments #{ocr.topology.proposals[selectedTopology].segment_a + 1} and #{ocr.topology.proposals[selectedTopology].segment_b + 1} · normalized endpoint distance {ocr.topology.proposals[selectedTopology].distance}</p>
+            <div className="pid-review-actions">
+              <button type="button" onClick={() => setTopologyReviews(previous => ({...previous, [selectedTopology]: "accepted"}))}>Accept as visual continuation</button>
+              <button type="button" onClick={() => setTopologyReviews(previous => ({...previous, [selectedTopology]: "rejected"}))}>Reject</button>
+              <button type="button" onClick={() => setTopologyReviews(previous => {const next = {...previous}; delete next[selectedTopology]; return next;})}>Clear</button>
+            </div>
+            <small>Session-only review. Accepted visual continuations do not create verified process or signal edges.</small>
+          </div>}
         </section>}
         {ocr && <section className="pid-graph-panel">
           <div className="pid-table-head"><h3>Engineering Graph · draft</h3>
