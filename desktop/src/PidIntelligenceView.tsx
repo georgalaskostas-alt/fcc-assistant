@@ -110,6 +110,15 @@ export function PidIntelligenceView() {
             Candidate: <strong>{ocr.candidates[selectedCandidate].tag}</strong> · OCR confidence {ocr.candidates[selectedCandidate].confidence.toFixed(0)}% · Requires engineer verification
           </div>}
         </div>}
+        {ocr && selectedCandidate !== null && ocr.candidates[selectedCandidate] && <div className="pid-review-panel">
+          <strong>Engineer review: {ocr.candidates[selectedCandidate].tag}</strong>
+          <div className="pid-review-actions">
+            <button type="button" onClick={() => setReviews(previous => ({...previous, [selectedCandidate]: "correct"}))}>Correct</button>
+            <button type="button" onClick={() => setReviews(previous => ({...previous, [selectedCandidate]: "incorrect"}))}>Incorrect</button>
+            <button type="button" onClick={() => setReviews(previous => { const next = {...previous}; delete next[selectedCandidate]; return next; })}>Clear review</button>
+          </div>
+          <small>Local review only. No drawing changes or automatic AI training.</small>
+        </div>}
         {ocr && <div className="pid-ocr-output"><h3>OCR candidates · page {ocr.page} ({ocr.candidates.length})</h3>
           <p className="pid-muted">{ocr.warning}</p>
           <p className="pid-muted">Review each candidate. Decisions remain in this session; they do not train the model or change drawings.</p>
