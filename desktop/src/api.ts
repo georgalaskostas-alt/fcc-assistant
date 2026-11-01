@@ -5,7 +5,7 @@ const REQUEST_TIMEOUT_MS = 45_000;
 const INVESTIGATION_REQUEST_TIMEOUT_MS = 180_000;
 const DASHBOARD_COMMAND_DEADLINE_MS = 6_000;
 
-export type PidOcrResult = { page: number; engine: string; read_only: boolean; candidates: Array<{tag:string;confidence:number;box:{x:number;y:number;width:number;height:number};status:string}>; warning?:string };
+export type PidOcrResult = { page: number; engine: string; read_only: boolean; preview_png_base64?:string; candidates: Array<{tag:string;confidence:number;box:{x:number;y:number;width:number;height:number};status:string}>; warning?:string };
 export type PidInspectionResult = {
   mode: string;
   read_only: boolean;
