@@ -12,6 +12,7 @@ export function PidIntelligenceView() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [ocr, setOcr] = useState<PidOcrResult | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   useEffect(() => {
@@ -22,7 +23,7 @@ export function PidIntelligenceView() {
   }, [file]);
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null);
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null);
     try { setOcr(await api.ocrPidPage(file, page)); }
     catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
     finally { setOcrBusy(false); }
@@ -90,12 +91,27 @@ export function PidIntelligenceView() {
           <small>Optional local Tesseract OCR. No cloud processing.</small>
         </div>
         {ocrError && <div role="alert" className="error-banner">{ocrError}</div>}
+        {ocr?.preview_png_base64 && <div className="pid-annotated">
+          <div className="pid-table-head"><h3>OCR visual verification · page {ocr.page}</h3><span className="pid-muted">Boxes indicate unverified OCR candidates</span></div>
+          <div className="pid-annotated-image">
+            <img alt={`Rendered P&ID page ${ocr.page} for visual OCR verification`} src={`data:image/png;base64,${ocr.preview_png_base64}`}/>
+            {ocr.candidates.map((item,index) => <button key={index} type="button"
+              title={`${item.tag} · OCR ${item.confidence.toFixed(0)}% · not verified`}
+              aria-label={`Inspect candidate ${item.tag}`}
+              onClick={() => setSelectedCandidate(index)}
+              className={`pid-ocr-box ${selectedCandidate === index ? "pid-ocr-box-active" : ""}`}
+              style={{left:`${item.box.x*100}%`,top:`${item.box.y*100}%`,width:`${Math.max(item.box.width*100,0.5)}%`,height:`${Math.max(item.box.height*100,0.5)}%`}} />)}
+          </div>
+          {selectedCandidate !== null && ocr.candidates[selectedCandidate] && <div className="pid-ocr-selection">
+            Candidate: <strong>{ocr.candidates[selectedCandidate].tag}</strong> · OCR confidence {ocr.candidates[selectedCandidate].confidence.toFixed(0)}% · Requires engineer verification
+          </div>}
+        </div>}
         {ocr && <div className="pid-ocr-output"><h3>OCR candidates · page {ocr.page} ({ocr.candidates.length})</h3>
           <p className="pid-muted">{ocr.warning}</p>
           {ocr.candidates.length ? <div className="pid-tag-list">{ocr.candidates.map((item,index) =>
-            <div className="pid-tag-row" key={index}><strong>{item.tag}</strong>
+            <button type="button" className="pid-tag-row pid-tag-button" key={index} onClick={() => setSelectedCandidate(index)}><strong>{item.tag}</strong>
               <span>OCR confidence {item.confidence.toFixed(0)}%</span>
-              <small>Position {Math.round(item.box.x * 100)}% × {Math.round(item.box.y * 100)}%</small></div>
+              <small>Position {Math.round(item.box.x * 100)}% × {Math.round(item.box.y * 100)}%</small></button>
           )}</div> : <p className="pid-muted">No candidate tags detected. OCR may miss rotated or low-resolution text.</p>}
         </div>}
       </section>}
@@ -105,7 +121,7 @@ export function PidIntelligenceView() {
           <article><small>Pages with selectable text</small><strong>{textPages}</strong></article>
           <article><small>Candidate tags</small><strong>{result.candidate_tags.length}</strong></article>
         </div>
-        {textPages === 0 && <div className="pid-notice">No selectable text was found. This may be a scanned drawing; visual/OCR recognition is not implemented in this phase.</div>}
+        {textPages === 0 && <div className="pid-notice">No selectable text was found. This may be a scanned drawing; run local OCR below to attempt recognition of labels.</div>}
         <div className="pid-table-head"><h3>Unverified tag candidates</h3>
           <input aria-label="Filter candidate tags" placeholder="Filter by tag…" value={filter} onChange={(event) => setFilter(event.target.value)}/>
         </div>
