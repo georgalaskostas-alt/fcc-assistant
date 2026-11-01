@@ -11,6 +11,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pypdf import PdfReader
+from app.pid_ocr_utils import extract_candidates, deduplicate
 
 router = APIRouter(prefix="/api/v1/pid", tags=["pid-intelligence"])
 
@@ -139,38 +140,38 @@ def ocr_pid_page(content: bytes, page_number: int = 1) -> dict[str, object]:
             if not rows:
                 return {"page": page_number, "engine": "tesseract-local", "candidates": [], "read_only": True,
                         "preview_png_base64": base64.b64encode(image_bytes).decode("ascii")}
-            import csv
-            candidates = []
-            seen = set()
-            for row in csv.DictReader(rows, delimiter="\t"):
-                if row.get("level") != "5":
-                    continue
-                raw = (row.get("text") or "").strip()
-                if not TAG_PATTERN.fullmatch(raw):
-                    continue
-                tag = re.sub(r"\s+", "", raw).upper()
-                try:
-                    confidence = float(row["conf"])
-                    left, top = int(row["left"]), int(row["top"])
-                    width, height = int(row["width"]), int(row["height"])
-                except (ValueError, TypeError, KeyError):
-                    continue
-                if confidence < 20:
-                    continue
-                key = (tag, left, top)
-                if key in seen:
-                    continue
-                seen.add(key)
-                candidates.append({
-                    "tag": tag, "confidence": confidence,
-                    "box": {"x": left / pixmap.width, "y": top / pixmap.height,
-                            "width": width / pixmap.width, "height": height / pixmap.height},
-                    "status": "unverified_ocr_candidate",
-                })
+            candidates = extract_candidates(completed.stdout, pixmap.width, pixmap.height)
+            # Re-read the page in overlapping high-resolution tiles to preserve tiny labels.
+            # Tiles use the same image coordinate space as the returned preview.
+            from PIL import Image
+            tile_candidates = []
+            with Image.open(io.BytesIO(image_bytes)) as full_image:
+                tile_size = 1100
+                stride = 950
+                if full_image.width * full_image.height <= 12_000_000:
+                    with tempfile.TemporaryDirectory(prefix="fcc-pid-tiles-") as tile_dir:
+                        for top in range(0, full_image.height, stride):
+                            for left in range(0, full_image.width, stride):
+                                right = min(left + tile_size, full_image.width)
+                                bottom = min(top + tile_size, full_image.height)
+                                if right - left < 150 or bottom - top < 150:
+                                    continue
+                                tile_path = Path(tile_dir) / "tile.png"
+                                full_image.crop((left, top, right, bottom)).save(tile_path)
+                                tile_result = subprocess.run(
+                                    ["tesseract", str(tile_path), "stdout", "-l", "eng", "--psm", "11", "tsv"],
+                                    capture_output=True, text=True, timeout=30, check=False,
+                                )
+                                if tile_result.returncode == 0:
+                                    tile_candidates.extend(extract_candidates(
+                                        tile_result.stdout, full_image.width, full_image.height,
+                                        offset_x=left, offset_y=top,
+                                    ))
+            candidates = deduplicate(candidates + tile_candidates)
             return {
                 "page": page_number, "engine": "tesseract-local",
                 "preview_png_base64": base64.b64encode(image_bytes).decode("ascii"),
-                "candidates": candidates[:500], "read_only": True,
+                "candidates": candidates, "read_only": True,
                 "warning": "OCR labels and coordinates are unverified. No diagram topology is inferred.",
             }
         finally:
