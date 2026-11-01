@@ -48,3 +48,9 @@
 .pid-tag-button:hover {border-color:#51a7df;background:#163a57;}
 
 .pid-photo-preview {display:block;max-width:100%;max-height:720px;object-fit:contain;margin:auto;border-radius:8px;background:#fff;}
+
+.pid-review-panel {display:grid;gap:12px;padding:16px;border:1px solid #426783;border-radius:10px;background:#102a3d;}
+.pid-review-actions {display:flex;flex-wrap:wrap;gap:10px;}
+.pid-review-actions button {padding:9px 14px;border:1px solid #5684a5;border-radius:7px;background:#183e59;color:#f4f9ff;cursor:pointer;}
+.pid-review-actions button:hover {background:#245779;}
+.pid-review-panel small {color:#a9c4d6;}
