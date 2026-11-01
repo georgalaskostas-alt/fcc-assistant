@@ -13,6 +13,7 @@ export function PidIntelligenceView() {
   const [page, setPage] = useState(1);
   const [ocr, setOcr] = useState<PidOcrResult | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null);
+  const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   useEffect(() => {
