@@ -78,6 +78,7 @@ def main() -> int:
             "fastapi": "fastapi",
             "uvicorn": "uvicorn",
             "multipart": "python-multipart",
+            "fitz": "PyMuPDF",
         }
     )
 
@@ -104,6 +105,7 @@ def main() -> int:
             "--hidden-import", "app.investigation_service",
             "--hidden-import", "app.agent_runtime",
             "--hidden-import", "app.refinery_tools",
+            "--hidden-import", "fitz",
             "--distpath", str(dist),
             "--workpath", str(work),
             "--specpath", str(spec),
