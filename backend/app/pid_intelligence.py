@@ -13,6 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pypdf import PdfReader
 from .pid_ocr_utils import extract_candidates, deduplicate
 from .pid_line_ocr import extract_line_labels
+from .pid_raw_ocr import raw_ocr_words
 from .pid_geometry import detect_line_segments
 from .pid_topology import propose_topology
 
@@ -143,6 +144,7 @@ def ocr_pid_page(content: bytes, page_number: int = 1) -> dict[str, object]:
             if not rows:
                 return {"page": page_number, "engine": "tesseract-local", "candidates": [], "read_only": True,
                         "preview_png_base64": base64.b64encode(image_bytes).decode("ascii")}
+            raw_tokens = raw_ocr_words(completed.stdout, pixmap.width, pixmap.height)
             candidates = extract_candidates(completed.stdout, pixmap.width, pixmap.height)
             line_labels = extract_line_labels(completed.stdout, pixmap.width, pixmap.height)
             # Re-read the page in overlapping high-resolution tiles to preserve tiny labels.
@@ -150,6 +152,7 @@ def ocr_pid_page(content: bytes, page_number: int = 1) -> dict[str, object]:
             from PIL import Image
             tile_candidates = []
             tile_line_labels = []
+            tile_raw_tokens = []
             with Image.open(io.BytesIO(image_bytes)) as full_image:
                 tile_size = 1100
                 stride = 950
@@ -168,11 +171,13 @@ def ocr_pid_page(content: bytes, page_number: int = 1) -> dict[str, object]:
                                     capture_output=True, text=True, timeout=30, check=False,
                                 )
                                 if tile_result.returncode == 0:
+                                    tile_raw_tokens.extend(raw_ocr_words(tile_result.stdout, full_image.width, full_image.height, offset_x=left, offset_y=top, limit=30))
                                     tile_line_labels.extend(extract_line_labels(tile_result.stdout, full_image.width, full_image.height, offset_x=left, offset_y=top))
                                     tile_candidates.extend(extract_candidates(
                                         tile_result.stdout, full_image.width, full_image.height,
                                         offset_x=left, offset_y=top,
                                     ))
+            raw_tokens = (raw_tokens + tile_raw_tokens)[:300]
             candidates = deduplicate(candidates + tile_candidates)
             line_labels = deduplicate(line_labels + tile_line_labels)
             with Image.open(io.BytesIO(image_bytes)) as geometry_image:
@@ -180,7 +185,7 @@ def ocr_pid_page(content: bytes, page_number: int = 1) -> dict[str, object]:
             return {
                 "page": page_number, "engine": "tesseract-local",
                 "preview_png_base64": base64.b64encode(image_bytes).decode("ascii"),
-                "candidates": candidates, "line_labels": line_labels, "geometry": geometry,
+                "candidates": candidates, "line_labels": line_labels, "raw_ocr_tokens": raw_tokens, "geometry": geometry,
                 "topology": propose_topology(geometry["segments"]), "read_only": True,
                 "warning": "OCR labels and coordinates are unverified. No diagram topology is inferred.",
             }
