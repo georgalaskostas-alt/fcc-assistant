@@ -376,6 +376,21 @@ export function PidIntelligenceView() {
             <small>{compiledLinePattern?.test(standardExample.trim()) ? "Example matches format." : "Example does not match format."}</small>
             <small>{lineNumberPattern.trim() && !compiledLinePattern ? "Invalid regex." : `${lineNumberCandidates.length} matching OCR labels.`}</small>
             {standardMessage && <small role="status">{standardMessage}</small>}
+            <div className="pid-review-panel">
+              <strong>Line OCR diagnostics · unverified</strong>
+              <p>{(ocr?.line_labels ?? []).length} extracted line-label hypotheses · {lineNumberCandidates.length} match the active standard.</p>
+              {!ocr?.line_labels && <small>The current OCR response does not contain line_labels. Rebuild the backend sidecar and rerun OCR.</small>}
+              {(ocr?.line_labels ?? []).length === 0 && <small>No line-label hypotheses were extracted. This may indicate OCR recognition or token-grouping limitations.</small>}
+              {(ocr?.line_labels ?? []).slice(0, 40).map((item, index) => {
+                const matches = compiledLinePattern?.test(item.tag) ?? false;
+                return <div key={index} className="pid-review-actions">
+                  <span>{item.tag} · OCR {item.confidence.toFixed(0)}% · x={item.box.x.toFixed(3)}, y={item.box.y.toFixed(3)}</span>
+                  <small>{!compiledLinePattern ? "No active valid standard" : matches ? "Matches standard · unverified" : "Rejected by standard"}</small>
+                </div>;
+              })}
+              {(ocr?.line_labels ?? []).length > 40 && <small>Showing the first 40 hypotheses.</small>}
+            </div>
+
           </div>
           {selectedVisualPath !== null && <div className="pid-review-panel">
             <strong>Nearby line-number labels · unverified spatial suggestions</strong>
