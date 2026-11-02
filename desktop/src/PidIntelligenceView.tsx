@@ -138,6 +138,21 @@ export function PidIntelligenceView() {
     link.download = `pid-topology-review-page-${ocr.page}.json`; link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  function exportVerifiedLineLabels() {
+    if (!ocr) return;
+    const labels=(ocr.line_labels ?? []).map((item,index) => ({
+      original_text:item.tag, reviewed_text:lineCorrections[index] ?? item.tag,
+      confidence:item.confidence, box:item.box, review_status:lineReviews[index] ?? "unverified",
+      source:"local_ocr", connectivity_status:"not_verified",
+    }));
+    const payload={schema_version:1, drawing:file?.name ?? null, page:ocr.page,
+      standard_name:standardName, standard_pattern:lineNumberPattern, labels,
+      warning:"Engineer review of text only. No piping or instrument connectivity verified."};
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);const link=document.createElement("a");
+    link.href=url;link.download=`pid-reviewed-line-labels-page-${ocr.page}.json`;link.click();
+    window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
   function exportLineNumberAnnotations() {
     if (!ocr) return;
     const annotations = visualPaths.flatMap(path => {
@@ -414,6 +429,7 @@ export function PidIntelligenceView() {
             {standardMessage && <small role="status">{standardMessage}</small>}
             <div className="pid-review-panel">
               <strong>Line OCR diagnostics · unverified</strong>
+              <button type="button" onClick={exportVerifiedLineLabels}>Export reviewed OCR line labels</button>
               <p>{(ocr?.line_labels ?? []).length} extracted line-label hypotheses · {lineNumberCandidates.length} match the active standard.</p>
               {!ocr?.line_labels && <small>The current OCR response does not contain line_labels. Rebuild the backend sidecar and rerun OCR.</small>}
               {(ocr?.line_labels ?? []).length === 0 && <small>No line-label hypotheses were extracted. This may indicate OCR recognition or token-grouping limitations.</small>}
