@@ -15,6 +15,11 @@ export function PidIntelligenceView() {
   const [page, setPage] = useState(1);
   const [ocr, setOcr] = useState<PidOcrResult | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null);
+  const [selectedLineLabel, setSelectedLineLabel] = useState<number | null>(null);
+  const [lineReviews, setLineReviews] = useState<Record<number, "correct" | "rejected">>({});
+  const [lineCorrections, setLineCorrections] = useState<Record<number, string>>({});
+  const [lineDraft, setLineDraft] = useState("");
+
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
   const [corrections, setCorrections] = useState<Record<number, string>>({});
   const [draftTag, setDraftTag] = useState("");
@@ -49,7 +54,7 @@ export function PidIntelligenceView() {
   }, [file]);
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
     try { setOcr(await api.ocrPidPage(file, page)); }
     catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
     finally { setOcrBusy(false); }
@@ -204,7 +209,7 @@ export function PidIntelligenceView() {
           <input type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" onChange={(event) => {
             setFile(event.target.files?.[0] ?? null);
             setResult(null);
-            setOcr(null);
+            setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({});
             setReviews({}); setTopologyReviews({}); setSelectedTopology(null);
             setOcrError(null);
             setPage(1);
@@ -261,6 +266,16 @@ export function PidIntelligenceView() {
                 return segment ? <line key={id} x1={segment.x1*1000} y1={segment.y1*1000} x2={segment.x2*1000} y2={segment.y2*1000} stroke="#00d9a6" strokeWidth="5" vectorEffect="non-scaling-stroke"/> : null;
               })}
             </svg>}
+            {(ocr.line_labels ?? []).map((item,index) => {
+              const active = selectedLineLabel === index;
+              return <button key={`line-${index}`} type="button"
+                title={`Line OCR: ${item.tag} · ${item.confidence.toFixed(0)}% · ${lineReviews[index] ?? "unverified"}`}
+                aria-label={`Review line number ${item.tag}`}
+                onClick={() => {setSelectedLineLabel(index); setLineDraft(lineCorrections[index] ?? item.tag);}}
+                className={`pid-line-box ${active ? "pid-line-box-active" : ""}`}
+                style={{left:`${item.box.x*100}%`,top:`${item.box.y*100}%`,
+                  width:`${Math.max(item.box.width*100,0.7)}%`,height:`${Math.max(item.box.height*100,0.7)}%`}} />;
+            })}
             {symbolAnnotations.map((symbol, index) => <span key={index} className="pid-manual-symbol" style={{left:`${symbol.x*100}%`,top:`${symbol.y*100}%`}} title={`Manual ${symbol.kind}: ${symbol.tag || "unlabeled"}`}>{symbol.kind === "valve" ? "V" : symbol.kind === "instrument" ? "I" : symbol.kind === "connector" ? "C" : "E"}</span>)}
             {ocr.candidates.map((item,index) => <button key={index} type="button"
               title={`${item.tag} · OCR ${item.confidence.toFixed(0)}% · not verified`}
