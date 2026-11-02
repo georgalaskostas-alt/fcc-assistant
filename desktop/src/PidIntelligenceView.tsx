@@ -113,10 +113,10 @@ export function PidIntelligenceView() {
     if (!lineNumberPattern.trim() || lineNumberPattern.length > 160) return null;
     try { return new RegExp(lineNumberPattern, "i"); } catch { return null; }
   })();
-  const lineNumberCandidates = (ocr?.candidates ?? []).map((item, index) => ({
-    index, tag: corrections[index] ?? item.tag,
-  })).filter(item => reviews[item.index] !== "incorrect" && compiledLinePattern?.test(item.tag));
-  const spatialSuggestions = suggestPathTags(visualPaths, ocr?.geometry?.segments ?? [], ocr?.candidates ?? [])
+  const lineNumberCandidates = (ocr?.line_labels ?? []).map((item, index) => ({
+    index, tag: item.tag,
+  })).filter(item => compiledLinePattern?.test(item.tag));
+  const spatialSuggestions = suggestPathTags(visualPaths, ocr?.geometry?.segments ?? [], ocr?.line_labels ?? [])
     .filter(item => lineNumberCandidates.some(candidate => candidate.index === item.candidateIndex));
   const selectedPathKey = selectedVisualPath !== null && visualPaths[selectedVisualPath] ? visualPaths[selectedVisualPath].segmentIds.join(",") : null;
   const graphDraft = { schema_version: 1, read_only: true, nodes: graphNodes, edges: [] as never[],
@@ -384,7 +384,7 @@ export function PidIntelligenceView() {
               <div key={item.candidateIndex} className="pid-review-actions">
                 <span>{item.tag} · normalized distance {item.distance}</span>
                 <button type="button" onClick={() => {
-                  if (selectedPathKey !== null) setPathLineNumbers(previous => ({...previous, [selectedPathKey]: corrections[item.candidateIndex] ?? item.tag}));
+                  if (selectedPathKey !== null) setPathLineNumbers(previous => ({...previous, [selectedPathKey]: item.tag}));
                 }}>Use as draft line number</button>
               </div>)}
             {!spatialSuggestions.some(item => item.pathIndex === selectedVisualPath) && <small>No matching line-number label close enough to the path endpoints.</small>}
