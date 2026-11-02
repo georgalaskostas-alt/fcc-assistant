@@ -64,3 +64,7 @@
 .pid-geometry-toggle input {accent-color:#00b8ff;}
 
 .pid-manual-symbol {position:absolute;transform:translate(-50%,-50%);z-index:3;pointer-events:none;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border:2px solid #ffe082;border-radius:50%;background:#243d53;color:#fff;font-size:11px;font-weight:800;box-shadow:0 0 0 2px #102a3d;}
+
+/* Line-number OCR hypotheses are separate from equipment OCR candidates. */
+.pid-line-box {position:absolute;z-index:4;border:2px solid #16a34a;background:rgba(22,163,74,.15);padding:0;min-width:7px;min-height:7px;border-radius:2px;cursor:pointer;}
+.pid-line-box:hover,.pid-line-box-active {z-index:6;border:3px solid #facc15;background:rgba(250,204,21,.23);}
