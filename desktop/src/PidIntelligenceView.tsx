@@ -389,6 +389,17 @@ export function PidIntelligenceView() {
                 </div>;
               })}
               {(ocr?.line_labels ?? []).length > 40 && <small>Showing the first 40 hypotheses.</small>}
+              <details>
+                <summary>Raw Tesseract tokens (before line-number filtering) · {(ocr?.raw_ocr_tokens ?? []).length} shown</summary>
+                {!ocr?.raw_ocr_tokens && <p>Raw token diagnostics unavailable. Rebuild backend and rerun OCR.</p>}
+                {(ocr?.raw_ocr_tokens ?? []).slice(0, 100).map((token, index) =>
+                  <div className="pid-review-actions" key={index}>
+                    <code>{token.text}</code>
+                    <small>Confidence {token.confidence.toFixed(0)}% · x={token.box.x.toFixed(3)} y={token.box.y.toFixed(3)}</small>
+                  </div>)}
+                {(ocr?.raw_ocr_tokens ?? []).length > 100 && <small>Showing the first 100 of {(ocr?.raw_ocr_tokens ?? []).length} returned tokens.</small>}
+              </details>
+
             </div>
 
           </div>
