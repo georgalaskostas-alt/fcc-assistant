@@ -296,18 +296,11 @@ export function PidIntelligenceView() {
               onChange={event => setLineDraft(event.target.value.toUpperCase())}/>
           </label>
           <div className="pid-review-actions">
-            <button type="button" onClick={() => {
+            <button type="button" disabled={!compiledLinePattern?.test(lineDraft.trim())} onClick={() => {
               const value=lineDraft.trim();
-              if(!value || !compiledLinePattern?.test(value)) return;
               setLineCorrections(previous => ({...previous,[selectedLineLabel]:value}));
               setLineReviews(previous => ({...previous,[selectedLineLabel]:"correct"}));
-            }}>Confirm corrected line number</button>
-            <button type="button" onClick={() => {
-              const value=lineDraft.trim();
-              if(!value || !compiledLinePattern?.test(value)) return;
-              setLineCorrections(previous => ({...previous,[selectedLineLabel]:value}));
-              setLineReviews(previous => ({...previous,[selectedLineLabel]:"correct"}));
-            }}>Correct</button>
+            }}>Confirm / save correction</button>
             <button type="button" onClick={() => setLineReviews(previous => ({...previous,[selectedLineLabel]:"rejected"}))}>Reject</button>
             <button type="button" onClick={() => {
               setLineReviews(previous => {const next={...previous};delete next[selectedLineLabel];return next;});
@@ -428,6 +421,11 @@ export function PidIntelligenceView() {
                 const matches = compiledLinePattern?.test(item.tag) ?? false;
                 return <div key={index} className="pid-review-actions">
                   <span>{item.tag} · OCR {item.confidence.toFixed(0)}% · x={item.box.x.toFixed(3)}, y={item.box.y.toFixed(3)}</span>
+                  <button type="button" onClick={() => {
+                    setSelectedLineLabel(index);setLineDraft(lineCorrections[index] ?? item.tag);
+                    document.querySelector(".pid-annotated")?.scrollIntoView({behavior:"smooth",block:"center"});
+                  }}>Inspect on drawing</button>
+                  <small>{lineReviews[index] ?? "unverified"}</small>
                   <small>{!compiledLinePattern ? "No active valid standard" : matches ? "Matches standard · unverified" : "Rejected by standard"}</small>
                 </div>;
               })}
