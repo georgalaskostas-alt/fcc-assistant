@@ -288,6 +288,34 @@ export function PidIntelligenceView() {
             Candidate: <strong>{ocr.candidates[selectedCandidate].tag}</strong> · OCR confidence {ocr.candidates[selectedCandidate].confidence.toFixed(0)}% · Requires engineer verification
           </div>}
         </div>}
+        {ocr && selectedLineLabel !== null && ocr.line_labels?.[selectedLineLabel] && <div className="pid-review-panel">
+          <strong>Line number visual verification · {ocr.line_labels[selectedLineLabel].tag}</strong>
+          <small>OCR confidence {ocr.line_labels[selectedLineLabel].confidence.toFixed(0)}%. Format matching alone does not verify the text or piping connection.</small>
+          <label>Corrected line number
+            <input aria-label="Corrected line number" maxLength={80} value={lineDraft}
+              onChange={event => setLineDraft(event.target.value.toUpperCase())}/>
+          </label>
+          <div className="pid-review-actions">
+            <button type="button" onClick={() => {
+              const value=lineDraft.trim();
+              if(!value || !compiledLinePattern?.test(value)) return;
+              setLineCorrections(previous => ({...previous,[selectedLineLabel]:value}));
+              setLineReviews(previous => ({...previous,[selectedLineLabel]:"correct"}));
+            }}>Confirm corrected line number</button>
+            <button type="button" onClick={() => {
+              const value=lineDraft.trim();
+              if(!value || !compiledLinePattern?.test(value)) return;
+              setLineCorrections(previous => ({...previous,[selectedLineLabel]:value}));
+              setLineReviews(previous => ({...previous,[selectedLineLabel]:"correct"}));
+            }}>Correct</button>
+            <button type="button" onClick={() => setLineReviews(previous => ({...previous,[selectedLineLabel]:"rejected"}))}>Reject</button>
+            <button type="button" onClick={() => {
+              setLineReviews(previous => {const next={...previous};delete next[selectedLineLabel];return next;});
+              setLineCorrections(previous => {const next={...previous};delete next[selectedLineLabel];return next;});
+            }}>Clear review</button>
+          </div>
+          <small>Review status: {lineReviews[selectedLineLabel] ?? "unverified"}. Confirmations verify text only, not piping connectivity.</small>
+        </div>}
         {ocr && selectedCandidate !== null && ocr.candidates[selectedCandidate] && <div className="pid-review-panel">
           <strong>Engineer review: {ocr.candidates[selectedCandidate].tag}</strong>
           <label>Corrected tag <input aria-label="Corrected tag" value={draftTag} maxLength={40} onChange={(event) => setDraftTag(event.target.value.toUpperCase())}/></label>
