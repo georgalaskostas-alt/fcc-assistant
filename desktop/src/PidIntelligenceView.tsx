@@ -4,6 +4,7 @@ import { api, PidInspectionResult, PidOcrResult } from "./api";
 import "./PidIntelligenceView.css";
 import { reconstructVisualPaths } from "./pidVisualPaths";
 import { suggestPathTags } from "./pidSpatialSuggestions";
+import { traceVisualPipe } from "./pidPipeTrace";
 
 export function PidIntelligenceView() {
   const [file, setFile] = useState<File | null>(null);
@@ -28,6 +29,7 @@ export function PidIntelligenceView() {
   const [lineDraft, setLineDraft] = useState("");
   const [pipePickMode, setPipePickMode] = useState(false);
   const [pipeAnchors, setPipeAnchors] = useState<Record<number,{x:number;y:number}>>({});
+  const [traceLine, setTraceLine] = useState<number | null>(null);
 
 
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
@@ -126,7 +128,7 @@ export function PidIntelligenceView() {
   }
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setPipeAnchors({}); setPipePickMode(false); setPipeAnchors({}); setPipePickMode(false); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setPipeAnchors({}); setPipePickMode(false); setTraceLine(null); setPipeAnchors({}); setPipePickMode(false); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
     try { setOcr(await api.ocrPidPage(file, page)); }
     catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
     finally { setOcrBusy(false); }
@@ -193,6 +195,10 @@ export function PidIntelligenceView() {
   const lineNumberCandidates = (ocr?.line_labels ?? []).map((item, index) => ({
     index, tag: item.tag,
   })).filter(item => compiledLinePattern?.test(item.tag));
+  const pipeTrace = traceLine !== null && pipeAnchors[traceLine] && ocr?.geometry
+    ? traceVisualPipe(ocr.geometry.segments,pipeAnchors[traceLine],
+      (ocr.topology?.proposals ?? []).filter((_,index)=>topologyReviews[index]==="accepted"))
+    : null;
   const spatialSuggestions = suggestPathTags(visualPaths, ocr?.geometry?.segments ?? [], ocr?.line_labels ?? [])
     .filter(item => lineNumberCandidates.some(candidate => candidate.index === item.candidateIndex));
   const selectedPathKey = selectedVisualPath !== null && visualPaths[selectedVisualPath] ? visualPaths[selectedVisualPath].segmentIds.join(",") : null;
@@ -364,6 +370,11 @@ export function PidIntelligenceView() {
                 x2={segment.x2 * 1000} y2={segment.y2 * 1000}
                 stroke="#00b8ff" strokeWidth="1.5" vectorEffect="non-scaling-stroke" opacity="0.8" />)}
             </svg>}
+            {pipeTrace && ocr.geometry && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Provisional visual pipe trace">
+              {pipeTrace.segments.map(id=>{const segment=ocr.geometry!.segments[id];return segment ? <line key={id}
+                x1={segment.x1*1000} y1={segment.y1*1000} x2={segment.x2*1000} y2={segment.y2*1000}
+                stroke="#e11d48" strokeWidth="5" vectorEffect="non-scaling-stroke" opacity=".85"/> : null;})}
+            </svg>}
             {selectedTopology !== null && ocr.topology && ocr.geometry && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Selected endpoint proposal">
               {[ocr.topology.proposals[selectedTopology]?.segment_a, ocr.topology.proposals[selectedTopology]?.segment_b].filter((id): id is number => id !== undefined).map((id, index) => {
                 const segment = ocr.geometry!.segments[id];
@@ -436,6 +447,12 @@ export function PidIntelligenceView() {
               setPipePickMode(false);
             }}>Clear pipe location</button>
           </div>
+          <div className="pid-review-actions">
+            <button type="button" disabled={!pipeAnchors[selectedLineLabel] || !ocr.geometry?.segments.length}
+              onClick={()=>{setTraceLine(selectedLineLabel);const point=pipeAnchors[selectedLineLabel];if(point)focusDrawing(point.x,point.y);}}>Trace visual pipe (provisional)</button>
+            <button type="button" disabled={traceLine===null} onClick={()=>setTraceLine(null)}>Clear visual trace</button>
+          </div>
+          {traceLine===selectedLineLabel && pipeTrace && <small>Visual trace: {pipeTrace.segments.length} detected segments, nearest segment #{pipeTrace.seedSegment ?? "none"}, normalized distance {Number.isFinite(pipeTrace.distance)?pipeTrace.distance.toFixed(4):"N/A"}. {pipeTrace.warning}</small>}
           {pipePickMode && <small>Click the actual pipe on the drawing, not its text or a nearby signal line. This records an engineer-selected point only.</small>}
           {pipeAnchors[selectedLineLabel] && <small>Manual pipe point: x={pipeAnchors[selectedLineLabel].x.toFixed(3)}, y={pipeAnchors[selectedLineLabel].y.toFixed(3)}. Pipe identity and continuity not yet verified.</small>}
           <small>Review status: {lineReviews[selectedLineLabel] ?? "unverified"}. Confirmations verify text only, not piping connectivity.</small>
