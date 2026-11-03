@@ -1,4 +1,4 @@
-import { auditGuidedRoute, auditRouteRaster } from "./pidRouteAudit";
+import { auditGuidedRoute, auditRouteRaster, auditRasterLegAlignment } from "./pidRouteAudit";
 import { useEffect, useRef, useState } from "react";
 import { FileSearch, ShieldCheck, Upload } from "lucide-react";
 import { api, PidInspectionResult, PidOcrResult } from "./api";
@@ -227,6 +227,9 @@ export function PidIntelligenceView() {
     : null;
   const rasterAudit = traceLine !== null && raster && (routePoints[traceLine]?.length ?? 0)>1
     ? auditRouteRaster(routePoints[traceLine],raster)
+    : null;
+  const legAlignment = traceLine !== null && raster && (routePoints[traceLine]?.length ?? 0)>1
+    ? auditRasterLegAlignment(routePoints[traceLine],raster)
     : null;
   const relaxedGuidedAudit = traceLine !== null && ocr?.geometry && (routePoints[traceLine]?.length ?? 0)>1
     ? auditGuidedRoute(routePoints[traceLine],ocr.geometry.segments,0.010)
@@ -518,6 +521,11 @@ export function PidIntelligenceView() {
             <p>{guidedAudit.matchedCount} / {guidedAudit.sampleCount} sampled points near detected geometry ({(guidedAudit.coverage*100).toFixed(1)}% coverage). {guidedAudit.matchedSegmentIds.length} nearby detected segments.</p>
             <p>Diagnostic comparison at 0.010 tolerance: {relaxedGuidedAudit ? (relaxedGuidedAudit.coverage*100).toFixed(1) : "—"}% (baseline 0.006). Orange dots mark up to 60 unmatched baseline samples on the drawing.</p>
             {rasterAudit && <p>Direct raster-pixel evidence: {rasterAudit.matchedCount} / {rasterAudit.sampleCount} samples ({(rasterAudit.coverage*100).toFixed(1)}%). {rasterAudit.warning}</p>}
+            {legAlignment && <div className="pid-route-leg-diagnostics">
+              <strong>Coherent raster-stroke audit · per straight leg</strong>
+              {legAlignment.legs.map(leg=><p key={leg.index}>Leg {leg.index}: {(leg.coverage*100).toFixed(1)}% dark-stroke coverage · estimated perpendicular offset {leg.offsetPixels > 0 ? "+" : ""}{leg.offsetPixels} px{leg.ambiguous ? " · ambiguous parallel candidates" : ""}</p>)}
+              <small>{legAlignment.warning}</small>
+            </div>}
             <p>Higher proximity coverage does not establish pipe identity; no additional segments are accepted automatically.</p>
             <p>{guidedAudit.warning}</p>
           </div>}
