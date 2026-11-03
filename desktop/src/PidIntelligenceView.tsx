@@ -353,12 +353,17 @@ export function PidIntelligenceView() {
               if (routeMode) {
                 const existing = routePoints[selectedLineLabel] ?? [];
                 const last = existing[existing.length-1];
-                if (last && Math.abs(last.x-x)>0.012 && Math.abs(last.y-y)>0.012) {
-                  setRouteWarning("Diagonal segment blocked. Click the actual pipe corner first.");
-                } else {
-                  setRoutePoints(previous=>({...previous,[selectedLineLabel]:[...(previous[selectedLineLabel]??[]),{x,y}]}));
-                  setRouteWarning("");
+                if (last) {
+                  const dx=Math.abs(last.x-x),dy=Math.abs(last.y-y);
+                  const nearHorizontal=dy<=Math.max(0.012,dx*0.045);
+                  const nearVertical=dx<=Math.max(0.012,dy*0.045);
+                  if (!nearHorizontal && !nearVertical) {
+                    setRouteWarning("Diagonal route blocked. Select the actual elbow/corner first; a pipe crossing is not a connection.");
+                    return;
+                  }
                 }
+                setRoutePoints(previous=>({...previous,[selectedLineLabel]:[...(previous[selectedLineLabel]??[]),{x,y}]}));
+                setRouteWarning("");
               }
               else {setPipeAnchors(previous=>({...previous,[selectedLineLabel]:{x,y}}));setPipePickMode(false);}
               return;
@@ -475,7 +480,7 @@ export function PidIntelligenceView() {
             <button type="button" disabled={!(routePoints[selectedLineLabel]?.length)} onClick={()=>setRoutePoints(previous=>({...previous,[selectedLineLabel]:(previous[selectedLineLabel]??[]).slice(0,-1)}))}>Undo route point</button>
           </div>
           {routeWarning && <small role="alert">{routeWarning}</small>}
-          {routeMode && <small>Start by clicking the first route point. Click each actual corner; diagonal connections are blocked. Green route is a manual visual annotation, not verified connectivity.</small>}
+          {routeMode && <small>Start by clicking the first route point. Long horizontal/vertical runs accept two clicks, including minor scan skew. Click every actual corner; diagonal connections remain blocked. Green route is a manual visual annotation, not verified connectivity.</small>}
           {traceLine===selectedLineLabel && pipeTrace && <small>Visual trace: {pipeTrace.segments.length} detected segments, nearest segment #{pipeTrace.seedSegment ?? "none"}, normalized distance {Number.isFinite(pipeTrace.distance)?pipeTrace.distance.toFixed(4):"N/A"}. {pipeTrace.warning}</small>}
           {pipePickMode && <small>Click the actual pipe on the drawing, not its text or a nearby signal line. This records an engineer-selected point only.</small>}
           {pipeAnchors[selectedLineLabel] && <small>Manual pipe point: x={pipeAnchors[selectedLineLabel].x.toFixed(3)}, y={pipeAnchors[selectedLineLabel].y.toFixed(3)}. Pipe identity and continuity not yet verified.</small>}
