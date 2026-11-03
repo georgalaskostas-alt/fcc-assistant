@@ -274,12 +274,13 @@ export function PidIntelligenceView() {
           <div className="pid-annotated-image" ref={drawingRef} onClick={event => {
             if (symbolMode === "off") return;
             if (event.target !== event.currentTarget && (event.target as HTMLElement).closest("button")) return;
-            const bounds = event.currentTarget.getBoundingClientRect();
+            const bounds = (event.currentTarget.querySelector(".pid-image-canvas") ?? event.currentTarget).getBoundingClientRect();
             if (!bounds.width || !bounds.height) return;
             const x = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
             const y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
             setSymbolAnnotations(previous => [...previous, {x, y, kind: symbolMode, tag:""}]);
           }}>
+            <div className="pid-image-canvas">
             <img alt={`Rendered P&ID page ${ocr.page} for visual OCR verification`} src={`data:image/png;base64,${ocr.preview_png_base64}`}/>
             {showGeometry && ocr.geometry && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Unverified visual line segments">
               {ocr.geometry.segments.filter(segment => includeTitleBlock || segment.region_hint !== "title_block_candidate").map((segment, index) => <line key={index}
@@ -317,6 +318,7 @@ export function PidIntelligenceView() {
               onClick={() => {setSelectedCandidate(index); setDraftTag(corrections[index] ?? item.tag);}}
               className={`pid-ocr-box ${selectedCandidate === index ? "pid-ocr-box-active" : ""}`}
               style={{left:`${item.box.x*100}%`,top:`${item.box.y*100}%`,width:`${Math.max(item.box.width*100,0.5)}%`,height:`${Math.max(item.box.height*100,0.5)}%`}} />)}
+            </div>
           </div>
           {selectedCandidate !== null && ocr.candidates[selectedCandidate] && <div className="pid-ocr-selection">
             Candidate: <strong>{ocr.candidates[selectedCandidate].tag}</strong> · OCR confidence {ocr.candidates[selectedCandidate].confidence.toFixed(0)}% · Requires engineer verification
