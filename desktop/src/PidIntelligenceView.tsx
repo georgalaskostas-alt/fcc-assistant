@@ -16,6 +16,8 @@ export function PidIntelligenceView() {
   const [ocr, setOcr] = useState<PidOcrResult | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null);
   const [selectedLineLabel, setSelectedLineLabel] = useState<number | null>(null);
+  const [showAllLineBoxes, setShowAllLineBoxes] = useState(false);
+  const [showEquipmentBoxes, setShowEquipmentBoxes] = useState(false);
   const drawingRef = useRef<HTMLDivElement | null>(null);
   const lineReviewRef = useRef<HTMLDivElement | null>(null);
   const [lineReviews, setLineReviews] = useState<Record<number, "correct" | "rejected">>({});
@@ -280,6 +282,10 @@ export function PidIntelligenceView() {
             const y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
             setSymbolAnnotations(previous => [...previous, {x, y, kind: symbolMode, tag:""}]);
           }}>
+            <div className="pid-overlay-controls">
+              <label><input type="checkbox" checked={showAllLineBoxes} onChange={event => setShowAllLineBoxes(event.target.checked)}/> Show all unverified line OCR boxes</label>
+              <label><input type="checkbox" checked={showEquipmentBoxes} onChange={event => setShowEquipmentBoxes(event.target.checked)}/> Show equipment/instrument OCR boxes</label>
+            </div>
             <div className="pid-image-canvas">
             <img alt={`Rendered P&ID page ${ocr.page} for visual OCR verification`} src={`data:image/png;base64,${ocr.preview_png_base64}`}/>
             {showGeometry && ocr.geometry && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Unverified visual line segments">
@@ -302,6 +308,7 @@ export function PidIntelligenceView() {
               })}
             </svg>}
             {(ocr.line_labels ?? []).map((item,index) => {
+              if (!showAllLineBoxes && selectedLineLabel !== index) return null;
               const active = selectedLineLabel === index;
               return <button key={`line-${index}`} type="button"
                 title={`Line OCR: ${item.tag} · ${item.confidence.toFixed(0)}% · ${lineReviews[index] ?? "unverified"}`}
@@ -312,7 +319,7 @@ export function PidIntelligenceView() {
                   width:`${Math.max(item.box.width*100,0.7)}%`,height:`${Math.max(item.box.height*100,0.7)}%`}} />;
             })}
             {symbolAnnotations.map((symbol, index) => <span key={index} className="pid-manual-symbol" style={{left:`${symbol.x*100}%`,top:`${symbol.y*100}%`}} title={`Manual ${symbol.kind}: ${symbol.tag || "unlabeled"}`}>{symbol.kind === "valve" ? "V" : symbol.kind === "instrument" ? "I" : symbol.kind === "connector" ? "C" : "E"}</span>)}
-            {ocr.candidates.map((item,index) => <button key={index} type="button"
+            {showEquipmentBoxes && ocr.candidates.map((item,index) => <button key={index} type="button"
               title={`${item.tag} · OCR ${item.confidence.toFixed(0)}% · not verified`}
               aria-label={`Inspect candidate ${item.tag}`}
               onClick={() => {setSelectedCandidate(index); setDraftTag(corrections[index] ?? item.tag);}}
