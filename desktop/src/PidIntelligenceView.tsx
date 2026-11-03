@@ -372,6 +372,10 @@ export function PidIntelligenceView() {
                 x2={segment.x2 * 1000} y2={segment.y2 * 1000}
                 stroke="#00b8ff" strokeWidth="1.5" vectorEffect="non-scaling-stroke" opacity="0.8" />)}
             </svg>}
+            {traceLine !== null && pipeAnchors[traceLine] && (routePoints[traceLine]?.length ?? 0)>0 && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Engineer-guided pipe route">
+              <polyline points={[pipeAnchors[traceLine],...(routePoints[traceLine]??[])].map(p=>String(p.x*1000)+","+String(p.y*1000)).join(" ")} stroke="#22c55e" strokeWidth="5" fill="none" vectorEffect="non-scaling-stroke" strokeLinejoin="round"/>
+              {(routePoints[traceLine]??[]).map((p,i)=><circle key={i} cx={p.x*1000} cy={p.y*1000} r="5" fill="#22c55e"/>)}
+            </svg>}
             {pipeTrace && ocr.geometry && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Provisional visual pipe trace">
               {pipeTrace.segments.map(id=>{const segment=ocr.geometry!.segments[id];return segment ? <line key={id}
                 x1={segment.x1*1000} y1={segment.y1*1000} x2={segment.x2*1000} y2={segment.y2*1000}
@@ -454,6 +458,12 @@ export function PidIntelligenceView() {
               onClick={()=>{setTraceLine(selectedLineLabel);const point=pipeAnchors[selectedLineLabel];if(point)focusDrawing(point.x,point.y);}}>Trace visual pipe (provisional)</button>
             <button type="button" disabled={traceLine===null} onClick={()=>setTraceLine(null)}>Clear visual trace</button>
           </div>
+          <div className="pid-review-actions">
+            <button type="button" disabled={!pipeAnchors[selectedLineLabel]} onClick={()=>{setTraceLine(selectedLineLabel);setRouteMode(true);const p=pipeAnchors[selectedLineLabel];if(p)focusDrawing(p.x,p.y);}}>Guide pipe route with clicks</button>
+            <button type="button" disabled={!routeMode} onClick={()=>setRouteMode(false)}>Finish route</button>
+            <button type="button" disabled={!(routePoints[selectedLineLabel]?.length)} onClick={()=>setRoutePoints(previous=>({...previous,[selectedLineLabel]:(previous[selectedLineLabel]??[]).slice(0,-1)}))}>Undo route point</button>
+          </div>
+          {routeMode && <small>Click along the actual pipe in order, especially at turns. Green line is a manual visual annotation, not verified piping connectivity.</small>}
           {traceLine===selectedLineLabel && pipeTrace && <small>Visual trace: {pipeTrace.segments.length} detected segments, nearest segment #{pipeTrace.seedSegment ?? "none"}, normalized distance {Number.isFinite(pipeTrace.distance)?pipeTrace.distance.toFixed(4):"N/A"}. {pipeTrace.warning}</small>}
           {pipePickMode && <small>Click the actual pipe on the drawing, not its text or a nearby signal line. This records an engineer-selected point only.</small>}
           {pipeAnchors[selectedLineLabel] && <small>Manual pipe point: x={pipeAnchors[selectedLineLabel].x.toFixed(3)}, y={pipeAnchors[selectedLineLabel].y.toFixed(3)}. Pipe identity and continuity not yet verified.</small>}
