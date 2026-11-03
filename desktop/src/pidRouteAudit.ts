@@ -32,3 +32,35 @@ export function auditGuidedRoute(points:RoutePoint[],segments:TraceSegment[],tol
   matchedSegmentIds:[...ids].sort((a,b)=>a-b),unmatched,
   warning:"Coverage is proximity to detected raster geometry only. It does not prove line identity, physical connectivity or equipment endpoints."};
 }
+
+/** Independent evidence from the OCR preview itself, not the detected line segments.
+ * A local 5x5 dark-pixel search tolerates small raster skew and antialiasing.
+ * This is deliberately diagnostic, not automatic pipe connectivity.
+ */
+export function auditRouteRaster(points:RoutePoint[],raster:ImageData):{
+ sampleCount:number;matchedCount:number;coverage:number;warning:string
+}{
+ const {width,height,data}=raster;
+ let sampleCount=0,matchedCount=0;
+ for(let k=1;k<points.length;k++){
+  const a=points[k-1],b=points[k];
+  const steps=Math.max(1,Math.ceil(Math.hypot((b.x-a.x)*width,(b.y-a.y)*height)/8));
+  for(let j=0;j<=steps;j++){
+   if(k>1&&j===0)continue;
+   const t=j/steps,x=Math.round((a.x+(b.x-a.x)*t)*(width-1));
+   const y=Math.round((a.y+(b.y-a.y)*t)*(height-1));
+   sampleCount++;
+   let hit=false;
+   for(let dy=-3;dy<=3&&!hit;dy++)for(let dx=-3;dx<=3;dx++){
+    const xx=x+dx,yy=y+dy;
+    if(xx<0||yy<0||xx>=width||yy>=height)continue;
+    const index=(yy*width+xx)*4;
+    const gray=0.2126*data[index]+0.7152*data[index+1]+0.0722*data[index+2];
+    if(gray<145){hit=true;break;}
+   }
+   if(hit)matchedCount++;
+  }
+ }
+ return {sampleCount,matchedCount,coverage:sampleCount?matchedCount/sampleCount:0,
+ warning:"Dark-pixel proximity only; text, arrows and crossing lines can cause false matches. Not verified piping connectivity."};
+}
