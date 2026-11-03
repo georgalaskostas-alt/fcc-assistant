@@ -45,6 +45,49 @@ def detect_line_segments(image: Image.Image, *, min_length: int = 65,
                 start = None
         if len(segments) >= max_segments:
             break
+    # Supplement exact pixel runs with conservative vertical continuity evidence.
+    # Slightly tilted or faint scanned lines may disappear from a single column.
+    # A narrow lateral search and a bounded dark-pixel gap recover some of them,
+    # without connecting arbitrary distant marks or claiming pipe identity.
+    if len(segments) < max_segments:
+        for x in range(2, width - 2, 4):
+            start = None
+            last_hit = None
+            hits = 0
+            for y in range(height):
+                dark = any(px[xx, y] < darkness for xx in range(x - 2, x + 3))
+                if dark:
+                    if start is None:
+                        start = y
+                        hits = 0
+                    last_hit = y
+                    hits += 1
+                elif start is not None and last_hit is not None and y - last_hit > 5:
+                    length = last_hit - start + 1
+                    if length >= min_length and hits / length >= 0.85:
+                        # Avoid flooding the proposal list with exact duplicates.
+                        if not any(item["orientation"] == "vertical"
+                                   and abs(item["x1"] - x / width) < 5 / width
+                                   and abs(item["y1"] - start / height) < 8 / height
+                                   and abs(item["y2"] - last_hit / height) < 8 / height
+                                   for item in segments):
+                            append_run(x, start, x, last_hit)
+                    start = None
+                    last_hit = None
+                    hits = 0
+                if len(segments) >= max_segments:
+                    break
+            if start is not None and last_hit is not None and len(segments) < max_segments:
+                length = last_hit - start + 1
+                if length >= min_length and hits / length >= 0.85:
+                    if not any(item["orientation"] == "vertical"
+                               and abs(item["x1"] - x / width) < 5 / width
+                               and abs(item["y1"] - start / height) < 8 / height
+                               and abs(item["y2"] - last_hit / height) < 8 / height
+                               for item in segments):
+                        append_run(x, start, x, last_hit)
+            if len(segments) >= max_segments:
+                break
     if len(segments) < max_segments:
         for x in range(0, width, 2):
             start = None
