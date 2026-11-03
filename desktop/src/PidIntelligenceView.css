@@ -40,7 +40,8 @@
 
 .pid-annotated {display:grid;gap:12px;min-width:0;}
 .pid-annotated-image {position:relative;width:100%;max-height:750px;overflow:auto;background:#fff;border:1px solid #40607d;border-radius:8px;line-height:0;}
-.pid-annotated-image img {display:block;width:100%;height:auto;}
+.pid-image-canvas {position:relative;width:100%;line-height:0;}
+.pid-image-canvas > img {display:block;width:100%;height:auto;}
 .pid-ocr-box {position:absolute;display:block;border:2px solid #ed9c24;background:rgba(255,179,54,.19);padding:0;min-width:5px;min-height:5px;cursor:pointer;border-radius:2px;}
 .pid-ocr-box:hover,.pid-ocr-box-active {border-color:#00bdfb;background:rgba(0,189,251,.24);z-index:2;}
 .pid-ocr-selection {color:#eaf5ff;background:#12314b;border:1px solid #32719a;border-radius:8px;padding:11px 14px;line-height:1.5;}
