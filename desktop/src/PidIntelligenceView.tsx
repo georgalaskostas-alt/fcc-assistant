@@ -19,6 +19,7 @@ export function PidIntelligenceView() {
   const [showAllLineBoxes, setShowAllLineBoxes] = useState(false);
   const [showEquipmentBoxes, setShowEquipmentBoxes] = useState(false);
   const drawingRef = useRef<HTMLDivElement | null>(null);
+  const [drawingZoom, setDrawingZoom] = useState(1);
   const lineReviewRef = useRef<HTMLDivElement | null>(null);
   const [lineReviews, setLineReviews] = useState<Record<number, "correct" | "rejected">>({});
   const [lineCorrections, setLineCorrections] = useState<Record<number, string>>({});
@@ -59,22 +60,33 @@ export function PidIntelligenceView() {
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
+  function focusDrawing(x?: number, y?: number) {
+    const viewport=drawingRef.current;
+    if (!viewport) return;
+    viewport.scrollIntoView({behavior:"smooth",block:"center"});
+    window.setTimeout(() => {
+      const canvas=viewport.querySelector(".pid-image-canvas") as HTMLElement | null;
+      if (!canvas) return;
+      const targetX=(x ?? 0.5)*canvas.offsetWidth;
+      const targetY=(y ?? 0.5)*canvas.offsetHeight;
+      viewport.scrollTo({left:Math.max(0,targetX-viewport.clientWidth/2),
+        top:Math.max(0,targetY-viewport.clientHeight/2),behavior:"smooth"});
+    },100);
+  }
+  function changeDrawingZoom(next: number) {
+    const viewport=drawingRef.current;
+    const canvas=viewport?.querySelector(".pid-image-canvas") as HTMLElement | null;
+    const x=viewport && canvas ? (viewport.scrollLeft+viewport.clientWidth/2)/canvas.offsetWidth : 0.5;
+    const y=viewport && canvas ? (viewport.scrollTop+viewport.clientHeight/2)/canvas.offsetHeight : 0.5;
+    setDrawingZoom(Math.max(0.75,Math.min(4,Math.round(next*100)/100)));
+    window.setTimeout(()=>focusDrawing(x,y),80);
+  }
   function inspectLine(index: number) {
     const label = ocr?.line_labels?.[index];
     if (!label) return;
     setSelectedLineLabel(index);
     setLineDraft(lineCorrections[index] ?? label.tag);
-    const container = drawingRef.current;
-    if (container) {
-      container.scrollIntoView({behavior:"smooth",block:"center"});
-      const image = container.querySelector("img");
-      if (image) {
-        const centerX = (label.box.x + label.box.width / 2) * image.clientWidth;
-        const centerY = (label.box.y + label.box.height / 2) * image.clientHeight;
-        container.scrollTo({left:Math.max(0,centerX-container.clientWidth/2),
-          top:Math.max(0,centerY-container.clientHeight/2),behavior:"smooth"});
-      }
-    }
+    focusDrawing(label.box.x+label.box.width/2,label.box.y+label.box.height/2);
   }
   async function runOcr() {
     if (!file || ocrBusy) return;
@@ -276,6 +288,13 @@ export function PidIntelligenceView() {
         {ocrError && <div role="alert" className="error-banner">{ocrError}</div>}
         {ocr?.preview_png_base64 && <div className="pid-annotated">
           <div className="pid-table-head"><h3>OCR visual verification · page {ocr.page}</h3><span className="pid-muted">Boxes indicate unverified OCR candidates</span></div>
+          <div className="pid-zoom-toolbar">
+            <button type="button" onClick={()=>changeDrawingZoom(drawingZoom-0.25)} disabled={drawingZoom<=0.75}>− Zoom out</button>
+            <strong>{Math.round(drawingZoom*100)}%</strong>
+            <button type="button" onClick={()=>changeDrawingZoom(drawingZoom+0.25)} disabled={drawingZoom>=4}>+ Zoom in</button>
+            <button type="button" onClick={()=>changeDrawingZoom(1)}>Fit width</button>
+            {pipePickMode && <strong>Pipe selection active — click the pipe on the drawing</strong>}
+          </div>
           <div className="pid-annotated-image" ref={drawingRef} onClick={event => {
             if (pipePickMode && selectedLineLabel !== null) {
               if ((event.target as HTMLElement).closest("button")) return;
@@ -300,7 +319,7 @@ export function PidIntelligenceView() {
               <label><input type="checkbox" checked={showAllLineBoxes} onChange={event => setShowAllLineBoxes(event.target.checked)}/> Show all unverified line OCR boxes</label>
               <label><input type="checkbox" checked={showEquipmentBoxes} onChange={event => setShowEquipmentBoxes(event.target.checked)}/> Show equipment/instrument OCR boxes</label>
             </div>
-            <div className="pid-image-canvas">
+            <div className="pid-image-canvas" style={{width:`${drawingZoom*100}%`}}>
             <img alt={`Rendered P&ID page ${ocr.page} for visual OCR verification`} src={`data:image/png;base64,${ocr.preview_png_base64}`}/>
             {showGeometry && ocr.geometry && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Unverified visual line segments">
               {ocr.geometry.segments.filter(segment => includeTitleBlock || segment.region_hint !== "title_block_candidate").map((segment, index) => <line key={index}
@@ -370,7 +389,8 @@ export function PidIntelligenceView() {
           <div className="pid-review-actions">
             <button type="button" disabled={lineReviews[selectedLineLabel] !== "correct"} onClick={() => {
               setPipePickMode(true);
-              drawingRef.current?.scrollIntoView({behavior:"smooth",block:"center"});
+              const label=ocr.line_labels?.[selectedLineLabel];
+              focusDrawing(label ? label.box.x+label.box.width/2 : 0.5,label ? label.box.y+label.box.height/2 : 0.5);
             }}>Select pipe location on drawing</button>
             <button type="button" disabled={!pipeAnchors[selectedLineLabel]} onClick={() => {
               setPipeAnchors(previous=>{const next={...previous};delete next[selectedLineLabel];return next;});
