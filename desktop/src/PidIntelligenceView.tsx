@@ -20,6 +20,8 @@ export function PidIntelligenceView() {
   const [showEquipmentBoxes, setShowEquipmentBoxes] = useState(false);
   const drawingRef = useRef<HTMLDivElement | null>(null);
   const [drawingZoom, setDrawingZoom] = useState(1);
+  const drawingZoomRef = useRef(1);
+  const focusTimerRef = useRef<number | null>(null);
   const lineReviewRef = useRef<HTMLDivElement | null>(null);
   const [lineReviews, setLineReviews] = useState<Record<number, "correct" | "rejected">>({});
   const [lineCorrections, setLineCorrections] = useState<Record<number, string>>({});
@@ -60,27 +62,61 @@ export function PidIntelligenceView() {
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
-  function focusDrawing(x?: number, y?: number) {
+  function focusDrawing(x=0.5,y=0.5) {
     const viewport=drawingRef.current;
     if (!viewport) return;
     viewport.scrollIntoView({behavior:"smooth",block:"center"});
-    window.setTimeout(() => {
+    if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
+    focusTimerRef.current=window.setTimeout(() => {
       const canvas=viewport.querySelector(".pid-image-canvas") as HTMLElement | null;
       if (!canvas) return;
-      const targetX=(x ?? 0.5)*canvas.offsetWidth;
-      const targetY=(y ?? 0.5)*canvas.offsetHeight;
-      viewport.scrollTo({left:Math.max(0,targetX-viewport.clientWidth/2),
-        top:Math.max(0,targetY-viewport.clientHeight/2),behavior:"smooth"});
-    },100);
+      viewport.scrollTo({
+        left:Math.max(0,x*canvas.offsetWidth-viewport.clientWidth/2),
+        top:Math.max(0,y*canvas.offsetHeight-viewport.clientHeight/2),
+        behavior:"smooth"
+      });
+    },160);
   }
-  function changeDrawingZoom(next: number) {
+  function applyDrawingZoom(next:number, x=0.5,y=0.5, screenX=0.5,screenY=0.5) {
+    const viewport=drawingRef.current;
+    const zoom=Math.max(0.75,Math.min(6,Math.round(next*100)/100));
+    drawingZoomRef.current=zoom;
+    setDrawingZoom(zoom);
+    window.requestAnimationFrame(()=>{
+      if (!viewport) return;
+      const canvas=viewport.querySelector(".pid-image-canvas") as HTMLElement | null;
+      if (!canvas) return;
+      viewport.scrollLeft=Math.max(0,x*canvas.offsetWidth-screenX*viewport.clientWidth);
+      viewport.scrollTop=Math.max(0,y*canvas.offsetHeight-screenY*viewport.clientHeight);
+    });
+  }
+  function changeDrawingZoom(next:number) {
     const viewport=drawingRef.current;
     const canvas=viewport?.querySelector(".pid-image-canvas") as HTMLElement | null;
     const x=viewport && canvas ? (viewport.scrollLeft+viewport.clientWidth/2)/canvas.offsetWidth : 0.5;
     const y=viewport && canvas ? (viewport.scrollTop+viewport.clientHeight/2)/canvas.offsetHeight : 0.5;
-    setDrawingZoom(Math.max(0.75,Math.min(4,Math.round(next*100)/100)));
-    window.setTimeout(()=>focusDrawing(x,y),80);
+    applyDrawingZoom(next,x,y);
   }
+  useEffect(()=>{
+    const viewport=drawingRef.current;
+    if (!viewport || !ocr?.preview_png_base64) return;
+    const onWheel=(event:WheelEvent)=>{
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const canvas=viewport.querySelector(".pid-image-canvas") as HTMLElement | null;
+      if (!canvas) return;
+      const rect=canvas.getBoundingClientRect();
+      const vp=viewport.getBoundingClientRect();
+      const x=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width));
+      const y=Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height));
+      const screenX=Math.max(0,Math.min(1,(event.clientX-vp.left)/vp.width));
+      const screenY=Math.max(0,Math.min(1,(event.clientY-vp.top)/vp.height));
+      applyDrawingZoom(drawingZoomRef.current*Math.exp(-event.deltaY*0.008),x,y,screenX,screenY);
+    };
+    viewport.addEventListener("wheel",onWheel,{passive:false});
+    return ()=>viewport.removeEventListener("wheel",onWheel);
+  },[ocr]);
+  useEffect(()=>()=>{if(focusTimerRef.current!==null)window.clearTimeout(focusTimerRef.current);},[]);
   function inspectLine(index: number) {
     const label = ocr?.line_labels?.[index];
     if (!label) return;
@@ -291,11 +327,12 @@ export function PidIntelligenceView() {
           <div className="pid-zoom-toolbar">
             <button type="button" onClick={()=>changeDrawingZoom(drawingZoom-0.25)} disabled={drawingZoom<=0.75}>− Zoom out</button>
             <strong>{Math.round(drawingZoom*100)}%</strong>
-            <button type="button" onClick={()=>changeDrawingZoom(drawingZoom+0.25)} disabled={drawingZoom>=4}>+ Zoom in</button>
+            <button type="button" onClick={()=>changeDrawingZoom(drawingZoom+0.25)} disabled={drawingZoom>=6}>+ Zoom in</button>
             <button type="button" onClick={()=>changeDrawingZoom(1)}>Fit width</button>
+            <small>Trackpad: pinch with two fingers to zoom; two-finger scroll to pan.</small>
             {pipePickMode && <strong>Pipe selection active — click the pipe on the drawing</strong>}
           </div>
-          <div className="pid-annotated-image" ref={drawingRef} onClick={event => {
+          <div className={`pid-annotated-image ${pipePickMode ? "pid-pipe-picking" : ""}`} ref={drawingRef} onClick={event => {
             if (pipePickMode && selectedLineLabel !== null) {
               if ((event.target as HTMLElement).closest("button")) return;
               const canvas=event.currentTarget.querySelector(".pid-image-canvas");
@@ -386,8 +423,9 @@ export function PidIntelligenceView() {
               setLineCorrections(previous => {const next={...previous};delete next[selectedLineLabel];return next;});
             }}>Clear review</button>
           </div>
+          {lineReviews[selectedLineLabel] !== "correct" && <small>To select a pipe, first press Confirm / save correction above. Current status: {lineReviews[selectedLineLabel] ?? "unverified"}.</small>}
           <div className="pid-review-actions">
-            <button type="button" disabled={lineReviews[selectedLineLabel] !== "correct"} onClick={() => {
+            <button type="button" title={lineReviews[selectedLineLabel] !== "correct" ? "Confirm the line number first" : "Select a point on the actual pipe"} disabled={lineReviews[selectedLineLabel] !== "correct"} onClick={() => {
               setPipePickMode(true);
               const label=ocr.line_labels?.[selectedLineLabel];
               focusDrawing(label ? label.box.x+label.box.width/2 : 0.5,label ? label.box.y+label.box.height/2 : 0.5);
