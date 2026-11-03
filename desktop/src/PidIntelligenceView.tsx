@@ -31,6 +31,7 @@ export function PidIntelligenceView() {
   const [pipeAnchors, setPipeAnchors] = useState<Record<number,{x:number;y:number}>>({});
   const [traceLine, setTraceLine] = useState<number | null>(null);
   const [routeMode, setRouteMode] = useState(false);
+  const [routeWarning, setRouteWarning] = useState("");
   const [routePoints, setRoutePoints] = useState<Record<number,Array<{x:number;y:number}>>>({});
 
 
@@ -349,7 +350,16 @@ export function PidIntelligenceView() {
               if (!bounds?.width || !bounds.height) return;
               const x=Math.max(0,Math.min(1,(event.clientX-bounds.left)/bounds.width));
               const y=Math.max(0,Math.min(1,(event.clientY-bounds.top)/bounds.height));
-              if (routeMode) setRoutePoints(previous=>({...previous,[selectedLineLabel]:[...(previous[selectedLineLabel]??[]),{x,y}]}));
+              if (routeMode) {
+                const existing = routePoints[selectedLineLabel] ?? [];
+                const last = existing[existing.length-1];
+                if (last && Math.abs(last.x-x)>0.012 && Math.abs(last.y-y)>0.012) {
+                  setRouteWarning("Diagonal segment blocked. Click the actual pipe corner first.");
+                } else {
+                  setRoutePoints(previous=>({...previous,[selectedLineLabel]:[...(previous[selectedLineLabel]??[]),{x,y}]}));
+                  setRouteWarning("");
+                }
+              }
               else {setPipeAnchors(previous=>({...previous,[selectedLineLabel]:{x,y}}));setPipePickMode(false);}
               return;
             }
@@ -374,7 +384,7 @@ export function PidIntelligenceView() {
                 stroke="#00b8ff" strokeWidth="1.5" vectorEffect="non-scaling-stroke" opacity="0.8" />)}
             </svg>}
             {traceLine !== null && pipeAnchors[traceLine] && (routePoints[traceLine]?.length ?? 0)>0 && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Engineer-guided pipe route">
-              <polyline points={[pipeAnchors[traceLine],...(routePoints[traceLine]??[])].map(p=>String(p.x*1000)+","+String(p.y*1000)).join(" ")} stroke="#22c55e" strokeWidth="5" fill="none" vectorEffect="non-scaling-stroke" strokeLinejoin="round"/>
+              <polyline points={(routePoints[traceLine]??[]).map(p=>String(p.x*1000)+","+String(p.y*1000)).join(" ")} stroke="#22c55e" strokeWidth="5" fill="none" vectorEffect="non-scaling-stroke" strokeLinejoin="round"/>
               {(routePoints[traceLine]??[]).map((p,i)=><circle key={i} cx={p.x*1000} cy={p.y*1000} r="5" fill="#22c55e"/>)}
             </svg>}
             {pipeTrace && ocr.geometry && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Provisional visual pipe trace">
@@ -460,11 +470,12 @@ export function PidIntelligenceView() {
             <button type="button" disabled={traceLine===null} onClick={()=>{setTraceLine(null);setRouteMode(false);}}>Clear visual trace</button>
           </div>
           <div className="pid-review-actions">
-            <button type="button" disabled={!pipeAnchors[selectedLineLabel]} onClick={()=>{setTraceLine(selectedLineLabel);setRouteMode(true);const p=pipeAnchors[selectedLineLabel];if(p)focusDrawing(p.x,p.y);}}>Guide pipe route with clicks</button>
+            <button type="button" disabled={!pipeAnchors[selectedLineLabel]} onClick={()=>{setTraceLine(selectedLineLabel);setRoutePoints(previous=>({...previous,[selectedLineLabel]:[]}));setRouteWarning("");setRouteMode(true);const p=pipeAnchors[selectedLineLabel];if(p)focusDrawing(p.x,p.y);}}>Guide pipe route with clicks</button>
             <button type="button" disabled={!routeMode} onClick={()=>setRouteMode(false)}>Finish route</button>
             <button type="button" disabled={!(routePoints[selectedLineLabel]?.length)} onClick={()=>setRoutePoints(previous=>({...previous,[selectedLineLabel]:(previous[selectedLineLabel]??[]).slice(0,-1)}))}>Undo route point</button>
           </div>
-          {routeMode && <small>Click along the actual pipe in order, especially at turns. Green line is a manual visual annotation, not verified piping connectivity.</small>}
+          {routeWarning && <small role="alert">{routeWarning}</small>}
+          {routeMode && <small>Start by clicking the first route point. Click each actual corner; diagonal connections are blocked. Green route is a manual visual annotation, not verified connectivity.</small>}
           {traceLine===selectedLineLabel && pipeTrace && <small>Visual trace: {pipeTrace.segments.length} detected segments, nearest segment #{pipeTrace.seedSegment ?? "none"}, normalized distance {Number.isFinite(pipeTrace.distance)?pipeTrace.distance.toFixed(4):"N/A"}. {pipeTrace.warning}</small>}
           {pipePickMode && <small>Click the actual pipe on the drawing, not its text or a nearby signal line. This records an engineer-selected point only.</small>}
           {pipeAnchors[selectedLineLabel] && <small>Manual pipe point: x={pipeAnchors[selectedLineLabel].x.toFixed(3)}, y={pipeAnchors[selectedLineLabel].y.toFixed(3)}. Pipe identity and continuity not yet verified.</small>}
