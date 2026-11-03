@@ -30,6 +30,8 @@ export function PidIntelligenceView() {
   const [pipePickMode, setPipePickMode] = useState(false);
   const [pipeAnchors, setPipeAnchors] = useState<Record<number,{x:number;y:number}>>({});
   const [traceLine, setTraceLine] = useState<number | null>(null);
+  const [routeMode, setRouteMode] = useState(false);
+  const [routePoints, setRoutePoints] = useState<Record<number,Array<{x:number;y:number}>>>({});
 
 
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
@@ -221,7 +223,7 @@ export function PidIntelligenceView() {
     const labels=(ocr.line_labels ?? []).map((item,index) => ({
       original_text:item.tag, reviewed_text:lineCorrections[index] ?? item.tag,
       confidence:item.confidence, box:item.box, review_status:lineReviews[index] ?? "unverified",
-      source:"local_ocr", connectivity_status:"not_verified", manual_pipe_point:pipeAnchors[index] ?? null, association_status:pipeAnchors[index] ? "engineer_selected_point_unverified_continuity" : "not_associated",
+      source:"local_ocr", connectivity_status:"not_verified", manual_pipe_point:pipeAnchors[index] ?? null, manual_route_waypoints:routePoints[index] ?? [], association_status:pipeAnchors[index] ? "engineer_selected_point_unverified_continuity" : "not_associated",
     }));
     const payload={schema_version:1, drawing:file?.name ?? null, page:ocr.page,
       standard_name:standardName, standard_pattern:lineNumberPattern, labels,
@@ -339,15 +341,15 @@ export function PidIntelligenceView() {
             {pipePickMode && <strong>Pipe selection active — click the pipe on the drawing</strong>}
           </div>
           <div className={`pid-annotated-image ${pipePickMode ? "pid-pipe-picking" : ""}`} ref={drawingRef} onClick={event => {
-            if (pipePickMode && selectedLineLabel !== null) {
+            if ((pipePickMode || routeMode) && selectedLineLabel !== null) {
               if ((event.target as HTMLElement).closest("button")) return;
               const canvas=event.currentTarget.querySelector(".pid-image-canvas");
               const bounds=canvas?.getBoundingClientRect();
               if (!bounds?.width || !bounds.height) return;
               const x=Math.max(0,Math.min(1,(event.clientX-bounds.left)/bounds.width));
               const y=Math.max(0,Math.min(1,(event.clientY-bounds.top)/bounds.height));
-              setPipeAnchors(previous=>({...previous,[selectedLineLabel]:{x,y}}));
-              setPipePickMode(false);
+              if (routeMode) setRoutePoints(previous=>({...previous,[selectedLineLabel]:[...(previous[selectedLineLabel]??[]),{x,y}]}));
+              else {setPipeAnchors(previous=>({...previous,[selectedLineLabel]:{x,y}}));setPipePickMode(false);}
               return;
             }
             if (symbolMode === "off") return;
