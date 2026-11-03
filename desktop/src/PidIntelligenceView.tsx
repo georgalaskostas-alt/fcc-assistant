@@ -1,4 +1,4 @@
-import { auditGuidedRoute } from "./pidRouteAudit";
+import { auditGuidedRoute, auditRouteRaster } from "./pidRouteAudit";
 import { useEffect, useRef, useState } from "react";
 import { FileSearch, ShieldCheck, Upload } from "lucide-react";
 import { api, PidInspectionResult, PidOcrResult } from "./api";
@@ -16,6 +16,25 @@ export function PidIntelligenceView() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [ocr, setOcr] = useState<PidOcrResult | null>(null);
+  const [raster, setRaster] = useState<ImageData | null>(null);
+  useEffect(()=>{
+    setRaster(null);
+    if(!ocr?.preview_png_base64)return;
+    let cancelled=false;
+    const image=new Image();
+    image.onload=()=>{
+      if(cancelled)return;
+      const canvas=document.createElement("canvas");
+      canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
+      const ctx=canvas.getContext("2d",{willReadFrequently:true});
+      if(!ctx)return;
+      ctx.drawImage(image,0,0);
+      setRaster(ctx.getImageData(0,0,canvas.width,canvas.height));
+    };
+    image.src="data:image/png;base64,"+ocr.preview_png_base64;
+    return ()=>{cancelled=true;image.onload=null;};
+  },[ocr?.preview_png_base64]);
+
   const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null);
   const [selectedLineLabel, setSelectedLineLabel] = useState<number | null>(null);
   const [showAllLineBoxes, setShowAllLineBoxes] = useState(false);
@@ -205,6 +224,9 @@ export function PidIntelligenceView() {
     : null;
   const guidedAudit = traceLine !== null && ocr?.geometry && (routePoints[traceLine]?.length ?? 0)>1
     ? auditGuidedRoute(routePoints[traceLine],ocr.geometry.segments)
+    : null;
+  const rasterAudit = traceLine !== null && raster && (routePoints[traceLine]?.length ?? 0)>1
+    ? auditRouteRaster(routePoints[traceLine],raster)
     : null;
   const relaxedGuidedAudit = traceLine !== null && ocr?.geometry && (routePoints[traceLine]?.length ?? 0)>1
     ? auditGuidedRoute(routePoints[traceLine],ocr.geometry.segments,0.010)
@@ -495,6 +517,7 @@ export function PidIntelligenceView() {
             <strong>Guided route geometry audit (unverified)</strong>
             <p>{guidedAudit.matchedCount} / {guidedAudit.sampleCount} sampled points near detected geometry ({(guidedAudit.coverage*100).toFixed(1)}% coverage). {guidedAudit.matchedSegmentIds.length} nearby detected segments.</p>
             <p>Diagnostic comparison at 0.010 tolerance: {relaxedGuidedAudit ? (relaxedGuidedAudit.coverage*100).toFixed(1) : "—"}% (baseline 0.006). Orange dots mark up to 60 unmatched baseline samples on the drawing.</p>
+            {rasterAudit && <p>Direct raster-pixel evidence: {rasterAudit.matchedCount} / {rasterAudit.sampleCount} samples ({(rasterAudit.coverage*100).toFixed(1)}%). {rasterAudit.warning}</p>}
             <p>Higher proximity coverage does not establish pipe identity; no additional segments are accepted automatically.</p>
             <p>{guidedAudit.warning}</p>
           </div>}
