@@ -23,6 +23,9 @@ export function PidIntelligenceView() {
   const [lineReviews, setLineReviews] = useState<Record<number, "correct" | "rejected">>({});
   const [lineCorrections, setLineCorrections] = useState<Record<number, string>>({});
   const [lineDraft, setLineDraft] = useState("");
+  const [pipePickMode, setPipePickMode] = useState(false);
+  const [pipeAnchors, setPipeAnchors] = useState<Record<number,{x:number;y:number}>>({});
+
 
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
   const [corrections, setCorrections] = useState<Record<number, string>>({});
@@ -75,7 +78,7 @@ export function PidIntelligenceView() {
   }
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setPipeAnchors({}); setPipePickMode(false); setPipeAnchors({}); setPipePickMode(false); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
     try { setOcr(await api.ocrPidPage(file, page)); }
     catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
     finally { setOcrBusy(false); }
@@ -164,7 +167,7 @@ export function PidIntelligenceView() {
     const labels=(ocr.line_labels ?? []).map((item,index) => ({
       original_text:item.tag, reviewed_text:lineCorrections[index] ?? item.tag,
       confidence:item.confidence, box:item.box, review_status:lineReviews[index] ?? "unverified",
-      source:"local_ocr", connectivity_status:"not_verified",
+      source:"local_ocr", connectivity_status:"not_verified", manual_pipe_point:pipeAnchors[index] ?? null, association_status:pipeAnchors[index] ? "engineer_selected_point_unverified_continuity" : "not_associated",
     }));
     const payload={schema_version:1, drawing:file?.name ?? null, page:ocr.page,
       standard_name:standardName, standard_pattern:lineNumberPattern, labels,
@@ -274,6 +277,17 @@ export function PidIntelligenceView() {
         {ocr?.preview_png_base64 && <div className="pid-annotated">
           <div className="pid-table-head"><h3>OCR visual verification · page {ocr.page}</h3><span className="pid-muted">Boxes indicate unverified OCR candidates</span></div>
           <div className="pid-annotated-image" ref={drawingRef} onClick={event => {
+            if (pipePickMode && selectedLineLabel !== null) {
+              if ((event.target as HTMLElement).closest("button")) return;
+              const canvas=event.currentTarget.querySelector(".pid-image-canvas");
+              const bounds=canvas?.getBoundingClientRect();
+              if (!bounds?.width || !bounds.height) return;
+              const x=Math.max(0,Math.min(1,(event.clientX-bounds.left)/bounds.width));
+              const y=Math.max(0,Math.min(1,(event.clientY-bounds.top)/bounds.height));
+              setPipeAnchors(previous=>({...previous,[selectedLineLabel]:{x,y}}));
+              setPipePickMode(false);
+              return;
+            }
             if (symbolMode === "off") return;
             if (event.target !== event.currentTarget && (event.target as HTMLElement).closest("button")) return;
             const bounds = (event.currentTarget.querySelector(".pid-image-canvas") ?? event.currentTarget).getBoundingClientRect();
@@ -318,6 +332,9 @@ export function PidIntelligenceView() {
                 style={{left:`${item.box.x*100}%`,top:`${item.box.y*100}%`,
                   width:`${Math.max(item.box.width*100,0.7)}%`,height:`${Math.max(item.box.height*100,0.7)}%`}} />;
             })}
+            {Object.entries(pipeAnchors).map(([index,point]) => <span key={index} className="pid-pipe-anchor"
+              style={{left:`${point.x*100}%`,top:`${point.y*100}%`}}
+              title={`Engineer-selected pipe location for line OCR #${Number(index)+1}`}>+</span>)}
             {symbolAnnotations.map((symbol, index) => <span key={index} className="pid-manual-symbol" style={{left:`${symbol.x*100}%`,top:`${symbol.y*100}%`}} title={`Manual ${symbol.kind}: ${symbol.tag || "unlabeled"}`}>{symbol.kind === "valve" ? "V" : symbol.kind === "instrument" ? "I" : symbol.kind === "connector" ? "C" : "E"}</span>)}
             {showEquipmentBoxes && ocr.candidates.map((item,index) => <button key={index} type="button"
               title={`${item.tag} · OCR ${item.confidence.toFixed(0)}% · not verified`}
@@ -350,6 +367,18 @@ export function PidIntelligenceView() {
               setLineCorrections(previous => {const next={...previous};delete next[selectedLineLabel];return next;});
             }}>Clear review</button>
           </div>
+          <div className="pid-review-actions">
+            <button type="button" disabled={lineReviews[selectedLineLabel] !== "correct"} onClick={() => {
+              setPipePickMode(true);
+              drawingRef.current?.scrollIntoView({behavior:"smooth",block:"center"});
+            }}>Select pipe location on drawing</button>
+            <button type="button" disabled={!pipeAnchors[selectedLineLabel]} onClick={() => {
+              setPipeAnchors(previous=>{const next={...previous};delete next[selectedLineLabel];return next;});
+              setPipePickMode(false);
+            }}>Clear pipe location</button>
+          </div>
+          {pipePickMode && <small>Click the actual pipe on the drawing, not its text or a nearby signal line. This records an engineer-selected point only.</small>}
+          {pipeAnchors[selectedLineLabel] && <small>Manual pipe point: x={pipeAnchors[selectedLineLabel].x.toFixed(3)}, y={pipeAnchors[selectedLineLabel].y.toFixed(3)}. Pipe identity and continuity not yet verified.</small>}
           <small>Review status: {lineReviews[selectedLineLabel] ?? "unverified"}. Confirmations verify text only, not piping connectivity.</small>
         </div>}
         {ocr && selectedCandidate !== null && ocr.candidates[selectedCandidate] && <div className="pid-review-panel">
