@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileSearch, ShieldCheck, Upload } from "lucide-react";
 import { api, PidInspectionResult, PidOcrResult } from "./api";
 import "./PidIntelligenceView.css";
@@ -16,6 +16,8 @@ export function PidIntelligenceView() {
   const [ocr, setOcr] = useState<PidOcrResult | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null);
   const [selectedLineLabel, setSelectedLineLabel] = useState<number | null>(null);
+  const drawingRef = useRef<HTMLDivElement | null>(null);
+  const lineReviewRef = useRef<HTMLDivElement | null>(null);
   const [lineReviews, setLineReviews] = useState<Record<number, "correct" | "rejected">>({});
   const [lineCorrections, setLineCorrections] = useState<Record<number, string>>({});
   const [lineDraft, setLineDraft] = useState("");
@@ -52,6 +54,23 @@ export function PidIntelligenceView() {
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
+  function inspectLine(index: number) {
+    const label = ocr?.line_labels?.[index];
+    if (!label) return;
+    setSelectedLineLabel(index);
+    setLineDraft(lineCorrections[index] ?? label.tag);
+    const container = drawingRef.current;
+    if (container) {
+      container.scrollIntoView({behavior:"smooth",block:"center"});
+      const image = container.querySelector("img");
+      if (image) {
+        const centerX = (label.box.x + label.box.width / 2) * image.clientWidth;
+        const centerY = (label.box.y + label.box.height / 2) * image.clientHeight;
+        container.scrollTo({left:Math.max(0,centerX-container.clientWidth/2),
+          top:Math.max(0,centerY-container.clientHeight/2),behavior:"smooth"});
+      }
+    }
+  }
   async function runOcr() {
     if (!file || ocrBusy) return;
     setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
@@ -252,7 +271,7 @@ export function PidIntelligenceView() {
         {ocrError && <div role="alert" className="error-banner">{ocrError}</div>}
         {ocr?.preview_png_base64 && <div className="pid-annotated">
           <div className="pid-table-head"><h3>OCR visual verification · page {ocr.page}</h3><span className="pid-muted">Boxes indicate unverified OCR candidates</span></div>
-          <div className="pid-annotated-image" onClick={event => {
+          <div className="pid-annotated-image" ref={drawingRef} onClick={event => {
             if (symbolMode === "off") return;
             if (event.target !== event.currentTarget && (event.target as HTMLElement).closest("button")) return;
             const bounds = event.currentTarget.getBoundingClientRect();
@@ -286,7 +305,7 @@ export function PidIntelligenceView() {
               return <button key={`line-${index}`} type="button"
                 title={`Line OCR: ${item.tag} · ${item.confidence.toFixed(0)}% · ${lineReviews[index] ?? "unverified"}`}
                 aria-label={`Review line number ${item.tag}`}
-                onClick={() => {setSelectedLineLabel(index); setLineDraft(lineCorrections[index] ?? item.tag);}}
+                onClick={() => inspectLine(index)}
                 className={`pid-line-box ${active ? "pid-line-box-active" : ""}`}
                 style={{left:`${item.box.x*100}%`,top:`${item.box.y*100}%`,
                   width:`${Math.max(item.box.width*100,0.7)}%`,height:`${Math.max(item.box.height*100,0.7)}%`}} />;
@@ -303,7 +322,7 @@ export function PidIntelligenceView() {
             Candidate: <strong>{ocr.candidates[selectedCandidate].tag}</strong> · OCR confidence {ocr.candidates[selectedCandidate].confidence.toFixed(0)}% · Requires engineer verification
           </div>}
         </div>}
-        {ocr && selectedLineLabel !== null && ocr.line_labels?.[selectedLineLabel] && <div className="pid-review-panel">
+        {ocr && selectedLineLabel !== null && ocr.line_labels?.[selectedLineLabel] && <div className="pid-review-panel" ref={lineReviewRef}>
           <strong>Line number visual verification · {ocr.line_labels[selectedLineLabel].tag}</strong>
           <small>OCR confidence {ocr.line_labels[selectedLineLabel].confidence.toFixed(0)}%. Format matching alone does not verify the text or piping connection.</small>
           <label>Corrected line number
@@ -438,8 +457,7 @@ export function PidIntelligenceView() {
                 return <div key={index} className="pid-review-actions">
                   <span>{item.tag} · OCR {item.confidence.toFixed(0)}% · x={item.box.x.toFixed(3)}, y={item.box.y.toFixed(3)}</span>
                   <button type="button" onClick={() => {
-                    setSelectedLineLabel(index);setLineDraft(lineCorrections[index] ?? item.tag);
-                    document.querySelector(".pid-annotated")?.scrollIntoView({behavior:"smooth",block:"center"});
+                    inspectLine(index);
                   }}>Inspect on drawing</button>
                   <small>{lineReviews[index] ?? "unverified"}</small>
                   <small>{!compiledLinePattern ? "No active valid standard" : matches ? "Matches standard · unverified" : "Rejected by standard"}</small>
