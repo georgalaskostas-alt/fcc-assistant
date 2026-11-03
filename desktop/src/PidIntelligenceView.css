@@ -69,3 +69,6 @@
 /* Line-number OCR hypotheses are separate from equipment OCR candidates. */
 .pid-line-box {position:absolute;z-index:4;border:2px solid #16a34a;background:rgba(22,163,74,.15);padding:0;min-width:7px;min-height:7px;border-radius:2px;cursor:pointer;}
 .pid-line-box:hover,.pid-line-box-active {z-index:6;border:3px solid #facc15;background:rgba(250,204,21,.23);}
+
+/* Engineer-picked pipe point: location evidence, not validated connectivity. */
+.pid-pipe-anchor {position:absolute;z-index:8;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;width:22px;height:22px;border:2px solid #fff;border-radius:50%;background:#dc2626;color:white;font-size:17px;font-weight:700;line-height:1;pointer-events:none;box-shadow:0 0 0 2px #991b1b;}
