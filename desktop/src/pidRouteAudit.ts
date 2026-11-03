@@ -64,3 +64,47 @@ export function auditRouteRaster(points:RoutePoint[],raster:ImageData):{
  return {sampleCount,matchedCount,coverage:sampleCount?matchedCount/sampleCount:0,
  warning:"Dark-pixel proximity only; text, arrows and crossing lines can cause false matches. Not verified piping connectivity."};
 }
+
+/** Estimate whether a straight, engineer-guided leg has a nearby coherent
+ * dark raster stroke. A single offset is fitted across the leg, rather than
+ * independently snapping each point (which would jump between crossings).
+ * Diagnostic only: a dark parallel feature can still be unrelated piping.
+ */
+export function auditRasterLegAlignment(points:RoutePoint[],raster:ImageData):{
+ legs:Array<{index:number;offsetPixels:number;coverage:number;samples:number;ambiguous:boolean}>;
+ warning:string
+}{
+ const {width,height,data}=raster;
+ const darkness=(x:number,y:number)=>{
+  const ix=Math.round(x),iy=Math.round(y);
+  if(ix<0||iy<0||ix>=width||iy>=height)return 0;
+  const i=(iy*width+ix)*4;
+  return 255-(0.2126*data[i]+0.7152*data[i+1]+0.0722*data[i+2]);
+ };
+ const legs=[];
+ for(let k=1;k<points.length;k++){
+  const a=points[k-1],b=points[k];
+  const dx=(b.x-a.x)*width,dy=(b.y-a.y)*height,length=Math.hypot(dx,dy);
+  if(length<12)continue;
+  const nx=-dy/length,ny=dx/length;
+  const count=Math.max(4,Math.ceil(length/8));
+  const candidates=[];
+  for(let offset=-12;offset<=12;offset++){
+   let hits=0;
+   for(let j=0;j<count;j++){
+    const t=(j+0.5)/count;
+    const x=(a.x+(b.x-a.x)*t)*(width-1)+nx*offset;
+    const y=(a.y+(b.y-a.y)*t)*(height-1)+ny*offset;
+    let dark=false;
+    for(let d=-1;d<=1;d++)if(darkness(x+nx*d,y+ny*d)>110){dark=true;break;}
+    if(dark)hits++;
+   }
+   candidates.push({offset,coverage:hits/count});
+  }
+  candidates.sort((a,b)=>b.coverage-a.coverage||Math.abs(a.offset)-Math.abs(b.offset));
+  const best=candidates[0],alternative=candidates.find(c=>Math.abs(c.offset-best.offset)>4);
+  legs.push({index:k,offsetPixels:best.offset,coverage:best.coverage,samples:count,
+   ambiguous:Boolean(alternative&&alternative.coverage>best.coverage-0.08)});
+ }
+ return {legs,warning:"Per-leg parallel-stroke evidence only. Offsets are not applied automatically; nearby text, boundaries or parallel pipes may be mistaken for the target."};
+}
