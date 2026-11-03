@@ -72,3 +72,9 @@
 
 /* Engineer-picked pipe point: location evidence, not validated connectivity. */
 .pid-pipe-anchor {position:absolute;z-index:8;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;width:22px;height:22px;border:2px solid #fff;border-radius:50%;background:#dc2626;color:white;font-size:17px;font-weight:700;line-height:1;pointer-events:none;box-shadow:0 0 0 2px #991b1b;}
+
+.pid-zoom-toolbar {display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:8px 0;padding:8px;background:#122e44;border-radius:8px;color:#eef7ff;line-height:1.4;}
+.pid-zoom-toolbar button {cursor:pointer;padding:6px 12px;}
+.pid-zoom-toolbar button:disabled {cursor:not-allowed;opacity:.5;}
+.pid-annotated-image {scroll-behavior:smooth;}
+.pid-image-canvas {min-width:100%;}
