@@ -206,6 +206,9 @@ export function PidIntelligenceView() {
   const guidedAudit = traceLine !== null && ocr?.geometry && (routePoints[traceLine]?.length ?? 0)>1
     ? auditGuidedRoute(routePoints[traceLine],ocr.geometry.segments)
     : null;
+  const relaxedGuidedAudit = traceLine !== null && ocr?.geometry && (routePoints[traceLine]?.length ?? 0)>1
+    ? auditGuidedRoute(routePoints[traceLine],ocr.geometry.segments,0.010)
+    : null;
   const spatialSuggestions = suggestPathTags(visualPaths, ocr?.geometry?.segments ?? [], ocr?.line_labels ?? [])
     .filter(item => lineNumberCandidates.some(candidate => candidate.index === item.candidateIndex));
   const selectedPathKey = selectedVisualPath !== null && visualPaths[selectedVisualPath] ? visualPaths[selectedVisualPath].segmentIds.join(",") : null;
@@ -396,6 +399,9 @@ export function PidIntelligenceView() {
               <polyline points={(routePoints[traceLine]??[]).map(p=>String(p.x*1000)+","+String(p.y*1000)).join(" ")} stroke="#22c55e" strokeWidth="5" fill="none" vectorEffect="non-scaling-stroke" strokeLinejoin="round"/>
               {(routePoints[traceLine]??[]).map((p,i)=><circle key={i} cx={p.x*1000} cy={p.y*1000} r="5" fill="#22c55e"/>)}
             </svg>}
+            {guidedAudit && traceLine !== null && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Unmatched guided-route samples">
+              {guidedAudit.unmatched.map((p,i)=><circle key={i} cx={p.x*1000} cy={p.y*1000} r="2.5" fill="#f97316" opacity="0.95"/>)}
+            </svg>}
             {pipeTrace && ocr.geometry && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Provisional visual pipe trace">
               {pipeTrace.segments.map(id=>{const segment=ocr.geometry!.segments[id];return segment ? <line key={id}
                 x1={segment.x1*1000} y1={segment.y1*1000} x2={segment.x2*1000} y2={segment.y2*1000}
@@ -488,6 +494,8 @@ export function PidIntelligenceView() {
           {traceLine===selectedLineLabel && guidedAudit && <div className="pid-review-note">
             <strong>Guided route geometry audit (unverified)</strong>
             <p>{guidedAudit.matchedCount} / {guidedAudit.sampleCount} sampled points near detected geometry ({(guidedAudit.coverage*100).toFixed(1)}% coverage). {guidedAudit.matchedSegmentIds.length} nearby detected segments.</p>
+            <p>Diagnostic comparison at 0.010 tolerance: {relaxedGuidedAudit ? (relaxedGuidedAudit.coverage*100).toFixed(1) : "—"}% (baseline 0.006). Orange dots mark up to 60 unmatched baseline samples on the drawing.</p>
+            <p>Higher proximity coverage does not establish pipe identity; no additional segments are accepted automatically.</p>
             <p>{guidedAudit.warning}</p>
           </div>}
           {traceLine===selectedLineLabel && pipeTrace && <small>Visual trace: {pipeTrace.segments.length} detected segments, nearest segment #{pipeTrace.seedSegment ?? "none"}, normalized distance {Number.isFinite(pipeTrace.distance)?pipeTrace.distance.toFixed(4):"N/A"}. {pipeTrace.warning}</small>}
