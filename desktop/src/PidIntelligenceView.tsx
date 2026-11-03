@@ -1,4 +1,5 @@
 import { auditGuidedRoute, auditRouteRaster, auditRasterLegAlignment } from "./pidRouteAudit";
+import { proposeCenterlineLegs } from "./pidCenterline";
 import { useEffect, useRef, useState } from "react";
 import { FileSearch, ShieldCheck, Upload } from "lucide-react";
 import { api, PidInspectionResult, PidOcrResult } from "./api";
@@ -53,6 +54,7 @@ export function PidIntelligenceView() {
   const [routeMode, setRouteMode] = useState(false);
   const [routeWarning, setRouteWarning] = useState("");
   const [routePoints, setRoutePoints] = useState<Record<number,Array<{x:number;y:number}>>>({});
+  const [showCenterlineCandidates, setShowCenterlineCandidates] = useState(false);
 
 
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
@@ -228,6 +230,8 @@ export function PidIntelligenceView() {
   const rasterAudit = traceLine !== null && raster && (routePoints[traceLine]?.length ?? 0)>1
     ? auditRouteRaster(routePoints[traceLine],raster)
     : null;
+  const centerlineLegs = traceLine !== null && raster && (routePoints[traceLine]?.length ?? 0)>1
+    ? proposeCenterlineLegs(routePoints[traceLine], raster) : [];
   const legAlignment = traceLine !== null && raster && (routePoints[traceLine]?.length ?? 0)>1
     ? auditRasterLegAlignment(routePoints[traceLine],raster)
     : null;
@@ -424,6 +428,9 @@ export function PidIntelligenceView() {
               <polyline points={(routePoints[traceLine]??[]).map(p=>String(p.x*1000)+","+String(p.y*1000)).join(" ")} stroke="#22c55e" strokeWidth="5" fill="none" vectorEffect="non-scaling-stroke" strokeLinejoin="round"/>
               {(routePoints[traceLine]??[]).map((p,i)=><circle key={i} cx={p.x*1000} cy={p.y*1000} r="5" fill="#22c55e"/>)}
             </svg>}
+            {showCenterlineCandidates && centerlineLegs.length>0 && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Proposed centerline offsets, not accepted">
+              {centerlineLegs.filter(leg=>leg.eligible).map(leg=><line key={leg.index} x1={leg.start.x*1000} y1={leg.start.y*1000} x2={leg.end.x*1000} y2={leg.end.y*1000} stroke="#a78bfa" strokeWidth="3" strokeDasharray="7 5" vectorEffect="non-scaling-stroke"/>)}
+            </svg>}
             {guidedAudit && traceLine !== null && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Unmatched guided-route samples">
               {guidedAudit.unmatched.map((p,i)=><circle key={i} cx={p.x*1000} cy={p.y*1000} r="2.5" fill="#f97316" opacity="0.95"/>)}
             </svg>}
@@ -521,6 +528,13 @@ export function PidIntelligenceView() {
             <p>{guidedAudit.matchedCount} / {guidedAudit.sampleCount} sampled points near detected geometry ({(guidedAudit.coverage*100).toFixed(1)}% coverage). {guidedAudit.matchedSegmentIds.length} nearby detected segments.</p>
             <p>Diagnostic comparison at 0.010 tolerance: {relaxedGuidedAudit ? (relaxedGuidedAudit.coverage*100).toFixed(1) : "—"}% (baseline 0.006). Orange dots mark up to 60 unmatched baseline samples on the drawing.</p>
             {rasterAudit && <p>Direct raster-pixel evidence: {rasterAudit.matchedCount} / {rasterAudit.sampleCount} samples ({(rasterAudit.coverage*100).toFixed(1)}%). {rasterAudit.warning}</p>}
+            {centerlineLegs.length>0 && <div className="pid-route-leg-diagnostics">
+              <strong>Pipe centerline refinement · candidate preview only</strong>
+              <p>{centerlineLegs.filter(leg=>leg.eligible).length} / {centerlineLegs.length} legs pass conservative evidence gates. No offsets are applied to the saved green route.</p>
+              <label><input type="checkbox" checked={showCenterlineCandidates} onChange={event=>setShowCenterlineCandidates(event.target.checked)}/> Show proposed centerlines (purple dashed)</label>
+              {centerlineLegs.map(leg=><p key={leg.index}>Leg {leg.index}: {leg.eligible ? "Candidate" : "Blocked"} · {leg.reason}</p>)}
+              <small>Proposals are independent per straight leg and are deliberately not joined at elbows. This does not verify pipe identity, endpoints or connectivity.</small>
+            </div>}
             {legAlignment && <div className="pid-route-leg-diagnostics">
               <strong>Coherent raster-stroke audit · per straight leg</strong>
               {legAlignment.legs.map(leg=><p key={leg.index}>Leg {leg.index}: {(leg.coverage*100).toFixed(1)}% dark-stroke coverage · estimated perpendicular offset {leg.offsetPixels > 0 ? "+" : ""}{leg.offsetPixels} px{leg.ambiguous ? " · ambiguous parallel candidates" : ""}</p>)}
