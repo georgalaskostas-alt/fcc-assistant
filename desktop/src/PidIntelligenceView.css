@@ -78,3 +78,9 @@
 .pid-zoom-toolbar button:disabled {cursor:not-allowed;opacity:.5;}
 .pid-annotated-image {scroll-behavior:smooth;}
 .pid-image-canvas {min-width:100%;}
+
+/* Trackpad pinch uses non-passive wheel events; ordinary two-finger scroll still pans. */
+.pid-annotated-image {overscroll-behavior:contain;}
+.pid-annotated-image.pid-pipe-picking .pid-image-canvas {cursor:crosshair;}
+.pid-annotated-image.pid-pipe-picking .pid-line-box {pointer-events:none;}
+.pid-zoom-toolbar small {color:#b9d2e4;}
