@@ -339,8 +339,9 @@ export function PidIntelligenceView() {
             <button type="button" onClick={()=>changeDrawingZoom(1)}>Fit width</button>
             <small>Trackpad: pinch with two fingers to zoom; two-finger scroll to pan.</small>
             {pipePickMode && <strong>Pipe selection active — click the pipe on the drawing</strong>}
+            {routeMode && <strong>Route guidance active — click successive points on the pipe</strong>}
           </div>
-          <div className={`pid-annotated-image ${pipePickMode ? "pid-pipe-picking" : ""}`} ref={drawingRef} onClick={event => {
+          <div className={`pid-annotated-image ${(pipePickMode || routeMode) ? "pid-pipe-picking" : ""}`} ref={drawingRef} onClick={event => {
             if ((pipePickMode || routeMode) && selectedLineLabel !== null) {
               if ((event.target as HTMLElement).closest("button")) return;
               const canvas=event.currentTarget.querySelector(".pid-image-canvas");
@@ -456,7 +457,7 @@ export function PidIntelligenceView() {
           <div className="pid-review-actions">
             <button type="button" disabled={!pipeAnchors[selectedLineLabel] || !ocr.geometry?.segments.length}
               onClick={()=>{setTraceLine(selectedLineLabel);const point=pipeAnchors[selectedLineLabel];if(point)focusDrawing(point.x,point.y);}}>Trace visual pipe (provisional)</button>
-            <button type="button" disabled={traceLine===null} onClick={()=>setTraceLine(null)}>Clear visual trace</button>
+            <button type="button" disabled={traceLine===null} onClick={()=>{setTraceLine(null);setRouteMode(false);}}>Clear visual trace</button>
           </div>
           <div className="pid-review-actions">
             <button type="button" disabled={!pipeAnchors[selectedLineLabel]} onClick={()=>{setTraceLine(selectedLineLabel);setRouteMode(true);const p=pipeAnchors[selectedLineLabel];if(p)focusDrawing(p.x,p.y);}}>Guide pipe route with clicks</button>
