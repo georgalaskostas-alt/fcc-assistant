@@ -1,3 +1,4 @@
+import { auditGuidedRoute } from "./pidRouteAudit";
 import { useEffect, useRef, useState } from "react";
 import { FileSearch, ShieldCheck, Upload } from "lucide-react";
 import { api, PidInspectionResult, PidOcrResult } from "./api";
@@ -201,6 +202,9 @@ export function PidIntelligenceView() {
   const pipeTrace = traceLine !== null && pipeAnchors[traceLine] && ocr?.geometry
     ? traceVisualPipe(ocr.geometry.segments,pipeAnchors[traceLine],
       (ocr.topology?.proposals ?? []).filter((_,index)=>topologyReviews[index]==="accepted"))
+    : null;
+  const guidedAudit = traceLine !== null && ocr?.geometry && (routePoints[traceLine]?.length ?? 0)>1
+    ? auditGuidedRoute(routePoints[traceLine],ocr.geometry.segments)
     : null;
   const spatialSuggestions = suggestPathTags(visualPaths, ocr?.geometry?.segments ?? [], ocr?.line_labels ?? [])
     .filter(item => lineNumberCandidates.some(candidate => candidate.index === item.candidateIndex));
@@ -481,6 +485,11 @@ export function PidIntelligenceView() {
           </div>
           {routeWarning && <small role="alert">{routeWarning}</small>}
           {routeMode && <small>Start by clicking the first route point. Long horizontal/vertical runs accept two clicks, including minor scan skew. Click every actual corner; diagonal connections remain blocked. Green route is a manual visual annotation, not verified connectivity.</small>}
+          {traceLine===selectedLineLabel && guidedAudit && <div className="pid-review-note">
+            <strong>Guided route geometry audit (unverified)</strong>
+            <p>{guidedAudit.matchedCount} / {guidedAudit.sampleCount} sampled points near detected geometry ({(guidedAudit.coverage*100).toFixed(1)}% coverage). {guidedAudit.matchedSegmentIds.length} nearby detected segments.</p>
+            <p>{guidedAudit.warning}</p>
+          </div>}
           {traceLine===selectedLineLabel && pipeTrace && <small>Visual trace: {pipeTrace.segments.length} detected segments, nearest segment #{pipeTrace.seedSegment ?? "none"}, normalized distance {Number.isFinite(pipeTrace.distance)?pipeTrace.distance.toFixed(4):"N/A"}. {pipeTrace.warning}</small>}
           {pipePickMode && <small>Click the actual pipe on the drawing, not its text or a nearby signal line. This records an engineer-selected point only.</small>}
           {pipeAnchors[selectedLineLabel] && <small>Manual pipe point: x={pipeAnchors[selectedLineLabel].x.toFixed(3)}, y={pipeAnchors[selectedLineLabel].y.toFixed(3)}. Pipe identity and continuity not yet verified.</small>}
