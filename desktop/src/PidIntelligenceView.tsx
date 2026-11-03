@@ -411,8 +411,9 @@ export function PidIntelligenceView() {
             <input aria-label="Corrected line number" maxLength={80} value={lineDraft}
               onChange={event => setLineDraft(event.target.value.toUpperCase())}/>
           </label>
+          <small>{!lineDraft.trim() ? "Enter a line number to enable confirmation." : compiledLinePattern && !compiledLinePattern.test(lineDraft.trim()) ? "Line number does not match the active site standard. Correct the text or update the standard." : !compiledLinePattern ? "No active line-number standard: manual text verification is available." : "Line number matches the active standard; confirm it after visually checking the drawing."}</small>
           <div className="pid-review-actions">
-            <button type="button" disabled={!compiledLinePattern?.test(lineDraft.trim())} onClick={() => {
+            <button type="button" disabled={!lineDraft.trim() || Boolean(compiledLinePattern && !compiledLinePattern.test(lineDraft.trim()))} onClick={() => {
               const value=lineDraft.trim();
               setLineCorrections(previous => ({...previous,[selectedLineLabel]:value}));
               setLineReviews(previous => ({...previous,[selectedLineLabel]:"correct"}));
