@@ -57,7 +57,8 @@ export function PidIntelligenceView() {
   const [routeWarning, setRouteWarning] = useState("");
   const [autoTracePreview, setAutoTracePreview] = useState<{line:number;paths:Array<Array<{x:number;y:number}>>;stopReasons:string[];shadowPaths:Array<Array<{x:number;y:number}>>;shadowReviews:Record<number,"approved"|"rejected">}|null>(null);
   // Endpoint annotations are explicit engineer reviews, never inferred topology.
-  const [endpointReviews,setEndpointReviews] = useState<Record<string,{equipment:string;nozzle:string;side:"left"|"right"|"top"|"bottom"|"";status:"confirmed"|"rejected"}>>({});
+  const [endpointReviews,setEndpointReviews] = useState<Record<string,{equipment:string;nozzle:string;side:"left"|"right"|"top"|"bottom"|"";point?:{x:number;y:number};status:"confirmed"|"rejected"}>>({});
+  const [endpointPick,setEndpointPick] = useState<{key:string;index:number}|null>(null);
   const [routePoints, setRoutePoints] = useState<Record<number,Array<{x:number;y:number}>>>({});
   const [dragRoutePoint, setDragRoutePoint] = useState<number | null>(null);
   const suppressRouteClick = useRef(false);
@@ -409,7 +410,17 @@ export function PidIntelligenceView() {
             {pipePickMode && <strong>Pipe selection active — click the pipe on the drawing</strong>}
             {routeMode && <strong>Route guidance active — click successive points on the pipe</strong>}
           </div>
-          <div className={`pid-annotated-image ${(pipePickMode || routeMode) ? "pid-pipe-picking" : ""}`} ref={drawingRef} onClick={event => {
+          <div className={`pid-annotated-image ${(pipePickMode || routeMode || endpointPick!==null) ? "pid-pipe-picking" : ""}`} ref={drawingRef} onClick={event => {
+            if (endpointPick) {
+              if ((event.target as HTMLElement).closest("button, input, select, label")) return;
+              const bounds=event.currentTarget.querySelector(".pid-image-canvas")?.getBoundingClientRect();
+              if (!bounds?.width||!bounds.height)return;
+              const x=Math.max(0,Math.min(1,(event.clientX-bounds.left)/bounds.width));
+              const y=Math.max(0,Math.min(1,(event.clientY-bounds.top)/bounds.height));
+              setEndpointReviews(prev=>({...prev,[endpointPick.key]:{equipment:prev[endpointPick.key]?.equipment??"",nozzle:prev[endpointPick.key]?.nozzle??"",side:"",point:{x,y},status:"rejected"}}));
+              setEndpointPick(null);
+              return;
+            }
             if (suppressRouteClick.current) { suppressRouteClick.current=false; return; }
              if ((pipePickMode || routeMode) && selectedLineLabel !== null) {
               if ((event.target as HTMLElement).closest("button")) return;
@@ -450,6 +461,9 @@ export function PidIntelligenceView() {
             </div>
             <div className="pid-image-canvas" style={{width:`${drawingZoom*100}%`}}>
             <img alt={`Rendered P&ID page ${ocr.page} for visual OCR verification`} src={`data:image/png;base64,${ocr.preview_png_base64}`}/>
+            {Object.entries(endpointReviews).filter(([,review])=>review.point).map(([key,review])=><svg key={key} className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" style={{pointerEvents:"none"}}>
+              <circle cx={review.point!.x*1000} cy={review.point!.y*1000} r="7" fill={review.status==="confirmed"?"#16a34a":"#f59e0b"} stroke="white" strokeWidth="2"/>
+            </svg>)}
             {inspectedBranch && inspectedBranch.line===selectedLineLabel && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label={`Selected branch candidate ${inspectedBranch.index}`} style={{pointerEvents:"none",overflow:"visible"}}>
               <circle cx={inspectedBranch.x*1000} cy={inspectedBranch.y*1000} r="22" fill="#facc15" fillOpacity="0.28" stroke="#facc15" strokeWidth="5" vectorEffect="non-scaling-stroke"/>
               <circle cx={inspectedBranch.x*1000} cy={inspectedBranch.y*1000} r="5" fill="#ef4444" stroke="#ffffff" strokeWidth="2" vectorEffect="non-scaling-stroke"/>
@@ -570,7 +584,7 @@ export function PidIntelligenceView() {
               </div>)}
               <div className="pid-review-note">
                 <h4>Equipment endpoint review · manual verification</h4>
-                <p>Candidate endpoints are visual observations only. Enter the equipment tag and choose the observed connection side. Nozzle ID is optional when absent from the drawing. This is a manual visual review, not verified topology.</p>
+                <p>Candidate endpoints are visual observations only. Enter the equipment tag and select the exact junction on the drawing. Nozzle ID is optional when absent from the drawing. This is a manual visual review, not verified topology.</p>
                 {autoTracePreview.shadowPaths.map((candidate,index)=>{
                   if(autoTracePreview.shadowReviews[index]!=="approved"||candidate.length<2)return null;
                   const tip=candidate[candidate.length-1];
@@ -579,23 +593,18 @@ export function PidIntelligenceView() {
                   return <div key={key}>
                     <label>Candidate {index+1} endpoint ({Math.round(tip.x*1000)}, {Math.round(tip.y*1000)})
                       <input aria-label={`Equipment tag for candidate ${index+1}`} placeholder="Equipment tag (e.g. M-4252)" value={review?.equipment??""}
-                        onChange={event=>setEndpointReviews(prev=>({...prev,[key]:{equipment:event.target.value,nozzle:prev[key]?.nozzle??"",side:prev[key]?.side??"",status:"rejected"}}))}/>
+                        onChange={event=>setEndpointReviews(prev=>({...prev,[key]:{equipment:event.target.value,nozzle:prev[key]?.nozzle??"",side:"",point:prev[key]?.point,status:"rejected"}}))}/>
                     </label>
                     <label>Nozzle / connection reference (optional)
                       <input aria-label={`Nozzle reference for candidate ${index+1}`} placeholder="Nozzle ID from drawing" value={review?.nozzle??""}
-                        onChange={event=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",nozzle:event.target.value,side:prev[key]?.side??"",status:"rejected"}}))}/>
+                        onChange={event=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",nozzle:event.target.value,side:"",point:prev[key]?.point,status:"rejected"}}))}/>
                     </label>
-                    <label>Observed connection side
-                      <select aria-label={`Connection side for candidate ${index+1}`} value={review?.side??""}
-                        onChange={event=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",nozzle:prev[key]?.nozzle??"",side:event.target.value as "left"|"right"|"top"|"bottom"|"",status:"rejected"}}))}>
-                        <option value="">Select side</option>
-                        <option value="left">Left</option><option value="right">Right</option>
-                        <option value="top">Top</option><option value="bottom">Bottom</option>
-                      </select>
-                    </label>
-                    <button type="button" disabled={!review?.equipment.trim()||!review?.side} onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key].equipment.trim(),nozzle:prev[key].nozzle.trim(),side:prev[key].side,status:"confirmed"}}))}>Confirm inspected endpoint</button>
-                    <button type="button" onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",nozzle:prev[key]?.nozzle??"",side:prev[key]?.side??"",status:"rejected"}}))}>Reject endpoint</button>
-                    <span>{review?.status==="confirmed"?`Inspected: ${review.equipment} / ${review.side}${review.nozzle?` / nozzle ${review.nozzle}`:""} (not exported as connectivity)`:"Not confirmed"}</span>
+                    <button type="button" onClick={()=>{setEndpointPick({key,index});setPipePickMode(false);setRouteMode(false);}}>Select connection point on drawing</button>
+                    {endpointPick?.key===key&&<span>Click the junction on the P&amp;ID (zoom first if needed).</span>}
+                    {review?.point&&<span>Selected point: ({Math.round(review.point.x*1000)}, {Math.round(review.point.y*1000)})</span>}
+                    <button type="button" disabled={!review?.equipment.trim()||!review?.point} onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key].equipment.trim(),nozzle:prev[key].nozzle.trim(),side:"",point:prev[key].point,status:"confirmed"}}))}>Confirm inspected endpoint</button>
+                    <button type="button" onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",nozzle:prev[key]?.nozzle??"",side:"",point:prev[key]?.point,status:"rejected"}}))}>Reject endpoint</button>
+                    <span>{review?.status==="confirmed"?`Inspected: ${review.equipment} / point (${Math.round(review.point!.x*1000)}, ${Math.round(review.point!.y*1000)})${review.nozzle?` / nozzle ${review.nozzle}`:""} (not exported as connectivity)`:"Not confirmed"}</span>
                   </div>;
                 })}
               </div>
