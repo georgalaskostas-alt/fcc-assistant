@@ -72,6 +72,7 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
   // Direction must already be supported by the local raster evidence.
   if(!dark(start.x+dx*3,start.y+dy*3))continue;
   let x=start.x,y=start.y,steps=0,headingX=dx,headingY=dy,turns=0;
+  let cornerX=-9999,cornerY=-9999,entryX=0,entryY=0;
   const points:PipePoint[]=[{x:x/w,y:y/h}];
   let reason="Reached maximum safe preview distance";
   const diagnostics=(label:string)=>{const left=sustained(x,y,headingY,headingX),right=sustained(x,y,-headingY,-headingX),forward=sustained(x,y,headingX,headingY);return `${label} at (${x},${y}) heading (${headingX},${headingY}); raster forward=${forward}, perpendicularA=${left}, perpendicularB=${right}, turns=${turns}, threshold=${threshold.toFixed(0)}`;};
@@ -88,6 +89,7 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
      // Only count a turn after actually advancing onto its new leg.
      const tx=turn.x+turn.dx*2,ty=turn.y+turn.dy*2;
      if(dark(tx,ty)){
+      cornerX=turn.x;cornerY=turn.y;entryX=headingX;entryY=headingY;
       x=tx;y=ty;headingX=turn.dx;headingY=turn.dy;turns++;
       points.push({x:x/w,y:y/h});continue;
      }
@@ -102,16 +104,23 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
     const sideA=sustained(chosen.x,chosen.y,headingY,headingX);
     const sideB=sustained(chosen.x,chosen.y,-headingY,-headingX);
     const forward=sustained(chosen.x,chosen.y,headingX,headingY);
-    if(sideA||sideB){
+    // Ignore only the previously traversed incoming leg close to the elbow.
+    const nearKnownCorner=turns===1&&Math.hypot(chosen.x-cornerX,chosen.y-cornerY)<=12;
+    const incomingOnA=entryX===headingY&&entryY===headingX;
+    const incomingOnB=entryX===-headingY&&entryY===-headingX;
+    const novelA=sideA&&!(nearKnownCorner&&incomingOnA);
+    const novelB=sideB&&!(nearKnownCorner&&incomingOnB);
+    if(novelA||novelB){
      // At an ambiguous branch, stop rather than silently choosing a pipe.
-     if(forward||sideA&&sideB){
+     if(forward||(novelA&&novelB)){
       x=chosen.x;y=chosen.y;
       reason=diagnostics("Sustained perpendicular branch / junction: manual review required");break;
      }
      const turn=turns===0?elbow(x,y,headingX,headingY):null;
      if(turn){
       const tx=turn.x+turn.dx*2,ty=turn.y+turn.dy*2;
-      if(dark(tx,ty)){x=tx;y=ty;headingX=turn.dx;headingY=turn.dy;turns++;points.push({x:x/w,y:y/h});continue;}
+      if(dark(tx,ty)){cornerX=turn.x;cornerY=turn.y;entryX=headingX;entryY=headingY;
+      x=tx;y=ty;headingX=turn.dx;headingY=turn.dy;turns++;points.push({x:x/w,y:y/h});continue;}
      }
      x=chosen.x;y=chosen.y;
      reason=diagnostics("Perpendicular ink but no unique safe elbow");break;
