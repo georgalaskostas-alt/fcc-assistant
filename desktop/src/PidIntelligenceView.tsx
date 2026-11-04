@@ -590,6 +590,17 @@ export function PidIntelligenceView() {
                   const tip=candidate[candidate.length-1];
                   const key=`${ocr?.page??0}:${autoTracePreview.line}:${Math.round(tip.x*10000)}:${Math.round(tip.y*10000)}`;
                   const review=endpointReviews[key];
+                  // Pixel-space distance to the *selected* candidate, not to unrelated strokes.
+                  const point=review?.point;
+                  const distanceToSegment=(p:{x:number;y:number},a:{x:number;y:number},b:{x:number;y:number})=>{
+                    const width=raster?.width??1000,height=raster?.height??1000;
+                    const vx=(b.x-a.x)*width,vy=(b.y-a.y)*height;
+                    const wx=(p.x-a.x)*width,wy=(p.y-a.y)*height;
+                    const t=Math.max(0,Math.min(1,(wx*vx+wy*vy)/(vx*vx+vy*vy||1)));
+                    return Math.hypot(wx-t*vx,wy-t*vy);
+                  };
+                  const gapPx=point?Math.min(...candidate.slice(1).map((p,i)=>distanceToSegment(point,candidate[i],p))):null;
+                  const tipGapPx=point&&raster?Math.hypot((point.x-tip.x)*raster.width,(point.y-tip.y)*raster.height):null;
                   return <div key={key}>
                     <label>Candidate {index+1} endpoint ({Math.round(tip.x*1000)}, {Math.round(tip.y*1000)})
                       <input aria-label={`Equipment tag for candidate ${index+1}`} placeholder="Equipment tag (e.g. M-4252)" value={review?.equipment??""}
@@ -602,6 +613,10 @@ export function PidIntelligenceView() {
                     <button type="button" onClick={()=>{setEndpointPick({key,index});setPipePickMode(false);setRouteMode(false);}}>Select connection point on drawing</button>
                     {endpointPick?.key===key&&<span>Click the junction on the P&amp;ID (zoom first if needed).</span>}
                     {review?.point&&<span>Selected point: ({Math.round(review.point.x*1000)}, {Math.round(review.point.y*1000)})</span>}
+                    {gapPx!==null&&<div role="status">
+                      <strong>Endpoint geometry audit (preview only):</strong> closest distance to Candidate {index+1}: {gapPx.toFixed(1)} px; distance to candidate tip: {tipGapPx===null?"unknown":tipGapPx.toFixed(1)+" px"}.
+                      {gapPx<=8?" Visual proximity detected; this does not prove a physical connection.":" Gap detected: candidate does not reach the inspected junction. Extend or correct the trace before verifying connectivity."}
+                    </div>}
                     <button type="button" disabled={!review?.equipment.trim()||!review?.point} onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key].equipment.trim(),nozzle:prev[key].nozzle.trim(),side:"",point:prev[key].point,status:"confirmed"}}))}>Confirm inspected endpoint</button>
                     <button type="button" onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",nozzle:prev[key]?.nozzle??"",side:"",point:prev[key]?.point,status:"rejected"}}))}>Reject endpoint</button>
                     <span>{review?.status==="confirmed"?`Inspected: ${review.equipment} / point (${Math.round(review.point!.x*1000)}, ${Math.round(review.point!.y*1000)})${review.nozzle?` / nozzle ${review.nozzle}`:""} (not exported as connectivity)`:"Not confirmed"}</span>
