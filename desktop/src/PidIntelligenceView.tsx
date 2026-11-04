@@ -55,7 +55,7 @@ export function PidIntelligenceView() {
   const [traceLine, setTraceLine] = useState<number | null>(null);
   const [routeMode, setRouteMode] = useState(false);
   const [routeWarning, setRouteWarning] = useState("");
-  const [autoTracePreview, setAutoTracePreview] = useState<{line:number;paths:Array<Array<{x:number;y:number}>>;stopReasons:string[]}|null>(null);
+  const [autoTracePreview, setAutoTracePreview] = useState<{line:number;paths:Array<Array<{x:number;y:number}>>;stopReasons:string[];shadowPaths:Array<Array<{x:number;y:number}>>;shadowReviews:Record<number,"approved"|"rejected">}|null>(null);
   const [routePoints, setRoutePoints] = useState<Record<number,Array<{x:number;y:number}>>>({});
   const [dragRoutePoint, setDragRoutePoint] = useState<number | null>(null);
   const suppressRouteClick = useRef(false);
@@ -463,6 +463,7 @@ export function PidIntelligenceView() {
             </svg>}
             {autoTracePreview && autoTracePreview.line===selectedLineLabel && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Experimental raster auto trace preview" style={{pointerEvents:"none"}}>
               {autoTracePreview.paths.map((path,index)=><polyline key={index} points={path.map(p=>`${p.x*1000},${p.y*1000}`).join(" ")} stroke="#f59e0b" strokeWidth="4" strokeDasharray="8 5" fill="none" vectorEffect="non-scaling-stroke"/>)}
+              {autoTracePreview.shadowPaths.map((path,index)=>autoTracePreview.shadowReviews[index]!=="rejected"&&<polyline key={`shadow-${index}`} points={path.map(p=>`${p.x*1000},${p.y*1000}`).join(" ")} stroke={autoTracePreview.shadowReviews[index]==="approved"?"#22c55e":"#38bdf8"} strokeWidth="3" strokeDasharray="3 6" fill="none" opacity="0.9" vectorEffect="non-scaling-stroke"/>)}
             </svg>}
             {traceLine !== null && pipeAnchors[traceLine] && (routePoints[traceLine]?.length ?? 0)>0 && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Engineer-guided pipe route">
               <polyline points={(routePoints[traceLine]??[]).map(p=>String(p.x*1000)+","+String(p.y*1000)).join(" ")} stroke="#22c55e" strokeWidth="5" fill="none" vectorEffect="non-scaling-stroke" strokeLinejoin="round"/>
@@ -554,9 +555,19 @@ export function PidIntelligenceView() {
           <div className="pid-review-note">
             <strong>Experimental automatic raster trace · preview only</strong>
             <p>First select a seed point on the actual pipe. This attempts to follow nearby straight dark strokes without manual route clicks. It stops at uncertainty and does not assign connectivity or flow direction.</p>
-            <button type="button" disabled={!raster || !pipeAnchors[selectedLineLabel]} onClick={()=>{const seed=pipeAnchors[selectedLineLabel];if(!seed||!raster)return;const result=traceRasterFromSeed(raster,seed);setAutoTracePreview({line:selectedLineLabel,paths:result.paths,stopReasons:result.stopReasons});setTraceLine(selectedLineLabel);setRouteMode(false);focusDrawing(seed.x,seed.y);}}>Preview automatic raster trace</button>
+            <button type="button" disabled={!raster || !pipeAnchors[selectedLineLabel]} onClick={()=>{const seed=pipeAnchors[selectedLineLabel];if(!seed||!raster)return;const result=traceRasterFromSeed(raster,seed);setAutoTracePreview({line:selectedLineLabel,paths:result.paths,stopReasons:result.stopReasons,shadowPaths:result.shadowPaths??[],shadowReviews:{}});setTraceLine(selectedLineLabel);setRouteMode(false);focusDrawing(seed.x,seed.y);}}>Preview automatic raster trace</button>
             <button type="button" disabled={!autoTracePreview} onClick={()=>setAutoTracePreview(null)}>Clear automatic preview</button>
             {autoTracePreview?.line===selectedLineLabel&&<p>{autoTracePreview.paths.length} provisional straight strokes found. {autoTracePreview.stopReasons.join("; ")||"No confident strokes found; reposition the seed on a clear straight section."} Orange dashed strokes are not a verified pipe route.</p>}
+            {autoTracePreview?.line===selectedLineLabel&&autoTracePreview.shadowPaths.length>0&&<div>
+              <strong>Shadow continuation candidates — unverified</strong>
+              <p>Blue dotted paths are raster-only hypotheses. Approve records a visual review, not equipment connectivity or flow direction.</p>
+              {autoTracePreview.shadowPaths.map((path,index)=><div key={index}>
+                <span>Candidate {index+1}: {path.length} sampled points — {autoTracePreview.shadowReviews[index]??"pending"} </span>
+                <button type="button" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"approved"}}:previous)}>Approve visual candidate</button>
+                <button type="button" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"rejected"}}:previous)}>Reject</button>
+              </div>)}
+              <p>Reviews are temporary for this preview and are not saved as verified connectivity.</p>
+            </div>}
           </div>
           <div className="pid-review-actions">
             <button type="button" disabled={!pipeAnchors[selectedLineLabel] || !ocr.geometry?.segments.length}
