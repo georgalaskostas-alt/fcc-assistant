@@ -566,6 +566,34 @@ export function PidIntelligenceView() {
                 <button type="button" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"approved"}}:previous)}>Approve visual candidate</button>
                 <button type="button" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"rejected"}}:previous)}>Reject</button>
               </div>)}
+              <button type="button" disabled={!raster||!autoTracePreview.shadowPaths.some((path,index)=>autoTracePreview.shadowReviews[index]==="approved"&&path.length>1)}
+                onClick={()=>{
+                  if(!raster||!autoTracePreview)return;
+                  const approved=autoTracePreview.shadowPaths.filter((path,index)=>autoTracePreview.shadowReviews[index]==="approved"&&path.length>1);
+                  const existing=autoTracePreview;
+                  const extraPaths:Array<Array<{x:number;y:number}>>=[];
+                  const extraShadows:Array<Array<{x:number;y:number}>>=[];
+                  const reasons:string[]=[];
+                  for(const path of approved){
+                    const end=path[path.length-1];
+                    const next=traceRasterFromSeed(raster,end);
+                    // Each approved endpoint is a fresh seed; never silently promote
+                    // a continuation to verified geometry or connectivity.
+                    for(const candidate of next.paths){
+                      if(candidate.length<2)continue;
+                      const first=candidate[0],last=candidate[candidate.length-1];
+                      const distanceFirst=Math.hypot(first.x-end.x,first.y-end.y);
+                      const distanceLast=Math.hypot(last.x-end.x,last.y-end.y);
+                      const oriented=distanceLast<distanceFirst?[...candidate].reverse():candidate;
+                      if(Math.hypot(oriented[oriented.length-1].x-end.x,oriented[oriented.length-1].y-end.y)<0.015)continue;
+                      extraPaths.push(oriented);
+                    }
+                    extraShadows.push(...(next.shadowPaths??[]));
+                    reasons.push(...next.stopReasons.map(reason=>"Endpoint re-trace (unverified): "+reason));
+                  }
+                  setAutoTracePreview({...existing,paths:[...existing.paths,...extraPaths],shadowPaths:[...existing.shadowPaths,...extraShadows],stopReasons:[...existing.stopReasons,...reasons]});
+                }}>Continue from approved endpoints (preview only)</button>
+              <p>Continuation is a fresh, unverified raster preview. Inspect new strokes before approving; no connectivity or flow direction is inferred.</p>
               <p>Reviews are temporary for this preview and are not saved as verified connectivity.</p>
             </div>}
           </div>
