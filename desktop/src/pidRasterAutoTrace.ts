@@ -47,10 +47,26 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
   return hits>=8;
  };
  const elbow=(x:number,y:number,dx:number,dy:number)=>{
+  // Search a small neighborhood ahead, as scanned corners rarely align exactly.
+  // Do not turn while the incoming stroke still has a clear continuation.
   if(sustained(x,y,dx,dy))return null;
-  const turns:[[number,number],[number,number]]=[[dy,dx],[-dy,-dx]];
-  const found=turns.filter(([tx,ty])=>sustained(x,y,tx,ty));
-  return found.length===1?found[0]:null;
+  const proposals:{x:number;y:number;dx:number;dy:number;score:number}[]=[];
+  for(let ahead=0;ahead<=6;ahead++)for(let lateral=-3;lateral<=3;lateral++){
+   const cx=x+dx*ahead+dy*lateral,cy=y+dy*ahead+dx*lateral;
+   if(!dark(cx,cy))continue;
+   const turns:[[number,number],[number,number]]=[[dy,dx],[-dy,-dx]];
+   const supported=turns.filter(([tx,ty])=>sustained(cx,cy,tx,ty));
+   if(supported.length!==1)continue;
+   const [tx,ty]=supported[0];
+   // Reject crosses/T-junctions: the opposite perpendicular arm must not continue.
+   if(sustained(cx,cy,-tx,-ty))continue;
+   proposals.push({x:cx,y:cy,dx:tx,dy:ty,score:ahead+Math.abs(lateral)*2});
+  }
+  proposals.sort((a,b)=>a.score-b.score);
+  if(!proposals.length)return null;
+  // Multiple distinct turn directions are ambiguous.
+  if(proposals.some(p=>p.dx!==proposals[0].dx||p.dy!==proposals[0].dy))return null;
+  return proposals[0];
  };
  for(const [dx,dy] of directions){
   // Direction must already be supported by the local raster evidence.
@@ -69,9 +85,9 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
     const turn=turns===0&&steps>=8?elbow(x,y,headingX,headingY):null;
     if(turn){
      // Only count a turn after actually advancing onto its new leg.
-     const tx=x+turn[0]*2,ty=y+turn[1]*2;
+     const tx=turn.x+turn.dx*2,ty=turn.y+turn.dy*2;
      if(dark(tx,ty)){
-      x=tx;y=ty;headingX=turn[0];headingY=turn[1];turns++;
+      x=tx;y=ty;headingX=turn.dx;headingY=turn.dy;turns++;
       points.push({x:x/w,y:y/h});continue;
      }
     }
@@ -80,7 +96,7 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
    const chosen=options.sort((a,b)=>Math.abs(a.offset)-Math.abs(b.offset))[0];
    if(dark(chosen.x+headingY*5,chosen.y+headingX*5)||dark(chosen.x-headingY*5,chosen.y-headingX*5)){
     const turn=turns===0?elbow(x,y,headingX,headingY):null;
-    if(turn){headingX=turn[0];headingY=turn[1];turns++;points.push({x:x/w,y:y/h});continue;}
+    if(turn){x=turn.x+turn.dx*2;y=turn.y+turn.dy*2;headingX=turn.dx;headingY=turn.dy;turns++;points.push({x:x/w,y:y/h});continue;}
     reason="Nearby parallel ink / symbol / possible junction: manual review required";break;
    }
    x=chosen.x;y=chosen.y;
