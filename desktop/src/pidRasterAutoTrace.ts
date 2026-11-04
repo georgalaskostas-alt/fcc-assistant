@@ -57,6 +57,26 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
   }
   return lastHit;
  };
+ // Sample a side arm for alternating ink/gaps; descriptive only.
+ // A dashed appearance does not establish an instrument signal.
+ const sidePattern=(x:number,y:number,dx:number,dy:number)=>{
+  const samples:boolean[]=[];
+  for(let k=3;k<=48;k++){
+   const px=x+dx*k,py=y+dy*k;
+   samples.push(dark(px,py)||dark(px+dy,py+dx)||dark(px-dy,py-dx));
+  }
+  let inkRuns=0,gapRuns=0,prior=false;
+  for(let i=0;i<samples.length;i++){
+   if(i===0||samples[i]!==prior){
+    if(samples[i])inkRuns++;else gapRuns++;
+   }
+   prior=samples[i];
+  }
+  const occupancy=samples.filter(Boolean).length/samples.length;
+  const pattern=inkRuns>=3&&gapRuns>=2&&occupancy>=0.15&&occupancy<=0.8
+   ?"intermittent-ink-candidate":occupancy>=0.8?"mostly-solid-ink":"short-or-uncertain-ink";
+  return {pattern,inkRuns,gapRuns,occupancy:occupancy.toFixed(2)};
+ };
  const elbow=(x:number,y:number,dx:number,dy:number)=>{
   // Search a small neighborhood ahead, as scanned corners rarely align exactly.
   // Do not turn while the incoming stroke still has a clear continuation.
@@ -91,8 +111,10 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
  !forward&&(left!==right)?"possible-elbow":
  !forward&&left&&right?"possible-three-way-endpoint":"unclassified";
  const span=branchExtent(x,y,-headingX,-headingY);
+ const patternA=sidePattern(x,y,headingY,headingX);
+ const patternB=sidePattern(x,y,-headingY,-headingX);
  const evidence=forward&&(left||right)?"main-line-continuity-with-perpendicular-ink":
- !forward&&(left!==right)?"single-perpendicular-continuation":"insufficient-geometry";return `${label} at (${x},${y}) heading (${headingX},${headingY}); raster forward=${forward}, perpendicularA=${left}, perpendicularB=${right}, sideExtentA=${extentA}px, sideExtentB=${extentB}px, classification=${kind}, evidence=${evidence}, reverseExtent=${span}px, turns=${turns}, threshold=${threshold.toFixed(0)}`;};
+ !forward&&(left!==right)?"single-perpendicular-continuation":"insufficient-geometry";return `${label} at (${x},${y}) heading (${headingX},${headingY}); raster forward=${forward}, perpendicularA=${left}, perpendicularB=${right}, sideExtentA=${extentA}px, sideExtentB=${extentB}px, classification=${kind}, evidence=${evidence}, reverseExtent=${span}px, sidePatternA=${patternA.pattern}(${patternA.inkRuns}ink/${patternA.gapRuns}gaps,occupancy=${patternA.occupancy}), sidePatternB=${patternB.pattern}(${patternB.inkRuns}ink/${patternB.gapRuns}gaps,occupancy=${patternB.occupancy}), turns=${turns}, threshold=${threshold.toFixed(0)}`;};
   for(;steps<Math.min(420,Math.max(w,h));steps++){
    const nx=x+headingX*2,ny=y+headingY*2;
    const options:{x:number;y:number;offset:number}[]=[];
