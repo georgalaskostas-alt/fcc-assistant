@@ -46,6 +46,17 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
   for(let k=1;k<=9;k++)if(dark(x+dx*k,y+dy*k)||dark(x+dx*k+dy,y+dy*k+dx)||dark(x+dx*k-dy,y+dy*k-dx))hits++;
   return hits>=8;
  };
+ // Probe the extent of perpendicular ink; evidence only, never connectivity.
+ const branchExtent=(x:number,y:number,dx:number,dy:number)=>{
+  let consecutiveMisses=0,lastHit=0;
+  for(let k=1;k<=32;k++){
+   const px=x+dx*k,py=y+dy*k;
+   const hit=dark(px,py)||dark(px+dy,py+dx)||dark(px-dy,py-dx);
+   if(hit){lastHit=k;consecutiveMisses=0;}
+   else if(++consecutiveMisses>=3)break;
+  }
+  return lastHit;
+ };
  const elbow=(x:number,y:number,dx:number,dy:number)=>{
   // Search a small neighborhood ahead, as scanned corners rarely align exactly.
   // Do not turn while the incoming stroke still has a clear continuation.
@@ -75,7 +86,7 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
   let cornerX=-9999,cornerY=-9999,entryX=0,entryY=0;
   const points:PipePoint[]=[{x:x/w,y:y/h}];
   let reason="Reached maximum safe preview distance";
-  const diagnostics=(label:string)=>{const left=sustained(x,y,headingY,headingX),right=sustained(x,y,-headingY,-headingX),forward=sustained(x,y,headingX,headingY);return `${label} at (${x},${y}) heading (${headingX},${headingY}); raster forward=${forward}, perpendicularA=${left}, perpendicularB=${right}, turns=${turns}, threshold=${threshold.toFixed(0)}`;};
+  const diagnostics=(label:string)=>{const left=sustained(x,y,headingY,headingX),right=sustained(x,y,-headingY,-headingX),forward=sustained(x,y,headingX,headingY);const extentA=branchExtent(x,y,headingY,headingX),extentB=branchExtent(x,y,-headingY,-headingX);const kind=forward&&(left||right)?"forward-plus-side-ink (unverified junction)":!forward&&(left!==right)?"possible-elbow":"unclassified";return `${label} at (${x},${y}) heading (${headingX},${headingY}); raster forward=${forward}, perpendicularA=${left}, perpendicularB=${right}, sideExtentA=${extentA}px, sideExtentB=${extentB}px, classification=${kind}, turns=${turns}, threshold=${threshold.toFixed(0)}`;};
   for(;steps<Math.min(420,Math.max(w,h));steps++){
    const nx=x+headingX*2,ny=y+headingY*2;
    const options:{x:number;y:number;offset:number}[]=[];
