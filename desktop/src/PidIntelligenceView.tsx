@@ -55,6 +55,8 @@ export function PidIntelligenceView() {
   const [routeWarning, setRouteWarning] = useState("");
   const [routePoints, setRoutePoints] = useState<Record<number,Array<{x:number;y:number}>>>({});
   const [showCenterlineCandidates, setShowCenterlineCandidates] = useState(false);
+  const [selectedCenterlineLeg, setSelectedCenterlineLeg] = useState<number | null>(null);
+  const [centerlineReviews, setCenterlineReviews] = useState<Record<number, Record<number, "accepted" | "rejected">>>({});
 
 
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
@@ -232,6 +234,7 @@ export function PidIntelligenceView() {
     : null;
   const centerlineLegs = traceLine !== null && raster && (routePoints[traceLine]?.length ?? 0)>1
     ? proposeCenterlineLegs(routePoints[traceLine], raster) : [];
+  const activeLegReviews = traceLine === null ? {} : (centerlineReviews[traceLine] ?? {});
   const legAlignment = traceLine !== null && raster && (routePoints[traceLine]?.length ?? 0)>1
     ? auditRasterLegAlignment(routePoints[traceLine],raster)
     : null;
@@ -429,7 +432,7 @@ export function PidIntelligenceView() {
               {(routePoints[traceLine]??[]).map((p,i)=><circle key={i} cx={p.x*1000} cy={p.y*1000} r="5" fill="#22c55e"/>)}
             </svg>}
             {showCenterlineCandidates && centerlineLegs.length>0 && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Proposed centerline offsets, not accepted">
-              {centerlineLegs.filter(leg=>leg.eligible).map(leg=><line key={leg.index} x1={leg.start.x*1000} y1={leg.start.y*1000} x2={leg.end.x*1000} y2={leg.end.y*1000} stroke="#a78bfa" strokeWidth="3" strokeDasharray="7 5" vectorEffect="non-scaling-stroke"/>)}
+              {centerlineLegs.filter(leg=>leg.eligible && activeLegReviews[leg.index] !== "rejected").map(leg=><line key={leg.index} x1={leg.start.x*1000} y1={leg.start.y*1000} x2={leg.end.x*1000} y2={leg.end.y*1000} stroke={activeLegReviews[leg.index] === "accepted" ? "#38bdf8" : "#a78bfa"} strokeWidth={selectedCenterlineLeg === leg.index ? "5" : "3"} strokeDasharray="7 5" vectorEffect="non-scaling-stroke"/>)}
             </svg>}
             {guidedAudit && traceLine !== null && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Unmatched guided-route samples">
               {guidedAudit.unmatched.map((p,i)=><circle key={i} cx={p.x*1000} cy={p.y*1000} r="2.5" fill="#f97316" opacity="0.95"/>)}
@@ -532,7 +535,14 @@ export function PidIntelligenceView() {
               <strong>Pipe centerline refinement · candidate preview only</strong>
               <p>{centerlineLegs.filter(leg=>leg.eligible).length} / {centerlineLegs.length} legs pass conservative evidence gates. No offsets are applied to the saved green route.</p>
               <label><input type="checkbox" checked={showCenterlineCandidates} onChange={event=>setShowCenterlineCandidates(event.target.checked)}/> Show proposed centerlines (purple dashed)</label>
-              {centerlineLegs.map(leg=><p key={leg.index}>Leg {leg.index}: {leg.eligible ? "Candidate" : "Blocked"} · {leg.reason}</p>)}
+              {centerlineLegs.map(leg=><div key={leg.index} className="pid-review-actions">
+                <button type="button" aria-pressed={selectedCenterlineLeg === leg.index} onClick={()=>{setSelectedCenterlineLeg(leg.index);setShowCenterlineCandidates(true);}}>Leg {leg.index} · {leg.eligible ? "Candidate" : "Blocked"}</button>
+                <span>{leg.reason} · {activeLegReviews[leg.index] ?? "unreviewed"}</span>
+                <button type="button" disabled={!leg.eligible || traceLine === null} onClick={()=>{if(traceLine === null)return;setCenterlineReviews(prev=>({...prev,[traceLine]:{...(prev[traceLine]??{}),[leg.index]:"accepted"}}));}}>Accept geometry</button>
+                <button type="button" disabled={traceLine === null} onClick={()=>{if(traceLine === null)return;setCenterlineReviews(prev=>({...prev,[traceLine]:{...(prev[traceLine]??{}),[leg.index]:"rejected"}}));}}>Reject</button>
+                <button type="button" onClick={()=>{if(traceLine === null)return;setCenterlineReviews(prev=>{const next={...(prev[traceLine]??{})};delete next[leg.index];return {...prev,[traceLine]:next};});}}>Clear</button>
+              </div>)}
+              <small>Accept records visual geometry review only, not pipe identity or physical connectivity. Adjustments still require manual waypoint editing.</small>
               <small>Proposals are independent per straight leg and are deliberately not joined at elbows. This does not verify pipe identity, endpoints or connectivity.</small>
             </div>}
             {legAlignment && <div className="pid-route-leg-diagnostics">
