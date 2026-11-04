@@ -86,7 +86,13 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
   let cornerX=-9999,cornerY=-9999,entryX=0,entryY=0;
   const points:PipePoint[]=[{x:x/w,y:y/h}];
   let reason="Reached maximum safe preview distance";
-  const diagnostics=(label:string)=>{const left=sustained(x,y,headingY,headingX),right=sustained(x,y,-headingY,-headingX),forward=sustained(x,y,headingX,headingY);const extentA=branchExtent(x,y,headingY,headingX),extentB=branchExtent(x,y,-headingY,-headingX);const kind=forward&&(left||right)?"forward-plus-side-ink (unverified junction)":!forward&&(left!==right)?"possible-elbow":"unclassified";return `${label} at (${x},${y}) heading (${headingX},${headingY}); raster forward=${forward}, perpendicularA=${left}, perpendicularB=${right}, sideExtentA=${extentA}px, sideExtentB=${extentB}px, classification=${kind}, turns=${turns}, threshold=${threshold.toFixed(0)}`;};
+  const diagnostics=(label:string)=>{const left=sustained(x,y,headingY,headingX),right=sustained(x,y,-headingY,-headingX),forward=sustained(x,y,headingX,headingY);const extentA=branchExtent(x,y,headingY,headingX),extentB=branchExtent(x,y,-headingY,-headingX);const kind=forward&&left&&right?"possible-crossing-or-four-way-junction":
+ forward&&(left||right)?"possible-tee-or-annotation":
+ !forward&&(left!==right)?"possible-elbow":
+ !forward&&left&&right?"possible-three-way-endpoint":"unclassified";
+ const span=branchExtent(x,y,-headingX,-headingY);
+ const evidence=forward&&(left||right)?"main-line-continuity-with-perpendicular-ink":
+ !forward&&(left!==right)?"single-perpendicular-continuation":"insufficient-geometry";return `${label} at (${x},${y}) heading (${headingX},${headingY}); raster forward=${forward}, perpendicularA=${left}, perpendicularB=${right}, sideExtentA=${extentA}px, sideExtentB=${extentB}px, classification=${kind}, evidence=${evidence}, reverseExtent=${span}px, turns=${turns}, threshold=${threshold.toFixed(0)}`;};
   for(;steps<Math.min(420,Math.max(w,h));steps++){
    const nx=x+headingX*2,ny=y+headingY*2;
    const options:{x:number;y:number;offset:number}[]=[];
