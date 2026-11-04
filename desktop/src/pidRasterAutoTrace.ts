@@ -95,10 +95,28 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
     reason=diagnostics("Raster interruption / elbow rejected");break;
    }
    const chosen=options.sort((a,b)=>Math.abs(a.offset)-Math.abs(b.offset))[0];
-   if(dark(chosen.x+headingY*5,chosen.y+headingX*5)||dark(chosen.x-headingY*5,chosen.y-headingX*5)){
-    const turn=turns===0?elbow(x,y,headingX,headingY):null;
-    if(turn){x=turn.x+turn.dx*2;y=turn.y+turn.dy*2;headingX=turn.dx;headingY=turn.dy;turns++;points.push({x:x/w,y:y/h});continue;}
-    reason=diagnostics("Side ink / possible junction: manual review required");break;
+   const sideInk=dark(chosen.x+headingY*5,chosen.y+headingX*5)||dark(chosen.x-headingY*5,chosen.y-headingX*5);
+   if(sideInk){
+    // A single side pixel is not a junction. Require sustained perpendicular
+    // evidence, and distinguish a true T/cross from a short arrow or scan mark.
+    const sideA=sustained(chosen.x,chosen.y,headingY,headingX);
+    const sideB=sustained(chosen.x,chosen.y,-headingY,-headingX);
+    const forward=sustained(chosen.x,chosen.y,headingX,headingY);
+    if(sideA||sideB){
+     // At an ambiguous branch, stop rather than silently choosing a pipe.
+     if(forward||sideA&&sideB){
+      x=chosen.x;y=chosen.y;
+      reason=diagnostics("Sustained perpendicular branch / junction: manual review required");break;
+     }
+     const turn=turns===0?elbow(x,y,headingX,headingY):null;
+     if(turn){
+      const tx=turn.x+turn.dx*2,ty=turn.y+turn.dy*2;
+      if(dark(tx,ty)){x=tx;y=ty;headingX=turn.dx;headingY=turn.dy;turns++;points.push({x:x/w,y:y/h});continue;}
+     }
+     x=chosen.x;y=chosen.y;
+     reason=diagnostics("Perpendicular ink but no unique safe elbow");break;
+    }
+    // Short side marks do not interrupt a supported forward stroke.
    }
    x=chosen.x;y=chosen.y;
    if(steps%4===0)points.push({x:x/w,y:y/h});
