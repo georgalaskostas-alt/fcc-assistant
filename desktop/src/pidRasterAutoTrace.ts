@@ -123,7 +123,7 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
   let x=start.x,y=start.y,steps=0,headingX=dx,headingY=dy,turns=0;
   let cornerX=-9999,cornerY=-9999,entryX=0,entryY=0;
   const points:PipePoint[]=[{x:x/w,y:y/h}];
-  let reason="Reached maximum safe preview distance";
+  let reason="Reached bounded preview step limit (unverified)";
   const diagnostics=(label:string)=>{const left=sustained(x,y,headingY,headingX),right=sustained(x,y,-headingY,-headingX),forward=sustained(x,y,headingX,headingY);const extentA=branchExtent(x,y,headingY,headingX),extentB=branchExtent(x,y,-headingY,-headingX);const kind=forward&&left&&right?"possible-crossing-or-four-way-junction":
  forward&&(left||right)?"possible-tee-or-annotation":
  !forward&&(left!==right)?"possible-elbow":
@@ -134,7 +134,10 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
  const shadow=forward&&(left||right)?shadowLookahead(x,y,headingX,headingY):null;
  const evidence=forward&&(left||right)?"main-line-continuity-with-perpendicular-ink":
  !forward&&(left!==right)?"single-perpendicular-continuation":"insufficient-geometry";return `${label} at (${x},${y}) heading (${headingX},${headingY}); raster forward=${forward}, perpendicularA=${left}, perpendicularB=${right}, sideExtentA=${extentA}px, sideExtentB=${extentB}px, classification=${kind}, evidence=${evidence}, reverseExtent=${span}px, shadowForward=${shadow?`${shadow.distance}px to (${shadow.endX},${shadow.endY}) (unverified)`:"not-run"}, sidePatternA=${patternA.pattern}(${patternA.inkRuns}ink/${patternA.gapRuns}gaps,occupancy=${patternA.occupancy}), sidePatternB=${patternB.pattern}(${patternB.inkRuns}ink/${patternB.gapRuns}gaps,occupancy=${patternB.occupancy}), turns=${turns}, threshold=${threshold.toFixed(0)}`;};
-  for(;steps<Math.min(420,Math.max(w,h));steps++){
+  // Extend preview in bounded segments while preserving all junction/ink checks.
+  // This is a fresh deterministic preview, not an approved connectivity route.
+  const maxSteps=Math.min(900,Math.max(w,h));
+  for(;steps<maxSteps;steps++){
    const nx=x+headingX*2,ny=y+headingY*2;
    const options:{x:number;y:number;offset:number}[]=[];
    for(let offset=-2;offset<=2;offset++){
