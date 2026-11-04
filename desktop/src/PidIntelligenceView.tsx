@@ -1,3 +1,4 @@
+import { proposeBranchCrossings } from "./pidBranchProposals";
 import { auditGuidedRoute, auditRouteRaster, auditRasterLegAlignment } from "./pidRouteAudit";
 import { proposeCenterlineLegs } from "./pidCenterline";
 import { useEffect, useRef, useState } from "react";
@@ -63,6 +64,7 @@ export function PidIntelligenceView() {
   useEffect(()=>{if(traceLine!==null)setManualGeometryReviews(previous=>({...previous,[traceLine]:{}}));},[routePoints,traceLine]);
 
 
+  const [branchDecisions, setBranchDecisions] = useState<Record<number, Record<string,"branch"|"crossing"|"reject">>>({});
   const [connectivityRecords, setConnectivityRecords] = useState<Record<number, {fromEquipment:string;toEquipment:string;valves:string;instruments:string;junctions:string;crossings:"unreviewed"|"reviewed";endpointReview:"unreviewed"|"reviewed";status:"draft"|"engineer_reviewed"}>>({});
   const connectivityFor = (index:number) => connectivityRecords[index] ?? {fromEquipment:"",toEquipment:"",valves:"",instruments:"",junctions:"",crossings:"unreviewed" as const,endpointReview:"unreviewed" as const,status:"draft" as const};
   const updateConnectivity = (index:number, patch:Partial<ReturnType<typeof connectivityFor>>) => setConnectivityRecords(previous=>({...previous,[index]:{...connectivityFor(index),...patch,status:"draft"}}));
@@ -72,7 +74,7 @@ export function PidIntelligenceView() {
       const record=connectivityRecords[index];
       if(!record)return [];
       return [{line_number:lineCorrections[index]??label.tag,source_ocr_text:label.tag,route_waypoints:routePoints[index]??[],
-        manual_leg_reviews:manualGeometryReviews[index]??{},...record}];
+        manual_leg_reviews:manualGeometryReviews[index]??{},branch_candidate_decisions:branchDecisions[index]??{},...record}];
     });
     const payload={schema_version:1,kind:"engineer_assisted_pid_connectivity",drawing:file?.name??null,page:ocr.page,records,
       warning:"Manual engineering assertions only. Not independently verified against as-built drawings or plant equipment."};
@@ -573,6 +575,27 @@ export function PidIntelligenceView() {
             })()}
           </div>
 
+          {ocr?.geometry && (routePoints[selectedLineLabel]?.length??0)>1 && <div className="pid-review-note">
+            <h4>Suggested branch / crossing locations · review required</h4>
+            <p className="pid-muted">Candidates are geometric intersections of detected raster strokes with the guided route. They can be text, arrows, instrument lines or actual piping. No candidate is accepted automatically.</p>
+            {(() => {const candidates=proposeBranchCrossings(routePoints[selectedLineLabel]??[],ocr.geometry!.segments);
+              const decisions=branchDecisions[selectedLineLabel]??{};
+              return <><p>{candidates.length} candidates · {candidates.filter(p=>decisions[p.id]).length} reviewed. Inspect each on the drawing before classifying.</p>
+                {candidates.length===0&&<p>No geometric candidates detected. This does not prove there are no branches.</p>}
+                {candidates.map((p,index)=><div className="pid-review-actions" key={p.id}>
+                  <button type="button" onClick={()=>focusDrawing(p.x,p.y)}>Inspect #{index+1} · leg {p.routeLeg}</button>
+                  <select aria-label={`Classify candidate ${index+1}`} value={decisions[p.id]??""} onChange={event=>{
+                    const value=event.target.value as "branch"|"crossing"|"reject"|"";
+                    setBranchDecisions(previous=>{const next={...(previous[selectedLineLabel]??{})};if(value)next[p.id]=value;else delete next[p.id];return {...previous,[selectedLineLabel]:next};});
+                    setConnectivityRecords(previous=>({...previous,[selectedLineLabel]:{...connectivityFor(selectedLineLabel),status:"draft",crossings:"unreviewed"}}));
+                  }}>
+                    <option value="">Unreviewed</option><option value="branch">Confirmed connected branch / junction</option><option value="crossing">Crossing without connection</option><option value="reject">False detection</option>
+                  </select>
+                </div>)}
+                <p className="pid-muted">Confirmed branches are stored as reviewed candidate IDs in the connectivity export. Classification is a manual engineering assertion.</p>
+              </>;
+            })()}
+          </div>}
           {routeWarning && <small role="alert">{routeWarning}</small>}
           {routeMode && <small>Start by clicking the first route point. Long horizontal/vertical runs accept two clicks, including minor scan skew. Click every actual corner; diagonal connections remain blocked. Green route is a manual visual annotation, not verified connectivity.</small>}
           {traceLine===selectedLineLabel && guidedAudit && <div className="pid-review-note">
