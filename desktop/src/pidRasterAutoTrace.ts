@@ -2,7 +2,7 @@
  * The seed identifies a visual stroke only. Never infer connectivity or flow.
  */
 export type PipePoint={x:number;y:number};
-export type AutoPipePreview={paths:PipePoint[][];stopReasons:string[];sampleCount:number};
+export type AutoPipePreview={paths:PipePoint[][];stopReasons:string[];sampleCount:number;shadowPaths?:PipePoint[][]};
 export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePreview{
  const {width:w,height:h,data}=image;
  if(w<8||h<8||!Number.isFinite(seed.x)||!Number.isFinite(seed.y)||seed.x<0||seed.x>1||seed.y<0||seed.y>1)
@@ -40,7 +40,7 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
  if(!candidates.length)return {paths:[],stopReasons:["No coherent dark stroke within 4 source pixels of seed; check image alignment or select a clear straight pipe."],sampleCount:0};
  const start=candidates[0];
  const directions:[[number,number],[number,number],[number,number],[number,number]]=[[1,0],[-1,0],[0,1],[0,-1]];
- const paths:PipePoint[][]=[],stopReasons:string[]=[];
+ const paths:PipePoint[][]=[],shadowPaths:PipePoint[][]=[],stopReasons:string[]=[];
  const sustained=(x:number,y:number,dx:number,dy:number)=>{
   let hits=0;
   for(let k=1;k<=9;k++)if(dark(x+dx*k,y+dy*k)||dark(x+dx*k+dy,y+dy*k+dx)||dark(x+dx*k-dy,y+dy*k-dx))hits++;
@@ -81,6 +81,7 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
  // It never contributes points to the accepted preview path.
  const shadowLookahead=(x:number,y:number,dx:number,dy:number)=>{
   let cx=x,cy=y,advanced=0,misses=0;
+  const samples:PipePoint[]=[{x:x/w,y:y/h}];
   for(let step=0;step<48;step++){
    const nx=cx+dx*2,ny=cy+dy*2;
    const options:{x:number;y:number;offset:number}[]=[];
@@ -92,8 +93,9 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
    misses=0;
    options.sort((a,b)=>Math.abs(a.offset)-Math.abs(b.offset));
    cx=options[0].x;cy=options[0].y;advanced+=2;
+   samples.push({x:cx/w,y:cy/h});
   }
-  return {distance:advanced,endX:cx,endY:cy};
+  return {distance:advanced,endX:cx,endY:cy,samples};
  };
  const elbow=(x:number,y:number,dx:number,dy:number)=>{
   // Search a small neighborhood ahead, as scanned corners rarely align exactly.
@@ -132,6 +134,7 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
  const patternA=sidePattern(x,y,headingY,headingX);
  const patternB=sidePattern(x,y,-headingY,-headingX);
  const shadow=forward&&(left||right)?shadowLookahead(x,y,headingX,headingY):null;
+ if(shadow&&shadow.distance>=12)shadowPaths.push(shadow.samples);
  const evidence=forward&&(left||right)?"main-line-continuity-with-perpendicular-ink":
  !forward&&(left!==right)?"single-perpendicular-continuation":"insufficient-geometry";return `${label} at (${x},${y}) heading (${headingX},${headingY}); raster forward=${forward}, perpendicularA=${left}, perpendicularB=${right}, sideExtentA=${extentA}px, sideExtentB=${extentB}px, classification=${kind}, evidence=${evidence}, reverseExtent=${span}px, shadowForward=${shadow?`${shadow.distance}px to (${shadow.endX},${shadow.endY}) (unverified)`:"not-run"}, sidePatternA=${patternA.pattern}(${patternA.inkRuns}ink/${patternA.gapRuns}gaps,occupancy=${patternA.occupancy}), sidePatternB=${patternB.pattern}(${patternB.inkRuns}ink/${patternB.gapRuns}gaps,occupancy=${patternB.occupancy}), turns=${turns}, threshold=${threshold.toFixed(0)}`;};
   // Extend preview in bounded segments while preserving all junction/ink checks.
@@ -199,5 +202,5 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
  }
  if(!paths.length)stopReasons.push("Seed snapped to coherent raster ink, but no safe straight continuation was found");
  else stopReasons.unshift(start.distance>0?"Seed snapped to nearby coherent stroke (preview only)":"Seed confirmed on coherent stroke (preview only)");
- return {paths,stopReasons,sampleCount:paths.reduce((sum,p)=>sum+p.length,0)};
+ return {paths,shadowPaths,stopReasons,sampleCount:paths.reduce((sum,p)=>sum+p.length,0)};
 }
