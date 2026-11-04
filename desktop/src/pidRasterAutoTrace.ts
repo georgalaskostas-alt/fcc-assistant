@@ -104,10 +104,11 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
     const sideA=sustained(chosen.x,chosen.y,headingY,headingX);
     const sideB=sustained(chosen.x,chosen.y,-headingY,-headingX);
     const forward=sustained(chosen.x,chosen.y,headingX,headingY);
-    // Ignore only the previously traversed incoming leg close to the elbow.
+    // After turning, the previous leg lies OPPOSITE the arrival heading.
+    // Ignore only that known leg close to the elbow; retain other junction checks.
     const nearKnownCorner=turns===1&&Math.hypot(chosen.x-cornerX,chosen.y-cornerY)<=12;
-    const incomingOnA=entryX===headingY&&entryY===headingX;
-    const incomingOnB=entryX===-headingY&&entryY===-headingX;
+    const incomingOnA=-entryX===headingY&&-entryY===headingX;
+    const incomingOnB=-entryX===-headingY&&-entryY===-headingX;
     const novelA=sideA&&!(nearKnownCorner&&incomingOnA);
     const novelB=sideB&&!(nearKnownCorner&&incomingOnB);
     if(novelA||novelB){
