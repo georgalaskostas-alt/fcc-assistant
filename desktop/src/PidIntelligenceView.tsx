@@ -57,7 +57,7 @@ export function PidIntelligenceView() {
   const [routeWarning, setRouteWarning] = useState("");
   const [autoTracePreview, setAutoTracePreview] = useState<{line:number;paths:Array<Array<{x:number;y:number}>>;stopReasons:string[];shadowPaths:Array<Array<{x:number;y:number}>>;shadowReviews:Record<number,"approved"|"rejected">}|null>(null);
   // Endpoint annotations are explicit engineer reviews, never inferred topology.
-  const [endpointReviews,setEndpointReviews] = useState<Record<string,{equipment:string;nozzle:string;status:"confirmed"|"rejected"}>>({});
+  const [endpointReviews,setEndpointReviews] = useState<Record<string,{equipment:string;nozzle:string;side:"left"|"right"|"top"|"bottom"|"";status:"confirmed"|"rejected"}>>({});
   const [routePoints, setRoutePoints] = useState<Record<number,Array<{x:number;y:number}>>>({});
   const [dragRoutePoint, setDragRoutePoint] = useState<number | null>(null);
   const suppressRouteClick = useRef(false);
@@ -570,7 +570,7 @@ export function PidIntelligenceView() {
               </div>)}
               <div className="pid-review-note">
                 <h4>Equipment endpoint review · manual verification</h4>
-                <p>Candidate endpoints are visual observations only. Record the equipment tag and the inspected nozzle identifier from the original P&amp;ID. A visual endpoint review does not establish connectivity or flow direction.</p>
+                <p>Candidate endpoints are visual observations only. Enter the equipment tag and choose the observed connection side. Nozzle ID is optional when absent from the drawing. This is a manual visual review, not verified topology.</p>
                 {autoTracePreview.shadowPaths.map((candidate,index)=>{
                   if(autoTracePreview.shadowReviews[index]!=="approved"||candidate.length<2)return null;
                   const tip=candidate[candidate.length-1];
@@ -579,15 +579,23 @@ export function PidIntelligenceView() {
                   return <div key={key}>
                     <label>Candidate {index+1} endpoint ({Math.round(tip.x*1000)}, {Math.round(tip.y*1000)})
                       <input aria-label={`Equipment tag for candidate ${index+1}`} placeholder="Equipment tag (e.g. M-4252)" value={review?.equipment??""}
-                        onChange={event=>setEndpointReviews(prev=>({...prev,[key]:{equipment:event.target.value,nozzle:prev[key]?.nozzle??"",status:"rejected"}}))}/>
+                        onChange={event=>setEndpointReviews(prev=>({...prev,[key]:{equipment:event.target.value,nozzle:prev[key]?.nozzle??"",side:prev[key]?.side??"",status:"rejected"}}))}/>
                     </label>
-                    <label>Nozzle / connection reference
+                    <label>Nozzle / connection reference (optional)
                       <input aria-label={`Nozzle reference for candidate ${index+1}`} placeholder="Nozzle ID from drawing" value={review?.nozzle??""}
-                        onChange={event=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",nozzle:event.target.value,status:"rejected"}}))}/>
+                        onChange={event=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",nozzle:event.target.value,side:prev[key]?.side??"",status:"rejected"}}))}/>
                     </label>
-                    <button type="button" disabled={!review?.equipment.trim()||!review?.nozzle.trim()} onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key].equipment.trim(),nozzle:prev[key].nozzle.trim(),status:"confirmed"}}))}>Confirm inspected endpoint</button>
-                    <button type="button" onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",nozzle:prev[key]?.nozzle??"",status:"rejected"}}))}>Reject endpoint</button>
-                    <span>{review?.status==="confirmed"?`Inspected: ${review.equipment} / ${review.nozzle} (not exported as connectivity)`:"Not confirmed"}</span>
+                    <label>Observed connection side
+                      <select aria-label={`Connection side for candidate ${index+1}`} value={review?.side??""}
+                        onChange={event=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",nozzle:prev[key]?.nozzle??"",side:event.target.value as "left"|"right"|"top"|"bottom"|"",status:"rejected"}}))}>
+                        <option value="">Select side</option>
+                        <option value="left">Left</option><option value="right">Right</option>
+                        <option value="top">Top</option><option value="bottom">Bottom</option>
+                      </select>
+                    </label>
+                    <button type="button" disabled={!review?.equipment.trim()||!review?.side} onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key].equipment.trim(),nozzle:prev[key].nozzle.trim(),side:prev[key].side,status:"confirmed"}}))}>Confirm inspected endpoint</button>
+                    <button type="button" onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",nozzle:prev[key]?.nozzle??"",side:prev[key]?.side??"",status:"rejected"}}))}>Reject endpoint</button>
+                    <span>{review?.status==="confirmed"?`Inspected: ${review.equipment} / ${review.side}${review.nozzle?` / nozzle ${review.nozzle}`:""} (not exported as connectivity)`:"Not confirmed"}</span>
                   </div>;
                 })}
               </div>
