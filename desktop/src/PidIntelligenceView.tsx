@@ -8,6 +8,7 @@ import "./PidIntelligenceView.css";
 import { reconstructVisualPaths } from "./pidVisualPaths";
 import { suggestPathTags } from "./pidSpatialSuggestions";
 import { traceVisualPipe } from "./pidPipeTrace";
+import { traceRasterFromSeed } from "./pidRasterAutoTrace";
 
 export function PidIntelligenceView() {
   const [file, setFile] = useState<File | null>(null);
@@ -54,6 +55,7 @@ export function PidIntelligenceView() {
   const [traceLine, setTraceLine] = useState<number | null>(null);
   const [routeMode, setRouteMode] = useState(false);
   const [routeWarning, setRouteWarning] = useState("");
+  const [autoTracePreview, setAutoTracePreview] = useState<{line:number;paths:Array<Array<{x:number;y:number}>>;stopReasons:string[]}|null>(null);
   const [routePoints, setRoutePoints] = useState<Record<number,Array<{x:number;y:number}>>>({});
   const [dragRoutePoint, setDragRoutePoint] = useState<number | null>(null);
   const suppressRouteClick = useRef(false);
@@ -459,6 +461,9 @@ export function PidIntelligenceView() {
                 x2={segment.x2 * 1000} y2={segment.y2 * 1000}
                 stroke="#00b8ff" strokeWidth="1.5" vectorEffect="non-scaling-stroke" opacity="0.8" />)}
             </svg>}
+            {autoTracePreview && autoTracePreview.line===selectedLineLabel && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Experimental raster auto trace preview" style={{pointerEvents:"none"}}>
+              {autoTracePreview.paths.map((path,index)=><polyline key={index} points={path.map(p=>`${p.x*1000},${p.y*1000}`).join(" ")} stroke="#f59e0b" strokeWidth="4" strokeDasharray="8 5" fill="none" vectorEffect="non-scaling-stroke"/>)}
+            </svg>}
             {traceLine !== null && pipeAnchors[traceLine] && (routePoints[traceLine]?.length ?? 0)>0 && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Engineer-guided pipe route">
               <polyline points={(routePoints[traceLine]??[]).map(p=>String(p.x*1000)+","+String(p.y*1000)).join(" ")} stroke="#22c55e" strokeWidth="5" fill="none" vectorEffect="non-scaling-stroke" strokeLinejoin="round"/>
               {(routePoints[traceLine]??[]).map((p,i)=><circle key={i} cx={p.x*1000} cy={p.y*1000} r="8" fill={dragRoutePoint===i ? "#facc15" : "#22c55e"} stroke="#065f46" strokeWidth="1.5" style={{pointerEvents:"all",cursor:"grab",touchAction:"none"}} onPointerDown={event=>{event.stopPropagation();suppressRouteClick.current=true;setDragRoutePoint(i);event.currentTarget.setPointerCapture(event.pointerId);}} onPointerMove={event=>{if(dragRoutePoint!==i)return;const bounds=drawingRef.current?.querySelector(".pid-image-canvas")?.getBoundingClientRect();if(!bounds?.width||!bounds.height)return;const x=Math.max(0,Math.min(1,(event.clientX-bounds.left)/bounds.width));const y=Math.max(0,Math.min(1,(event.clientY-bounds.top)/bounds.height));setRoutePoints(previous=>({...previous,[traceLine]:(previous[traceLine]??[]).map((point,j)=>j===i?{x,y}:point)}));}} onPointerUp={event=>{event.stopPropagation();setDragRoutePoint(null);if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}} onPointerCancel={()=>setDragRoutePoint(null)}/>)}
@@ -545,6 +550,13 @@ export function PidIntelligenceView() {
               setPipeAnchors(previous=>{const next={...previous};delete next[selectedLineLabel];return next;});
               setPipePickMode(false);
             }}>Clear pipe location</button>
+          </div>
+          <div className="pid-review-note">
+            <strong>Experimental automatic raster trace · preview only</strong>
+            <p>First select a seed point on the actual pipe. This attempts to follow nearby straight dark strokes without manual route clicks. It stops at uncertainty and does not assign connectivity or flow direction.</p>
+            <button type="button" disabled={!raster || !pipeAnchors[selectedLineLabel]} onClick={()=>{const seed=pipeAnchors[selectedLineLabel];if(!seed||!raster)return;const result=traceRasterFromSeed(raster,seed);setAutoTracePreview({line:selectedLineLabel,paths:result.paths,stopReasons:result.stopReasons});setTraceLine(selectedLineLabel);setRouteMode(false);focusDrawing(seed.x,seed.y);}}>Preview automatic raster trace</button>
+            <button type="button" disabled={!autoTracePreview} onClick={()=>setAutoTracePreview(null)}>Clear automatic preview</button>
+            {autoTracePreview?.line===selectedLineLabel&&<p>{autoTracePreview.paths.length} provisional straight strokes found. {autoTracePreview.stopReasons.join("; ")||"No confident strokes found; reposition the seed on a clear straight section."} Orange dashed strokes are not a verified pipe route.</p>}
           </div>
           <div className="pid-review-actions">
             <button type="button" disabled={!pipeAnchors[selectedLineLabel] || !ocr.geometry?.segments.length}
