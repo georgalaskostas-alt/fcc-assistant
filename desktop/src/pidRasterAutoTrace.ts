@@ -66,8 +66,15 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
     if(dark(cx,cy))options.push({x:cx,y:cy,offset});
    }
    if(!options.length){
-    const turn=turns===0?elbow(x,y,headingX,headingY):null;
-    if(turn){headingX=turn[0];headingY=turn[1];turns++;points.push({x:x/w,y:y/h});continue;}
+    const turn=turns===0&&steps>=8?elbow(x,y,headingX,headingY):null;
+    if(turn){
+     // Only count a turn after actually advancing onto its new leg.
+     const tx=x+turn[0]*2,ty=y+turn[1]*2;
+     if(dark(tx,ty)){
+      x=tx;y=ty;headingX=turn[0];headingY=turn[1];turns++;
+      points.push({x:x/w,y:y/h});continue;
+     }
+    }
     reason="Raster stroke ended or interrupted; no uniquely supported 90-degree turn";break;
    }
    const chosen=options.sort((a,b)=>Math.abs(a.offset)-Math.abs(b.offset))[0];
@@ -79,7 +86,10 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
    x=chosen.x;y=chosen.y;
    if(steps%4===0)points.push({x:x/w,y:y/h});
   }
-  if(points.length>=4){paths.push(points);stopReasons.push((turns?'One provisional 90-degree turn detected; ':'')+reason);}
+  if(points.length>=4){
+   paths.push(points);
+   stopReasons.push((turns?'One provisional 90-degree turn advanced onto perpendicular ink; ':'')+reason);
+  }
  }
  if(!paths.length)stopReasons.push("Seed snapped to coherent raster ink, but no safe straight continuation was found");
  else stopReasons.unshift(start.distance>0?"Seed snapped to nearby coherent stroke (preview only)":"Seed confirmed on coherent stroke (preview only)");
