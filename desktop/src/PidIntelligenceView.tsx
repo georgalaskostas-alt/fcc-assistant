@@ -54,9 +54,13 @@ export function PidIntelligenceView() {
   const [routeMode, setRouteMode] = useState(false);
   const [routeWarning, setRouteWarning] = useState("");
   const [routePoints, setRoutePoints] = useState<Record<number,Array<{x:number;y:number}>>>({});
+  const [dragRoutePoint, setDragRoutePoint] = useState<number | null>(null);
+  const suppressRouteClick = useRef(false);
   const [showCenterlineCandidates, setShowCenterlineCandidates] = useState(false);
   const [selectedCenterlineLeg, setSelectedCenterlineLeg] = useState<number | null>(null);
   const [centerlineReviews, setCenterlineReviews] = useState<Record<number, Record<number, "accepted" | "rejected">>>({});
+  const [manualGeometryReviews, setManualGeometryReviews] = useState<Record<number, Record<number, "verified" | "rejected">>>({});
+  useEffect(()=>{if(traceLine!==null)setManualGeometryReviews(previous=>({...previous,[traceLine]:{}}));},[routePoints,traceLine]);
 
 
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
@@ -382,7 +386,8 @@ export function PidIntelligenceView() {
             {routeMode && <strong>Route guidance active — click successive points on the pipe</strong>}
           </div>
           <div className={`pid-annotated-image ${(pipePickMode || routeMode) ? "pid-pipe-picking" : ""}`} ref={drawingRef} onClick={event => {
-            if ((pipePickMode || routeMode) && selectedLineLabel !== null) {
+            if (suppressRouteClick.current) { suppressRouteClick.current=false; return; }
+             if ((pipePickMode || routeMode) && selectedLineLabel !== null) {
               if ((event.target as HTMLElement).closest("button")) return;
               const canvas=event.currentTarget.querySelector(".pid-image-canvas");
               const bounds=canvas?.getBoundingClientRect();
@@ -429,7 +434,7 @@ export function PidIntelligenceView() {
             </svg>}
             {traceLine !== null && pipeAnchors[traceLine] && (routePoints[traceLine]?.length ?? 0)>0 && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Engineer-guided pipe route">
               <polyline points={(routePoints[traceLine]??[]).map(p=>String(p.x*1000)+","+String(p.y*1000)).join(" ")} stroke="#22c55e" strokeWidth="5" fill="none" vectorEffect="non-scaling-stroke" strokeLinejoin="round"/>
-              {(routePoints[traceLine]??[]).map((p,i)=><circle key={i} cx={p.x*1000} cy={p.y*1000} r="5" fill="#22c55e"/>)}
+              {(routePoints[traceLine]??[]).map((p,i)=><circle key={i} cx={p.x*1000} cy={p.y*1000} r="8" fill={dragRoutePoint===i ? "#facc15" : "#22c55e"} stroke="#065f46" strokeWidth="1.5" style={{pointerEvents:"all",cursor:"grab",touchAction:"none"}} onPointerDown={event=>{event.stopPropagation();suppressRouteClick.current=true;setDragRoutePoint(i);event.currentTarget.setPointerCapture(event.pointerId);}} onPointerMove={event=>{if(dragRoutePoint!==i)return;const bounds=drawingRef.current?.querySelector(".pid-image-canvas")?.getBoundingClientRect();if(!bounds?.width||!bounds.height)return;const x=Math.max(0,Math.min(1,(event.clientX-bounds.left)/bounds.width));const y=Math.max(0,Math.min(1,(event.clientY-bounds.top)/bounds.height));setRoutePoints(previous=>({...previous,[traceLine]:(previous[traceLine]??[]).map((point,j)=>j===i?{x,y}:point)}));}} onPointerUp={event=>{event.stopPropagation();setDragRoutePoint(null);if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}} onPointerCancel={()=>setDragRoutePoint(null)}/>)}
             </svg>}
             {showCenterlineCandidates && centerlineLegs.length>0 && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Proposed centerline offsets, not accepted">
               {centerlineLegs.filter(leg=>leg.eligible && activeLegReviews[leg.index] !== "rejected").map(leg=><line key={leg.index} x1={leg.start.x*1000} y1={leg.start.y*1000} x2={leg.end.x*1000} y2={leg.end.y*1000} stroke={activeLegReviews[leg.index] === "accepted" ? "#38bdf8" : "#a78bfa"} strokeWidth={selectedCenterlineLeg === leg.index ? "5" : "3"} strokeDasharray="7 5" vectorEffect="non-scaling-stroke"/>)}
@@ -535,14 +540,17 @@ export function PidIntelligenceView() {
               <strong>Pipe centerline refinement · candidate preview only</strong>
               <p>{centerlineLegs.filter(leg=>leg.eligible).length} / {centerlineLegs.length} legs pass conservative evidence gates. No offsets are applied to the saved green route.</p>
               <label><input type="checkbox" checked={showCenterlineCandidates} onChange={event=>setShowCenterlineCandidates(event.target.checked)}/> Show proposed centerlines (purple dashed)</label>
-              {centerlineLegs.map(leg=><div key={leg.index} className="pid-review-actions">
-                <button type="button" aria-pressed={selectedCenterlineLeg === leg.index} onClick={()=>{setSelectedCenterlineLeg(leg.index);setShowCenterlineCandidates(true);}}>Leg {leg.index} · {leg.eligible ? "Candidate" : "Blocked"}</button>
-                <span>{leg.reason} · {activeLegReviews[leg.index] ?? "unreviewed"}</span>
+              <p>Drag green waypoints to adjust the route. Raster evidence recalculates automatically. Manual review is separate from automated evidence.</p>
+              {centerlineLegs.map((leg,position)=><div key={leg.index} className="pid-review-actions">
+                <button type="button" aria-pressed={selectedCenterlineLeg === leg.index} onClick={()=>{setSelectedCenterlineLeg(leg.index);setShowCenterlineCandidates(true);}}>Leg {position+1} · {leg.eligible ? "Candidate" : "Blocked"}</button>
+                <span>{leg.reason} · automatic: {activeLegReviews[leg.index] ?? "unreviewed"} · manual: {traceLine===null ? "unreviewed" : manualGeometryReviews[traceLine]?.[leg.index] ?? "unreviewed"}</span>
                 <button type="button" disabled={!leg.eligible || traceLine === null} onClick={()=>{if(traceLine === null)return;setCenterlineReviews(prev=>({...prev,[traceLine]:{...(prev[traceLine]??{}),[leg.index]:"accepted"}}));}}>Accept geometry</button>
                 <button type="button" disabled={traceLine === null} onClick={()=>{if(traceLine === null)return;setCenterlineReviews(prev=>({...prev,[traceLine]:{...(prev[traceLine]??{}),[leg.index]:"rejected"}}));}}>Reject</button>
-                <button type="button" onClick={()=>{if(traceLine === null)return;setCenterlineReviews(prev=>{const next={...(prev[traceLine]??{})};delete next[leg.index];return {...prev,[traceLine]:next};});}}>Clear</button>
+                <button type="button" disabled={traceLine===null} onClick={()=>{if(traceLine===null)return;setManualGeometryReviews(prev=>({...prev,[traceLine]:{...(prev[traceLine]??{}),[leg.index]:"verified"}}));}}>Verify manual route leg</button>
+                <button type="button" disabled={traceLine===null} onClick={()=>{if(traceLine===null)return;setManualGeometryReviews(prev=>({...prev,[traceLine]:{...(prev[traceLine]??{}),[leg.index]:"rejected"}}));}}>Flag manual leg</button>
+                <button type="button" onClick={()=>{if(traceLine === null)return;setCenterlineReviews(prev=>{const next={...(prev[traceLine]??{})};delete next[leg.index];return {...prev,[traceLine]:next};});setManualGeometryReviews(prev=>{const next={...(prev[traceLine]??{})};delete next[leg.index];return {...prev,[traceLine]:next};});}}>Clear</button>
               </div>)}
-              <small>Accept records visual geometry review only, not pipe identity or physical connectivity. Adjustments still require manual waypoint editing.</small>
+              <small>Manual verification records engineer-reviewed drawing geometry only, even when automatic evidence is blocked. It does not verify pipe identity or connectivity. Moving waypoints clears manual reviews.</small>
               <small>Proposals are independent per straight leg and are deliberately not joined at elbows. This does not verify pipe identity, endpoints or connectivity.</small>
             </div>}
             {legAlignment && <div className="pid-route-leg-diagnostics">
