@@ -569,28 +569,52 @@ export function PidIntelligenceView() {
               <button type="button" disabled={!raster||!autoTracePreview.shadowPaths.some((path,index)=>autoTracePreview.shadowReviews[index]==="approved"&&path.length>1)}
                 onClick={()=>{
                   if(!raster||!autoTracePreview)return;
-                  const approved=autoTracePreview.shadowPaths.filter((path,index)=>autoTracePreview.shadowReviews[index]==="approved"&&path.length>1);
                   const existing=autoTracePreview;
+                  const approved=existing.shadowPaths.filter((path,index)=>existing.shadowReviews[index]==="approved"&&path.length>1);
                   const extraPaths:Array<Array<{x:number;y:number}>>=[];
                   const extraShadows:Array<Array<{x:number;y:number}>>=[];
                   const reasons:string[]=[];
+                  const near=(a:{x:number;y:number},b:{x:number;y:number},px=12)=>
+                    Math.hypot((a.x-b.x)*raster.width,(a.y-b.y)*raster.height)<=px;
+                  // A candidate must extend the reviewed shadow in its outgoing
+                  // direction, rather than rediscovering the already traced pipe.
+                  const projection=(origin:{x:number;y:number},p:{x:number;y:number},dx:number,dy:number)=>
+                    (p.x-origin.x)*raster.width*dx+(p.y-origin.y)*raster.height*dy;
+                  const known=[...existing.paths,...existing.shadowPaths];
+                  const overlapsKnown=(candidate:Array<{x:number;y:number}>)=>{
+                    const samples=candidate.filter((_,i)=>i%3===0);
+                    return samples.length>0&&samples.filter(p=>known.some(path=>path.some(q=>near(p,q,5)))).length/samples.length>0.65;
+                  };
+                  const seenEnds:Array<{x:number;y:number}>=[];
                   for(const path of approved){
                     const end=path[path.length-1];
+                    if(seenEnds.some(p=>near(p,end,12)))continue;
+                    seenEnds.push(end);
+                    const prev=path[Math.max(0,path.length-5)];
+                    const vx=(end.x-prev.x)*raster.width,vy=(end.y-prev.y)*raster.height;
+                    const mag=Math.hypot(vx,vy);
+                    if(mag<3)continue;
+                    const dx=vx/mag,dy=vy/mag;
                     const next=traceRasterFromSeed(raster,end);
-                    // Each approved endpoint is a fresh seed; never silently promote
-                    // a continuation to verified geometry or connectivity.
                     for(const candidate of next.paths){
-                      if(candidate.length<2)continue;
+                      if(candidate.length<3)continue;
                       const first=candidate[0],last=candidate[candidate.length-1];
-                      const distanceFirst=Math.hypot(first.x-end.x,first.y-end.y);
-                      const distanceLast=Math.hypot(last.x-end.x,last.y-end.y);
-                      const oriented=distanceLast<distanceFirst?[...candidate].reverse():candidate;
-                      if(Math.hypot(oriented[oriented.length-1].x-end.x,oriented[oriented.length-1].y-end.y)<0.015)continue;
+                      const oriented=near(last,end,8)&&!near(first,end,8)?[...candidate].reverse():candidate;
+                      const progress=projection(end,oriented[oriented.length-1],dx,dy);
+                      if(progress<20||overlapsKnown(oriented)||extraPaths.some(p=>near(p[p.length-1],oriented[oriented.length-1],12)))continue;
                       extraPaths.push(oriented);
                     }
-                    extraShadows.push(...(next.shadowPaths??[]));
-                    reasons.push(...next.stopReasons.map(reason=>"Endpoint re-trace (unverified): "+reason));
+                    for(const shadow of next.shadowPaths??[]){
+                      if(shadow.length<3)continue;
+                      const tip=shadow[shadow.length-1];
+                      if(projection(end,tip,dx,dy)<20||known.some(p=>near(p[p.length-1],tip,12))||
+                        extraShadows.some(p=>near(p[p.length-1],tip,12)))continue;
+                      extraShadows.push(shadow);
+                    }
                   }
+                  reasons.push(extraPaths.length||extraShadows.length?
+                    "Forward-only visual candidates added; all remain unverified.":
+                    "No new forward continuation beyond already reviewed geometry; stopped to prevent duplicate loops.");
                   setAutoTracePreview({...existing,paths:[...existing.paths,...extraPaths],shadowPaths:[...existing.shadowPaths,...extraShadows],stopReasons:[...existing.stopReasons,...reasons]});
                 }}>Continue from approved endpoints (preview only)</button>
               <p>Continuation is a fresh, unverified raster preview. Inspect new strokes before approving; no connectivity or flow direction is inferred.</p>
