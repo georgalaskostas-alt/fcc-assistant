@@ -1,36 +1,70 @@
-/** Experimental local raster-following preview.
- * A user-selected seed anchors the pipe identity; no OCR proximity assignment,
- * physical connectivity or flow direction is inferred.
+/** Experimental, conservative local raster-following preview.
+ * The seed identifies a visual stroke only. Never infer connectivity or flow.
  */
 export type PipePoint={x:number;y:number};
 export type AutoPipePreview={paths:PipePoint[][];stopReasons:string[];sampleCount:number};
 export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePreview{
  const {width:w,height:h,data}=image;
- const dark=(x:number,y:number)=>{x=Math.round(x);y=Math.round(y);if(x<2||y<2||x>=w-2||y>=h-2)return false;const k=(y*w+x)*4;return data[k]*.299+data[k+1]*.587+data[k+2]*.114<145;};
+ if(w<8||h<8||!Number.isFinite(seed.x)||!Number.isFinite(seed.y)||seed.x<0||seed.x>1||seed.y<0||seed.y>1)
+  return {paths:[],stopReasons:["Invalid image or seed coordinates"],sampleCount:0};
+ const luminance=(x:number,y:number)=>{
+  const k=(y*w+x)*4;
+  return data[k]*.299+data[k+1]*.587+data[k+2]*.114;
+ };
  const sx=Math.round(seed.x*w),sy=Math.round(seed.y*h);
- if(!dark(sx,sy))return {paths:[],stopReasons:["Selected seed is not on dark raster ink. Choose the pipe centerline."],sampleCount:0};
+ // Local background estimate compensates for yellowed/unevenly lit scans.
+ const background:number[]=[];
+ for(let dy=-14;dy<=14;dy+=4)for(let dx=-14;dx<=14;dx+=4){
+  const x=sx+dx,y=sy+dy;
+  if(x>=2&&y>=2&&x<w-2&&y<h-2)background.push(luminance(x,y));
+ }
+ background.sort((a,b)=>a-b);
+ const paper=background.length?background[Math.floor(background.length*.8)]:220;
+ const threshold=Math.min(190,Math.max(115,paper-48));
+ const dark=(x:number,y:number)=>{
+  x=Math.round(x);y=Math.round(y);
+  return x>=2&&y>=2&&x<w-2&&y<h-2&&luminance(x,y)<threshold;
+ };
+ // Snap only within four source pixels. Require a short, predominantly
+ // horizontal or vertical stroke; isolated dark lettering is not sufficient.
+ const candidates:{x:number;y:number;distance:number;axis:number}[]=[];
+ for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){
+  const x=sx+dx,y=sy+dy;
+  if(!dark(x,y))continue;
+  const horizontal=Array.from({length:11},(_,i)=>dark(x+i-5,y)).filter(Boolean).length;
+  const vertical=Array.from({length:11},(_,i)=>dark(x,y+i-5)).filter(Boolean).length;
+  const axis=Math.max(horizontal,vertical);
+  if(axis>=8)candidates.push({x,y,distance:dx*dx+dy*dy,axis});
+ }
+ candidates.sort((a,b)=>a.distance-b.distance||b.axis-a.axis);
+ if(!candidates.length)return {paths:[],stopReasons:["No coherent dark stroke within 4 source pixels of seed; check image alignment or select a clear straight pipe."],sampleCount:0};
+ const start=candidates[0];
  const directions:[[number,number],[number,number],[number,number],[number,number]]=[[1,0],[-1,0],[0,1],[0,-1]];
  const paths:PipePoint[][]=[],stopReasons:string[]=[];
  for(const [dx,dy] of directions){
-  let x=sx,y=sy,steps=0;const points:PipePoint[]=[seed];
+  // Direction must already be supported by the local raster evidence.
+  if(!dark(start.x+dx*3,start.y+dy*3))continue;
+  let x=start.x,y=start.y,steps=0;
+  const points:PipePoint[]=[{x:x/w,y:y/h}];
   let reason="Reached maximum safe preview distance";
-  // Follow only a straight, narrow stroke. No guessing at elbows, crossings or text.
   for(;steps<Math.min(420,Math.max(w,h));steps++){
    const nx=x+dx*2,ny=y+dy*2;
-   const candidates=[] as {x:number;y:number;offset:number}[];
+   const options:{x:number;y:number;offset:number}[]=[];
    for(let offset=-2;offset<=2;offset++){
     const cx=nx+(dy!==0?offset:0),cy=ny+(dx!==0?offset:0);
-    if(dark(cx,cy))candidates.push({x:cx,y:cy,offset});
+    if(dark(cx,cy))options.push({x:cx,y:cy,offset});
    }
-   if(!candidates.length){reason="Raster stroke ended or interrupted";break;}
-   const chosen=candidates.sort((a,b)=>Math.abs(a.offset)-Math.abs(b.offset))[0];
-   const sideA=dark(chosen.x+dy*5,chosen.y+dx*5);
-   const sideB=dark(chosen.x-dy*5,chosen.y-dx*5);
-   if(sideA||sideB){reason="Nearby parallel ink / symbol / possible junction: manual review required";break;}
+   if(!options.length){reason="Raster stroke ended or interrupted";break;}
+   const chosen=options.sort((a,b)=>Math.abs(a.offset)-Math.abs(b.offset))[0];
+   if(dark(chosen.x+dy*5,chosen.y+dx*5)||dark(chosen.x-dy*5,chosen.y-dx*5)){
+    reason="Nearby parallel ink / symbol / possible junction: manual review required";break;
+   }
    x=chosen.x;y=chosen.y;
    if(steps%4===0)points.push({x:x/w,y:y/h});
   }
   if(points.length>=4){paths.push(points);stopReasons.push(reason);}
  }
+ if(!paths.length)stopReasons.push("Seed snapped to coherent raster ink, but no safe straight continuation was found");
+ else stopReasons.unshift(start.distance>0?"Seed snapped to nearby coherent stroke (preview only)":"Seed confirmed on coherent stroke (preview only)");
  return {paths,stopReasons,sampleCount:paths.reduce((sum,p)=>sum+p.length,0)};
 }
