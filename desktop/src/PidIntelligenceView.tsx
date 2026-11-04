@@ -64,6 +64,7 @@ export function PidIntelligenceView() {
   useEffect(()=>{if(traceLine!==null)setManualGeometryReviews(previous=>({...previous,[traceLine]:{}}));},[routePoints,traceLine]);
 
 
+  const [inspectedBranch, setInspectedBranch] = useState<{id:string;index:number;x:number;y:number;line:number}|null>(null);
   const [branchDecisions, setBranchDecisions] = useState<Record<number, Record<string,"branch"|"crossing"|"reject">>>({});
   const [connectivityRecords, setConnectivityRecords] = useState<Record<number, {fromEquipment:string;toEquipment:string;valves:string;instruments:string;junctions:string;crossings:"unreviewed"|"reviewed";endpointReview:"unreviewed"|"reviewed";status:"draft"|"engineer_reviewed"}>>({});
   const connectivityFor = (index:number) => connectivityRecords[index] ?? {fromEquipment:"",toEquipment:"",valves:"",instruments:"",junctions:"",crossings:"unreviewed" as const,endpointReview:"unreviewed" as const,status:"draft" as const};
@@ -445,6 +446,13 @@ export function PidIntelligenceView() {
             </div>
             <div className="pid-image-canvas" style={{width:`${drawingZoom*100}%`}}>
             <img alt={`Rendered P&ID page ${ocr.page} for visual OCR verification`} src={`data:image/png;base64,${ocr.preview_png_base64}`}/>
+            {inspectedBranch && inspectedBranch.line===selectedLineLabel && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label={`Selected branch candidate ${inspectedBranch.index}`} style={{pointerEvents:"none",overflow:"visible"}}>
+              <circle cx={inspectedBranch.x*1000} cy={inspectedBranch.y*1000} r="22" fill="#facc15" fillOpacity="0.28" stroke="#facc15" strokeWidth="5" vectorEffect="non-scaling-stroke"/>
+              <circle cx={inspectedBranch.x*1000} cy={inspectedBranch.y*1000} r="5" fill="#ef4444" stroke="#ffffff" strokeWidth="2" vectorEffect="non-scaling-stroke"/>
+              <line x1={inspectedBranch.x*1000-35} y1={inspectedBranch.y*1000} x2={inspectedBranch.x*1000+35} y2={inspectedBranch.y*1000} stroke="#facc15" strokeWidth="2.5" vectorEffect="non-scaling-stroke"/>
+              <line x1={inspectedBranch.x*1000} y1={inspectedBranch.y*1000-35} x2={inspectedBranch.x*1000} y2={inspectedBranch.y*1000+35} stroke="#facc15" strokeWidth="2.5" vectorEffect="non-scaling-stroke"/>
+              <text x={Math.min(940,inspectedBranch.x*1000+26)} y={Math.max(40,inspectedBranch.y*1000-28)} fontSize="24" fontWeight="bold" fill="#facc15" stroke="#102638" strokeWidth="4" paintOrder="stroke">#{inspectedBranch.index}</text>
+            </svg>}
             {showGeometry && ocr.geometry && <svg className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Unverified visual line segments">
               {ocr.geometry.segments.filter(segment => includeTitleBlock || segment.region_hint !== "title_block_candidate").map((segment, index) => <line key={index}
                 x1={segment.x1 * 1000} y1={segment.y1 * 1000}
@@ -583,7 +591,7 @@ export function PidIntelligenceView() {
               return <><p>{candidates.length} candidates · {candidates.filter(p=>decisions[p.id]).length} reviewed. Inspect each on the drawing before classifying.</p>
                 {candidates.length===0&&<p>No geometric candidates detected. This does not prove there are no branches.</p>}
                 {candidates.map((p,index)=><div className="pid-review-actions" key={p.id}>
-                  <button type="button" onClick={()=>focusDrawing(p.x,p.y)}>Inspect #{index+1} · leg {p.routeLeg}</button>
+                  <button type="button" onClick={()=>{setInspectedBranch({id:p.id,index:index+1,x:p.x,y:p.y,line:selectedLineLabel});focusDrawing(p.x,p.y);}}>Inspect #{index+1} · leg {p.routeLeg}</button>
                   <select aria-label={`Classify candidate ${index+1}`} value={decisions[p.id]??""} onChange={event=>{
                     const value=event.target.value as "branch"|"crossing"|"reject"|"";
                     setBranchDecisions(previous=>{const next={...(previous[selectedLineLabel]??{})};if(value)next[p.id]=value;else delete next[p.id];return {...previous,[selectedLineLabel]:next};});
