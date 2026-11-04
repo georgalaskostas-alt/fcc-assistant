@@ -56,6 +56,8 @@ export function PidIntelligenceView() {
   const [routeMode, setRouteMode] = useState(false);
   const [routeWarning, setRouteWarning] = useState("");
   const [autoTracePreview, setAutoTracePreview] = useState<{line:number;paths:Array<Array<{x:number;y:number}>>;stopReasons:string[];shadowPaths:Array<Array<{x:number;y:number}>>;shadowReviews:Record<number,"approved"|"rejected">}|null>(null);
+  // Endpoint annotations are explicit engineer reviews, never inferred topology.
+  const [endpointReviews,setEndpointReviews] = useState<Record<string,{equipment:string;status:"confirmed"|"rejected"}>>({});
   const [routePoints, setRoutePoints] = useState<Record<number,Array<{x:number;y:number}>>>({});
   const [dragRoutePoint, setDragRoutePoint] = useState<number | null>(null);
   const suppressRouteClick = useRef(false);
@@ -566,6 +568,25 @@ export function PidIntelligenceView() {
                 <button type="button" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"approved"}}:previous)}>Approve visual candidate</button>
                 <button type="button" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"rejected"}}:previous)}>Reject</button>
               </div>)}
+              <div className="pid-review-note">
+                <h4>Equipment endpoint review · manual verification</h4>
+                <p>Candidate endpoints are visual observations only. Enter the equipment tag after checking the nozzle on the original P&amp;ID. No connection is inferred automatically.</p>
+                {autoTracePreview.shadowPaths.map((candidate,index)=>{
+                  if(autoTracePreview.shadowReviews[index]!=="approved"||candidate.length<2)return null;
+                  const tip=candidate[candidate.length-1];
+                  const key=`${ocr?.page??0}:${autoTracePreview.line}:${Math.round(tip.x*10000)}:${Math.round(tip.y*10000)}`;
+                  const review=endpointReviews[key];
+                  return <div key={key}>
+                    <label>Candidate {index+1} endpoint ({Math.round(tip.x*1000)}, {Math.round(tip.y*1000)})
+                      <input aria-label={`Equipment tag for candidate ${index+1}`} placeholder="Equipment tag (e.g. M-4252)" value={review?.equipment??""}
+                        onChange={event=>setEndpointReviews(prev=>({...prev,[key]:{equipment:event.target.value,status:"rejected"}}))}/>
+                    </label>
+                    <button type="button" disabled={!review?.equipment.trim()} onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key].equipment.trim(),status:"confirmed"}}))}>Confirm inspected endpoint</button>
+                    <button type="button" onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",status:"rejected"}}))}>Reject endpoint</button>
+                    <span>{review?.status==="confirmed"?"Manually confirmed (not exported as connectivity)":"Not confirmed"}</span>
+                  </div>;
+                })}
+              </div>
               <button type="button" disabled={!raster||!autoTracePreview.shadowPaths.some((path,index)=>autoTracePreview.shadowReviews[index]==="approved"&&path.length>1)}
                 onClick={()=>{
                   if(!raster||!autoTracePreview)return;
