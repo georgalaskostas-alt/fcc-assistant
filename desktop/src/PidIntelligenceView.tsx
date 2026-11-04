@@ -58,6 +58,7 @@ export function PidIntelligenceView() {
   const [autoTracePreview, setAutoTracePreview] = useState<{line:number;paths:Array<Array<{x:number;y:number}>>;stopReasons:string[];shadowPaths:Array<Array<{x:number;y:number}>>;shadowReviews:Record<number,"approved"|"rejected">}|null>(null);
   // Endpoint annotations are explicit engineer reviews, never inferred topology.
   const [endpointReviews,setEndpointReviews] = useState<Record<string,{equipment:string;nozzle:string;side:"left"|"right"|"top"|"bottom"|"";point?:{x:number;y:number};status:"confirmed"|"rejected"}>>({});
+  const [targetTraceProposals,setTargetTraceProposals] = useState<Record<string,{points:Array<{x:number;y:number}>;support:number;status:"proposed"|"approved"|"rejected"}>>({});
   const [endpointPick,setEndpointPick] = useState<{key:string;index:number}|null>(null);
   const [routePoints, setRoutePoints] = useState<Record<number,Array<{x:number;y:number}>>>({});
   const [dragRoutePoint, setDragRoutePoint] = useState<number | null>(null);
@@ -461,6 +462,9 @@ export function PidIntelligenceView() {
             </div>
             <div className="pid-image-canvas" style={{width:`${drawingZoom*100}%`}}>
             <img alt={`Rendered P&ID page ${ocr.page} for visual OCR verification`} src={`data:image/png;base64,${ocr.preview_png_base64}`}/>
+            {Object.entries(targetTraceProposals).filter(([,proposal])=>proposal.status!=="rejected").map(([key,proposal])=><svg key={`target-${key}`} className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" style={{pointerEvents:"none"}}>
+              <polyline points={proposal.points.map(p=>`${p.x*1000},${p.y*1000}`).join(" ")} stroke={proposal.status==="approved"?"#16a34a":"#a855f7"} strokeWidth="4" strokeDasharray="8 5" fill="none"/>
+            </svg>)}
             {Object.entries(endpointReviews).filter(([,review])=>review.point).map(([key,review])=><svg key={key} className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" style={{pointerEvents:"none"}}>
               <circle cx={review.point!.x*1000} cy={review.point!.y*1000} r="7" fill={review.status==="confirmed"?"#16a34a":"#f59e0b"} stroke="white" strokeWidth="2"/>
             </svg>)}
@@ -616,6 +620,42 @@ export function PidIntelligenceView() {
                     {gapPx!==null&&<div role="status">
                       <strong>Endpoint geometry audit (preview only):</strong> closest distance to Candidate {index+1}: {gapPx.toFixed(1)} px; distance to candidate tip: {tipGapPx===null?"unknown":tipGapPx.toFixed(1)+" px"}.
                       {gapPx<=8?" Visual proximity detected; this does not prove a physical connection.":" Gap detected: candidate does not reach the inspected junction. Extend or correct the trace before verifying connectivity."}
+                    </div>}
+                    {review?.point&&gapPx!==null&&gapPx>8&&<button type="button" disabled={!raster} onClick={()=>{
+                      if(!raster||!review.point)return;
+                      // Conservative first pass: straight horizontal/vertical segment with ink evidence.
+                      // A diagonal or unsupported gap is never silently bridged.
+                      const start=tip,end=review.point;
+                      const dx=(end.x-start.x)*raster.width,dy=(end.y-start.y)*raster.height;
+                      const length=Math.hypot(dx,dy);
+                      const aligned=Math.min(Math.abs(dx),Math.abs(dy))<=Math.max(5,length*0.04);
+                      const steps=Math.max(2,Math.ceil(length/3));
+                      let supported=0;
+                      for(let i=0;i<=steps;i++){
+                        const x=Math.round((start.x+(end.x-start.x)*i/steps)*raster.width);
+                        const y=Math.round((start.y+(end.y-start.y)*i/steps)*raster.height);
+                        let ink=false;
+                        for(let oy=-2;oy<=2&&!ink;oy++)for(let ox=-2;ox<=2;ox++){
+                          const xx=x+ox,yy=y+oy;
+                          if(xx<0||yy<0||xx>=raster.width||yy>=raster.height)continue;
+                          const at=(yy*raster.width+xx)*4;
+                          const d=raster.data;
+                          if((d[at]+d[at+1]+d[at+2])/3<155&&d[at+3]>150){ink=true;break;}
+                        }
+                        if(ink)supported++;
+                      }
+                      const support=supported/(steps+1);
+                      if(aligned&&length>=8&&support>=0.7){
+                        setTargetTraceProposals(prev=>({...prev,[key]:{points:[start,end],support,status:"proposed"}}));
+                      }else{
+                        setTargetTraceProposals(prev=>{const next={...prev};delete next[key];return next;});
+                        setRouteWarning(`Target trace not proposed: ${!aligned?"not axis-aligned":`insufficient raster ink (${Math.round(support*100)}%)`}. Review the drawing manually.`);
+                      }
+                    }}>Propose ink-supported extension to selected point</button>}
+                    {targetTraceProposals[key]&&<div>
+                      <span>Target extension: {Math.round(targetTraceProposals[key].support*100)}% raster ink support — {targetTraceProposals[key].status}; visual hypothesis only.</span>
+                      <button type="button" onClick={()=>setTargetTraceProposals(prev=>({...prev,[key]:{...prev[key],status:"approved"}}))}>Approve visual extension</button>
+                      <button type="button" onClick={()=>setTargetTraceProposals(prev=>({...prev,[key]:{...prev[key],status:"rejected"}}))}>Reject extension</button>
                     </div>}
                     <button type="button" disabled={!review?.equipment.trim()||!review?.point} onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key].equipment.trim(),nozzle:prev[key].nozzle.trim(),side:"",point:prev[key].point,status:"confirmed"}}))}>Confirm inspected endpoint</button>
                     <button type="button" onClick={()=>setEndpointReviews(prev=>({...prev,[key]:{equipment:prev[key]?.equipment??"",nozzle:prev[key]?.nozzle??"",side:"",point:prev[key]?.point,status:"rejected"}}))}>Reject endpoint</button>
