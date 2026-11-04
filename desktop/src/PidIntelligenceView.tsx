@@ -588,10 +588,14 @@ export function PidIntelligenceView() {
             <p className="pid-muted">Candidates combine detected-segment intersections and local raster perpendicular-stroke evidence along the guided route. They can be text, arrows, instrument lines or actual piping. No candidate is accepted automatically.</p>
             {(() => {const candidates=[...proposeBranchCrossings(routePoints[selectedLineLabel]??[],ocr.geometry!.segments),...(raster?proposeRasterBranches(routePoints[selectedLineLabel]??[],raster):[])].filter((p,i,all)=>all.findIndex(q=>Math.hypot(q.x-p.x,q.y-p.y)<0.009)===i);
               const decisions=branchDecisions[selectedLineLabel]??{};
-              return <><p>{candidates.length} candidates · {candidates.filter(p=>decisions[p.id]).length} reviewed. Inspect each on the drawing before classifying.</p>
+              const reviewed=candidates.filter(p=>decisions[p.id]).length;
+              const nextUnreviewed=candidates.findIndex(p=>!decisions[p.id]);
+              return <><p>{candidates.length} candidates · {reviewed} reviewed · {candidates.length-reviewed} pending. Classify only after checking the highlighted location against the P&ID.</p>
+                {nextUnreviewed>=0&&<button type="button" onClick={()=>{const p=candidates[nextUnreviewed];setInspectedBranch({id:p.id,index:nextUnreviewed+1,x:p.x,y:p.y,line:selectedLineLabel});focusDrawing(p.x,p.y);}}>Inspect next unreviewed · #{nextUnreviewed+1}</button>}
+                {candidates.length>0&&nextUnreviewed<0&&<strong>All detected candidates classified. This does not establish that every physical branch was detected.</strong>}
                 {candidates.length===0&&<p>No geometric candidates detected. This does not prove there are no branches.</p>}
-                {candidates.map((p,index)=><div className="pid-review-actions" key={p.id}>
-                  <button type="button" onClick={()=>{setInspectedBranch({id:p.id,index:index+1,x:p.x,y:p.y,line:selectedLineLabel});focusDrawing(p.x,p.y);}}>Inspect #{index+1} · leg {p.routeLeg}</button>
+                {candidates.map((p,index)=><div className="pid-review-actions" key={p.id} style={inspectedBranch?.line===selectedLineLabel&&inspectedBranch.id===p.id?{outline:"2px solid #facc15",outlineOffset:"3px",borderRadius:"6px"}:undefined}>
+                  <button type="button" aria-pressed={inspectedBranch?.line===selectedLineLabel&&inspectedBranch.id===p.id} onClick={()=>{setInspectedBranch({id:p.id,index:index+1,x:p.x,y:p.y,line:selectedLineLabel});focusDrawing(p.x,p.y);}}>{inspectedBranch?.line===selectedLineLabel&&inspectedBranch.id===p.id?"● Selected":"Inspect"} #{index+1} · leg {p.routeLeg}</button>
                   <select aria-label={`Classify candidate ${index+1}`} value={decisions[p.id]??""} onChange={event=>{
                     const value=event.target.value as "branch"|"crossing"|"reject"|"";
                     setBranchDecisions(previous=>{const next={...(previous[selectedLineLabel]??{})};if(value)next[p.id]=value;else delete next[p.id];return {...previous,[selectedLineLabel]:next};});
