@@ -41,28 +41,45 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
  const start=candidates[0];
  const directions:[[number,number],[number,number],[number,number],[number,number]]=[[1,0],[-1,0],[0,1],[0,-1]];
  const paths:PipePoint[][]=[],stopReasons:string[]=[];
+ const sustained=(x:number,y:number,dx:number,dy:number)=>{
+  let hits=0;
+  for(let k=1;k<=9;k++)if(dark(x+dx*k,y+dy*k)||dark(x+dx*k+dy,y+dy*k+dx)||dark(x+dx*k-dy,y+dy*k-dx))hits++;
+  return hits>=8;
+ };
+ const elbow=(x:number,y:number,dx:number,dy:number)=>{
+  if(sustained(x,y,dx,dy))return null;
+  const turns:[[number,number],[number,number]]=[[dy,dx],[-dy,-dx]];
+  const found=turns.filter(([tx,ty])=>sustained(x,y,tx,ty));
+  return found.length===1?found[0]:null;
+ };
  for(const [dx,dy] of directions){
   // Direction must already be supported by the local raster evidence.
   if(!dark(start.x+dx*3,start.y+dy*3))continue;
-  let x=start.x,y=start.y,steps=0;
+  let x=start.x,y=start.y,steps=0,headingX=dx,headingY=dy,turns=0;
   const points:PipePoint[]=[{x:x/w,y:y/h}];
   let reason="Reached maximum safe preview distance";
   for(;steps<Math.min(420,Math.max(w,h));steps++){
-   const nx=x+dx*2,ny=y+dy*2;
+   const nx=x+headingX*2,ny=y+headingY*2;
    const options:{x:number;y:number;offset:number}[]=[];
    for(let offset=-2;offset<=2;offset++){
-    const cx=nx+(dy!==0?offset:0),cy=ny+(dx!==0?offset:0);
+    const cx=nx+(headingY!==0?offset:0),cy=ny+(headingX!==0?offset:0);
     if(dark(cx,cy))options.push({x:cx,y:cy,offset});
    }
-   if(!options.length){reason="Raster stroke ended or interrupted";break;}
+   if(!options.length){
+    const turn=turns===0?elbow(x,y,headingX,headingY):null;
+    if(turn){headingX=turn[0];headingY=turn[1];turns++;points.push({x:x/w,y:y/h});continue;}
+    reason="Raster stroke ended or interrupted; no uniquely supported 90-degree turn";break;
+   }
    const chosen=options.sort((a,b)=>Math.abs(a.offset)-Math.abs(b.offset))[0];
-   if(dark(chosen.x+dy*5,chosen.y+dx*5)||dark(chosen.x-dy*5,chosen.y-dx*5)){
+   if(dark(chosen.x+headingY*5,chosen.y+headingX*5)||dark(chosen.x-headingY*5,chosen.y-headingX*5)){
+    const turn=turns===0?elbow(x,y,headingX,headingY):null;
+    if(turn){headingX=turn[0];headingY=turn[1];turns++;points.push({x:x/w,y:y/h});continue;}
     reason="Nearby parallel ink / symbol / possible junction: manual review required";break;
    }
    x=chosen.x;y=chosen.y;
    if(steps%4===0)points.push({x:x/w,y:y/h});
   }
-  if(points.length>=4){paths.push(points);stopReasons.push(reason);}
+  if(points.length>=4){paths.push(points);stopReasons.push((turns?'One provisional 90-degree turn detected; ':'')+reason);}
  }
  if(!paths.length)stopReasons.push("Seed snapped to coherent raster ink, but no safe straight continuation was found");
  else stopReasons.unshift(start.distance>0?"Seed snapped to nearby coherent stroke (preview only)":"Seed confirmed on coherent stroke (preview only)");
