@@ -63,6 +63,23 @@ export function PidIntelligenceView() {
   useEffect(()=>{if(traceLine!==null)setManualGeometryReviews(previous=>({...previous,[traceLine]:{}}));},[routePoints,traceLine]);
 
 
+  const [connectivityRecords, setConnectivityRecords] = useState<Record<number, {fromEquipment:string;toEquipment:string;valves:string;instruments:string;junctions:string;crossings:"unreviewed"|"reviewed";endpointReview:"unreviewed"|"reviewed";status:"draft"|"engineer_reviewed"}>>({});
+  const connectivityFor = (index:number) => connectivityRecords[index] ?? {fromEquipment:"",toEquipment:"",valves:"",instruments:"",junctions:"",crossings:"unreviewed" as const,endpointReview:"unreviewed" as const,status:"draft" as const};
+  const updateConnectivity = (index:number, patch:Partial<ReturnType<typeof connectivityFor>>) => setConnectivityRecords(previous=>({...previous,[index]:{...connectivityFor(index),...patch,status:"draft"}}));
+  function exportConnectivityReview() {
+    if(!ocr)return;
+    const records=(ocr.line_labels??[]).flatMap((label,index)=>{
+      const record=connectivityRecords[index];
+      if(!record)return [];
+      return [{line_number:lineCorrections[index]??label.tag,source_ocr_text:label.tag,route_waypoints:routePoints[index]??[],
+        manual_leg_reviews:manualGeometryReviews[index]??{},...record}];
+    });
+    const payload={schema_version:1,kind:"engineer_assisted_pid_connectivity",drawing:file?.name??null,page:ocr.page,records,
+      warning:"Manual engineering assertions only. Not independently verified against as-built drawings or plant equipment."};
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`pid-connectivity-page-${ocr.page}.json`;a.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
   const [corrections, setCorrections] = useState<Record<number, string>>({});
   const [draftTag, setDraftTag] = useState("");
@@ -529,6 +546,33 @@ export function PidIntelligenceView() {
             <button type="button" disabled={!routeMode} onClick={()=>setRouteMode(false)}>Finish route</button>
             <button type="button" disabled={!(routePoints[selectedLineLabel]?.length)} onClick={()=>setRoutePoints(previous=>({...previous,[selectedLineLabel]:(previous[selectedLineLabel]??[]).slice(0,-1)}))}>Undo route point</button>
           </div>
+          <div className="pid-review-note">
+            <div className="pid-table-head"><h3>Pipe connectivity · engineer review</h3><button type="button" onClick={exportConnectivityReview}>Export connectivity JSON</button></div>
+            <p className="pid-muted">Record actual equipment endpoints and components from the P&amp;ID. Crossing lines are not connected unless explicitly checked. This is not automatic topology recognition.</p>
+            <div className="pid-review-actions">
+              <label>From equipment / nozzle <input aria-label="From equipment" placeholder="e.g. V-500 / nozzle" value={connectivityFor(selectedLineLabel).fromEquipment} onChange={event=>updateConnectivity(selectedLineLabel,{fromEquipment:event.target.value})}/></label>
+              <label>To equipment / nozzle <input aria-label="To equipment" placeholder="e.g. M-4252 / nozzle" value={connectivityFor(selectedLineLabel).toEquipment} onChange={event=>updateConnectivity(selectedLineLabel,{toEquipment:event.target.value})}/></label>
+            </div>
+            <div className="pid-review-actions">
+              <label>Valves (comma-separated) <input aria-label="Connected valves" value={connectivityFor(selectedLineLabel).valves} onChange={event=>updateConnectivity(selectedLineLabel,{valves:event.target.value})}/></label>
+              <label>Instruments (comma-separated) <input aria-label="Connected instruments" value={connectivityFor(selectedLineLabel).instruments} onChange={event=>updateConnectivity(selectedLineLabel,{instruments:event.target.value})}/></label>
+              <label>Branches / junctions <input aria-label="Branches and junctions" value={connectivityFor(selectedLineLabel).junctions} onChange={event=>updateConnectivity(selectedLineLabel,{junctions:event.target.value})}/></label>
+            </div>
+            <div className="pid-review-actions">
+              <label>Endpoint inspection <select aria-label="Endpoint inspection" value={connectivityFor(selectedLineLabel).endpointReview} onChange={event=>updateConnectivity(selectedLineLabel,{endpointReview:event.target.value as "unreviewed"|"reviewed"})}><option value="unreviewed">Not reviewed</option><option value="reviewed">Both endpoints inspected</option></select></label>
+              <label>Crossings inspection <select aria-label="Crossing inspection" value={connectivityFor(selectedLineLabel).crossings} onChange={event=>updateConnectivity(selectedLineLabel,{crossings:event.target.value as "unreviewed"|"reviewed"})}><option value="unreviewed">Not reviewed</option><option value="reviewed">Crossings / junctions inspected</option></select></label>
+            </div>
+            {(() => {const record=connectivityFor(selectedLineLabel);const points=routePoints[selectedLineLabel]??[];const legs=Math.max(0,points.length-1);
+              const reviews=manualGeometryReviews[selectedLineLabel]??{};
+              const complete=legs>0&&Array.from({length:legs},(_,i)=>reviews[i]==="verified").every(Boolean);
+              const ready=!!record.fromEquipment.trim()&&!!record.toEquipment.trim()&&record.endpointReview==="reviewed"&&record.crossings==="reviewed"&&complete;
+              return <div><p>Route legs manually reviewed: {Array.from({length:legs},(_,i)=>reviews[i]==="verified").filter(Boolean).length}/{legs}. Endpoint and crossing review required before marking the record engineer-reviewed.</p>
+                <button type="button" disabled={!ready} onClick={()=>setConnectivityRecords(previous=>({...previous,[selectedLineLabel]:{...connectivityFor(selectedLineLabel),status:"engineer_reviewed"}}))}>Mark connectivity record engineer-reviewed</button>
+                <strong> Status: {record.status==="engineer_reviewed"?"Engineer-reviewed assertion":"Draft / not verified"}</strong>
+              </div>;
+            })()}
+          </div>
+
           {routeWarning && <small role="alert">{routeWarning}</small>}
           {routeMode && <small>Start by clicking the first route point. Long horizontal/vertical runs accept two clicks, including minor scan skew. Click every actual corner; diagonal connections remain blocked. Green route is a manual visual annotation, not verified connectivity.</small>}
           {traceLine===selectedLineLabel && guidedAudit && <div className="pid-review-note">
