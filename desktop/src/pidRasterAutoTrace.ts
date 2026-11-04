@@ -74,6 +74,7 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
   let x=start.x,y=start.y,steps=0,headingX=dx,headingY=dy,turns=0;
   const points:PipePoint[]=[{x:x/w,y:y/h}];
   let reason="Reached maximum safe preview distance";
+  const diagnostics=(label:string)=>{const left=sustained(x,y,headingY,headingX),right=sustained(x,y,-headingY,-headingX),forward=sustained(x,y,headingX,headingY);return `${label} at (${x},${y}) heading (${headingX},${headingY}); raster forward=${forward}, perpendicularA=${left}, perpendicularB=${right}, turns=${turns}, threshold=${threshold.toFixed(0)}`;};
   for(;steps<Math.min(420,Math.max(w,h));steps++){
    const nx=x+headingX*2,ny=y+headingY*2;
    const options:{x:number;y:number;offset:number}[]=[];
@@ -91,13 +92,13 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
       points.push({x:x/w,y:y/h});continue;
      }
     }
-    reason="Raster stroke ended or interrupted; no uniquely supported 90-degree turn";break;
+    reason=diagnostics("Raster interruption / elbow rejected");break;
    }
    const chosen=options.sort((a,b)=>Math.abs(a.offset)-Math.abs(b.offset))[0];
    if(dark(chosen.x+headingY*5,chosen.y+headingX*5)||dark(chosen.x-headingY*5,chosen.y-headingX*5)){
     const turn=turns===0?elbow(x,y,headingX,headingY):null;
     if(turn){x=turn.x+turn.dx*2;y=turn.y+turn.dy*2;headingX=turn.dx;headingY=turn.dy;turns++;points.push({x:x/w,y:y/h});continue;}
-    reason="Nearby parallel ink / symbol / possible junction: manual review required";break;
+    reason=diagnostics("Side ink / possible junction: manual review required");break;
    }
    x=chosen.x;y=chosen.y;
    if(steps%4===0)points.push({x:x/w,y:y/h});
