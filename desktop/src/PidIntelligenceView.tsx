@@ -1,4 +1,4 @@
-import { proposeBranchCrossings } from "./pidBranchProposals";
+import { proposeBranchCrossings, proposeRasterBranches } from "./pidBranchProposals";
 import { auditGuidedRoute, auditRouteRaster, auditRasterLegAlignment } from "./pidRouteAudit";
 import { proposeCenterlineLegs } from "./pidCenterline";
 import { useEffect, useRef, useState } from "react";
@@ -577,8 +577,8 @@ export function PidIntelligenceView() {
 
           {ocr?.geometry && (routePoints[selectedLineLabel]?.length??0)>1 && <div className="pid-review-note">
             <h4>Suggested branch / crossing locations · review required</h4>
-            <p className="pid-muted">Candidates are geometric intersections of detected raster strokes with the guided route. They can be text, arrows, instrument lines or actual piping. No candidate is accepted automatically.</p>
-            {(() => {const candidates=proposeBranchCrossings(routePoints[selectedLineLabel]??[],ocr.geometry!.segments);
+            <p className="pid-muted">Candidates combine detected-segment intersections and local raster perpendicular-stroke evidence along the guided route. They can be text, arrows, instrument lines or actual piping. No candidate is accepted automatically.</p>
+            {(() => {const candidates=[...proposeBranchCrossings(routePoints[selectedLineLabel]??[],ocr.geometry!.segments),...(raster?proposeRasterBranches(routePoints[selectedLineLabel]??[],raster):[])].filter((p,i,all)=>all.findIndex(q=>Math.hypot(q.x-p.x,q.y-p.y)<0.009)===i);
               const decisions=branchDecisions[selectedLineLabel]??{};
               return <><p>{candidates.length} candidates · {candidates.filter(p=>decisions[p.id]).length} reviewed. Inspect each on the drawing before classifying.</p>
                 {candidates.length===0&&<p>No geometric candidates detected. This does not prove there are no branches.</p>}
