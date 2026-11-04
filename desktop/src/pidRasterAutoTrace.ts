@@ -77,6 +77,24 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
    ?"intermittent-ink-candidate":occupancy>=0.8?"mostly-solid-ink":"short-or-uncertain-ink";
   return {pattern,inkRuns,gapRuns,occupancy:occupancy.toFixed(2)};
  };
+ // Shadow probe: read-only lookahead beyond an ambiguous junction.
+ // It never contributes points to the accepted preview path.
+ const shadowLookahead=(x:number,y:number,dx:number,dy:number)=>{
+  let cx=x,cy=y,advanced=0,misses=0;
+  for(let step=0;step<48;step++){
+   const nx=cx+dx*2,ny=cy+dy*2;
+   const options:{x:number;y:number;offset:number}[]=[];
+   for(let offset=-2;offset<=2;offset++){
+    const px=nx+(dy!==0?offset:0),py=ny+(dx!==0?offset:0);
+    if(dark(px,py))options.push({x:px,y:py,offset});
+   }
+   if(!options.length){if(++misses>=2)break;continue;}
+   misses=0;
+   options.sort((a,b)=>Math.abs(a.offset)-Math.abs(b.offset));
+   cx=options[0].x;cy=options[0].y;advanced+=2;
+  }
+  return {distance:advanced,endX:cx,endY:cy};
+ };
  const elbow=(x:number,y:number,dx:number,dy:number)=>{
   // Search a small neighborhood ahead, as scanned corners rarely align exactly.
   // Do not turn while the incoming stroke still has a clear continuation.
@@ -113,8 +131,9 @@ export function traceRasterFromSeed(image:ImageData,seed:PipePoint):AutoPipePrev
  const span=branchExtent(x,y,-headingX,-headingY);
  const patternA=sidePattern(x,y,headingY,headingX);
  const patternB=sidePattern(x,y,-headingY,-headingX);
+ const shadow=forward&&(left||right)?shadowLookahead(x,y,headingX,headingY):null;
  const evidence=forward&&(left||right)?"main-line-continuity-with-perpendicular-ink":
- !forward&&(left!==right)?"single-perpendicular-continuation":"insufficient-geometry";return `${label} at (${x},${y}) heading (${headingX},${headingY}); raster forward=${forward}, perpendicularA=${left}, perpendicularB=${right}, sideExtentA=${extentA}px, sideExtentB=${extentB}px, classification=${kind}, evidence=${evidence}, reverseExtent=${span}px, sidePatternA=${patternA.pattern}(${patternA.inkRuns}ink/${patternA.gapRuns}gaps,occupancy=${patternA.occupancy}), sidePatternB=${patternB.pattern}(${patternB.inkRuns}ink/${patternB.gapRuns}gaps,occupancy=${patternB.occupancy}), turns=${turns}, threshold=${threshold.toFixed(0)}`;};
+ !forward&&(left!==right)?"single-perpendicular-continuation":"insufficient-geometry";return `${label} at (${x},${y}) heading (${headingX},${headingY}); raster forward=${forward}, perpendicularA=${left}, perpendicularB=${right}, sideExtentA=${extentA}px, sideExtentB=${extentB}px, classification=${kind}, evidence=${evidence}, reverseExtent=${span}px, shadowForward=${shadow?`${shadow.distance}px to (${shadow.endX},${shadow.endY}) (unverified)`:"not-run"}, sidePatternA=${patternA.pattern}(${patternA.inkRuns}ink/${patternA.gapRuns}gaps,occupancy=${patternA.occupancy}), sidePatternB=${patternB.pattern}(${patternB.inkRuns}ink/${patternB.gapRuns}gaps,occupancy=${patternB.occupancy}), turns=${turns}, threshold=${threshold.toFixed(0)}`;};
   for(;steps<Math.min(420,Math.max(w,h));steps++){
    const nx=x+headingX*2,ny=y+headingY*2;
    const options:{x:number;y:number;offset:number}[]=[];
