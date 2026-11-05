@@ -8,6 +8,7 @@ import "./PidIntelligenceView.css";
 import { reconstructVisualPaths } from "./pidVisualPaths";
 import { augmentPidOcrWithTiles } from "./pidTiledOcr";
 import { assessPidCandidate } from "./pidCandidateAssessment";
+import { matchPidKnowledge, pidKnowledgeReferences } from "./pidEngineeringKnowledge";
 import { suggestPathTags } from "./pidSpatialSuggestions";
 import { traceVisualPipe } from "./pidPipeTrace";
 import { traceRasterFromSeed } from "./pidRasterAutoTrace";
@@ -293,6 +294,7 @@ export function PidIntelligenceView() {
   const isPhoto = Boolean(file && /\\.(png|jpe?g)$/i.test(file.name));
   const candidateTotal = (result?.candidate_tags.length ?? 0) + (ocr?.candidates.length ?? 0);
   const candidateAssessments=(ocr?.candidates??[]).map(assessPidCandidate);
+  const knowledgeMatches=(ocr?.candidates??[]).map(item=>matchPidKnowledge(item.tag));
   const candidateCounts={plausible:candidateAssessments.filter(item=>item.tier==="plausible").length,uncertain:candidateAssessments.filter(item=>item.tier==="uncertain").length};
   const reviewedCount=Object.values(reviews).filter(value=>value==="correct"||value==="incorrect").length;
   const correctCount=Object.values(reviews).filter(value=>value==="correct").length;
@@ -646,6 +648,8 @@ export function PidIntelligenceView() {
                 <strong>{corrections[selectedCandidate] || ocr.candidates[selectedCandidate].tag}</strong>
                 <small>OCR candidate · {ocr.candidates[selectedCandidate].confidence.toFixed(0)}% confidence</small>
                 <small>Candidate triage: {candidateAssessments[selectedCandidate]?.tier} · {candidateAssessments[selectedCandidate]?.reasons.join("; ")}</small>
+                <span className="pid-inspector-label">Engineering knowledge hints</span>
+                {knowledgeMatches[selectedCandidate]?.length ? knowledgeMatches[selectedCandidate].map(match=><small key={match.id}><strong>{match.label}</strong> · {match.reason} Source: {match.reference}. Pattern match only; not verified.</small>) : <small>No engineering pattern match. Check the drawing legend and original image.</small>}
                 <span className="pid-inspector-state">{reviews[selectedCandidate] ?? "Unverified OCR"}</span>
                 <label className="pid-inspector-label" htmlFor="pid-inspector-kind">Object category</label>
                 <select id="pid-inspector-kind" value={candidateKinds[selectedCandidate] ?? ""} onChange={event=>{
@@ -1163,6 +1167,11 @@ export function PidIntelligenceView() {
         {ocr && <div className="pid-ocr-output"><h3>OCR candidates · page {ocr.page} ({ocr.candidates.length})</h3>
           <p className="pid-muted">{ocr.warning}</p>
           <p className="pid-muted">Review each candidate. Decisions remain in this session; they do not train the model or change drawings.</p>
+          <details className="pid-knowledge-reference"><summary>Engineering Knowledge Library · starter rules</summary>
+            <p>Reference-guided suggestions only. The library does not contain licensed standard diagrams or verified site conventions.</p>
+            {pidKnowledgeReferences.map(reference=><p key={reference.name}><strong>{reference.name}</strong> · {reference.scope}. {reference.note}</p>)}
+            <p>Rules currently cover common instrument prefixes, candidate line identifiers, drawing notes, M-style equipment tags and PRV labels. Visual symbols, connections and site-specific numbering remain unvalidated.</p>
+          </details>
           <div className="pid-candidate-quality">
             <strong>Candidate quality triage · heuristic, not verified</strong>
             <p>Plausible: {candidateCounts.plausible} · Uncertain: {candidateCounts.uncertain} · Reviewed: {reviewedCount} ({correctCount} correct, {rejectedCount} rejected)</p>
