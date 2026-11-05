@@ -165,3 +165,27 @@
 .pid-canvas-active-mode{margin-left:auto;padding:7px 10px;border-radius:8px;border:1px solid #8b7637;background:#3b311c;color:#fce1a0;font-size:12px;font-weight:700}
 .pid-annotated-image{border-radius:12px;overflow:auto}
 @media(max-width:750px){.pid-canvas-commandbar{gap:9px}.pid-canvas-commandgroup+.pid-canvas-commandgroup{padding-left:0;border-left:0}.pid-canvas-active-mode{margin-left:0}}
+
+
+/* Active-drawing mode: collapse onboarding chrome and keep drawing controls at hand. */
+.pid-workspace-active{gap:8px}
+.pid-workspace-active .pid-intro{padding:10px 17px;border-radius:12px;align-items:center}
+.pid-workspace-active .pid-intro h2{font-size:17px;margin:3px 0}
+.pid-workspace-active .pid-intro .eyebrow{font-size:9px}
+.pid-workspace-active .pid-readonly{padding:6px 10px}
+.pid-workspace-active .pid-upload-panel{padding:8px 12px;border-radius:10px;gap:10px}
+.pid-workspace-active .pid-upload-panel>svg{width:18px;height:18px}
+.pid-workspace-active .pid-upload-panel strong{font-size:12px}
+.pid-workspace-active .pid-file-picker{padding:7px 10px;font-size:12px}
+.pid-workspace-active .pid-selection{padding:7px 12px;border-radius:9px;font-size:12px}
+.pid-workspace-active .pid-selection button{padding:7px 10px;font-size:12px}
+.pid-workspace-active .pid-preview-panel{padding:10px;gap:8px;border-radius:12px}
+.pid-workspace-active .pid-ocr-controls{padding:6px 10px;gap:10px;font-size:12px}
+.pid-workspace-active .pid-ocr-controls input{max-width:65px}
+.pid-workspace-active .pid-ocr-controls button{padding:7px 10px;font-size:12px}
+.pid-workspace-active .pid-drawing-heading{padding:2px}
+.pid-workspace-active .pid-drawing-heading h3{font-size:16px}
+.pid-workspace-active .pid-section-kicker{font-size:9px}
+.pid-workspace-active .pid-canvas-commandbar{position:sticky;top:0;z-index:12;box-shadow:0 8px 18px #020d1980}
+.pid-workspace-active .pid-annotated{gap:7px}
+@media(min-width:1100px){.pid-workspace-active .pid-intro,.pid-workspace-active .pid-upload-panel,.pid-workspace-active .pid-selection{max-height:75px;box-sizing:border-box}}
