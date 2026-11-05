@@ -149,3 +149,19 @@
 .pid-preview-panel>.pid-table-head h3{margin:5px 0 0}
 .pid-ocr-controls{border:1px solid #31566e;border-radius:12px;background:#102a40;padding:12px 14px}
 .pid-ocr-controls button{background:#155878;border-color:#3993b7;color:#f2fbff;font-weight:700}
+
+
+/* Compact integrated canvas toolbar; fixes unreadable white overlay controls. */
+.pid-canvas-commandbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:9px 12px;background:#0a1d2e;border:1px solid #31556d;border-radius:12px;color:#d7eaf8}
+.pid-canvas-commandgroup{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pid-canvas-commandgroup+.pid-canvas-commandgroup{border-left:1px solid #31516b;padding-left:13px}
+.pid-canvas-command-label{font-size:10px;letter-spacing:.12em;font-weight:800;color:#74bcd8;margin-right:4px}
+.pid-canvas-commandbar button{background:#183b54;color:#f1f9ff;border:1px solid #365d78;border-radius:8px;padding:7px 12px;min-height:34px;font-size:13px;font-weight:700;cursor:pointer}
+.pid-canvas-commandbar button:hover:not(:disabled){background:#225575;border-color:#6ca8cb}
+.pid-canvas-commandbar button:disabled{opacity:.4;cursor:not-allowed}
+.pid-canvas-commandbar strong{font-variant-numeric:tabular-nums;min-width:45px;text-align:center;font-size:13px}
+.pid-layer-toggle{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#d1e5f3;cursor:pointer;padding:6px 8px;border:1px solid #30516a;border-radius:8px;background:#102b40}
+.pid-layer-toggle input{accent-color:#38bdf8;width:15px;height:15px;margin:0}
+.pid-canvas-active-mode{margin-left:auto;padding:7px 10px;border-radius:8px;border:1px solid #8b7637;background:#3b311c;color:#fce1a0;font-size:12px;font-weight:700}
+.pid-annotated-image{border-radius:12px;overflow:auto}
+@media(max-width:750px){.pid-canvas-commandbar{gap:9px}.pid-canvas-commandgroup+.pid-canvas-commandgroup{padding-left:0;border-left:0}.pid-canvas-active-mode{margin-left:0}}
