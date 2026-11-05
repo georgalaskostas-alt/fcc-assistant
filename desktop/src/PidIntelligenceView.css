@@ -189,3 +189,22 @@
 .pid-workspace-active .pid-canvas-commandbar{position:sticky;top:0;z-index:12;box-shadow:0 8px 18px #020d1980}
 .pid-workspace-active .pid-annotated{gap:7px}
 @media(min-width:1100px){.pid-workspace-active .pid-intro,.pid-workspace-active .pid-upload-panel,.pid-workspace-active .pid-selection{max-height:75px;box-sizing:border-box}}
+
+
+/* Progressive disclosure: expert tools remain available without crowding the canvas. */
+.pid-engineering-drawer{margin-top:12px;border:1px solid #34556f;border-radius:14px;background:linear-gradient(140deg,#102a40,#0a1e30);overflow:hidden}
+.pid-engineering-drawer>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:17px 19px;cursor:pointer;color:#f1f8ff}
+.pid-engineering-drawer>summary::-webkit-details-marker{display:none}
+.pid-engineering-drawer>summary>span:first-child{display:flex;flex-direction:column;gap:6px}
+.pid-engineering-drawer>summary strong{font-size:15px}
+.pid-engineering-drawer>summary small{color:#a6c0d5;font-size:12px;line-height:1.5}
+.pid-drawer-chevron{flex-shrink:0;color:#83d2ed;font-size:12px;font-weight:700;border:1px solid #376783;background:#153a52;border-radius:8px;padding:8px 12px}
+.pid-engineering-drawer[open]>.pid-engineering-drawer-content{border-top:1px solid #34556f}
+.pid-engineering-drawer-content{padding:14px;display:grid;gap:12px;min-width:0}
+.pid-engineering-drawer-content .pid-graph-panel{margin:0}
+.pid-ocr-drawer{background:#0c2235}
+.pid-workspace button,.pid-workspace select,.pid-workspace input:not([type="checkbox"]):not([type="radio"]){font-family:inherit}
+.pid-engineering-drawer-content button:not(.pid-file-picker),.pid-engineering-drawer-content select,.pid-engineering-drawer-content input:not([type="checkbox"]):not([type="radio"]){background:#15364f;color:#e8f5ff;border:1px solid #3c6784;border-radius:8px;padding:7px 10px;max-width:100%}
+.pid-engineering-drawer-content input::placeholder{color:#93aec3}
+.pid-engineering-drawer-content input[type="checkbox"]{accent-color:#38bdf8}
+@media(max-width:700px){.pid-engineering-drawer>summary{padding:13px;flex-wrap:wrap}.pid-engineering-drawer-content{padding:9px}}
