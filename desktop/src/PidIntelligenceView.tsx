@@ -103,6 +103,27 @@ export function PidIntelligenceView() {
       setReviewStorageMessage("Local review storage unavailable. Export the graph JSON as a backup.");
     }
   }, [reviewStorageKey, reviews, corrections, candidateKinds]);
+  type ManualEdge = {id:string;source:string;target:string;kind:"process"|"signal"|"mechanical";review_method:"manual_engineer_review";verified:true};
+  const [manualEdges,setManualEdges] = useState<ManualEdge[]>([]);
+  const [edgeSource,setEdgeSource] = useState("");
+  const [edgeTarget,setEdgeTarget] = useState("");
+  const [edgeKind,setEdgeKind] = useState<ManualEdge["kind"]>("process");
+  const [edgeMessage,setEdgeMessage] = useState("");
+  const edgeStorageKey = reviewStorageKey ? reviewStorageKey.replace("fcc-pid-reviews-v1:","fcc-pid-edges-v1:") : null;
+  useEffect(()=>{
+    if(!edgeStorageKey)return;
+    try{
+      const raw=localStorage.getItem(edgeStorageKey);
+      const data:unknown=raw?JSON.parse(raw):[];
+      const validIds=new Set((ocr?.candidates??[]).map((_,index)=>`p${ocr!.page}-ocr-${index}`));
+      setManualEdges(Array.isArray(data)?data.filter((edge):edge is ManualEdge=>Boolean(edge&&typeof edge==="object"&&typeof edge.id==="string"&&validIds.has(edge.source)&&validIds.has(edge.target)&&edge.source!==edge.target&&(edge.kind==="process"||edge.kind==="signal"||edge.kind==="mechanical")&&edge.verified===true&&edge.review_method==="manual_engineer_review")):[]);
+    }catch{setManualEdges([]);setEdgeMessage("Saved connections could not be restored.");}
+  },[edgeStorageKey]);
+  function saveManualEdges(next:ManualEdge[]){
+    if(!edgeStorageKey)return;
+    try{localStorage.setItem(edgeStorageKey,JSON.stringify(next));setManualEdges(next);setEdgeMessage("Verified connections saved locally.");}
+    catch{setEdgeMessage("Storage failed. Connections were not saved.");}
+  }
   const [draftTag, setDraftTag] = useState("");
   const [showGeometry, setShowGeometry] = useState(false);
   const [includeTitleBlock, setIncludeTitleBlock] = useState(false);
@@ -313,8 +334,10 @@ export function PidIntelligenceView() {
   const spatialSuggestions = suggestPathTags(visualPaths, ocr?.geometry?.segments ?? [], ocr?.line_labels ?? [])
     .filter(item => lineNumberCandidates.some(candidate => candidate.index === item.candidateIndex));
   const selectedPathKey = selectedVisualPath !== null && visualPaths[selectedVisualPath] ? visualPaths[selectedVisualPath].segmentIds.join(",") : null;
-  const graphDraft = { schema_version: 1, read_only: true, nodes: graphNodes, edges: [] as never[],
-    warning: "No process or signal connections have been established. OCR alone cannot prove topology." };
+  const verifiedNodeIds=new Set(graphNodes.filter(node=>node.verified && node.kind!=="note" && node.kind!=="other").map(node=>node.id));
+  const verifiedEdges=manualEdges.filter(edge=>verifiedNodeIds.has(edge.source)&&verifiedNodeIds.has(edge.target));
+  const graphDraft = { schema_version: 1, read_only: true, nodes: graphNodes, edges: verifiedEdges,
+    warning: "Only explicitly engineer-reviewed connections are exported. OCR and proximity do not prove topology." };
   function exportTopologyReview() {
     if (!ocr?.topology) return;
     const decisions = ocr.topology.proposals.flatMap((proposal, index) =>
@@ -1084,7 +1107,21 @@ export function PidIntelligenceView() {
           <div className="pid-table-head"><h3>Engineering Graph · draft</h3>
             <button type="button" className="secondary-button" onClick={exportGraphDraft}>Export graph JSON</button>
           </div>
-          <p>Nodes: <strong>{graphNodes.length}</strong> · Engineer-verified: <strong>{graphNodes.filter(node => node.verified).length}</strong> · Connections: <strong>0</strong></p>
+          <p>Nodes: <strong>{graphNodes.length}</strong> · Engineer-verified: <strong>{graphNodes.filter(node => node.verified).length}</strong> · Verified connections: <strong>{verifiedEdges.length}</strong></p>
+          <div className="pid-manual-connections">
+            <h4>Manual Connection Editor</h4>
+            <p className="pid-muted">Both endpoints must be individually classified and confirmed. Drawing notes and unknown OCR candidates cannot be endpoints. Verify the actual connection on the original drawing before saving.</p>
+            <label>From object<select value={edgeSource} onChange={event=>setEdgeSource(event.target.value)}><option value="">Select verified object</option>{graphNodes.filter(node=>verifiedNodeIds.has(node.id)).map(node=><option key={node.id} value={node.id}>{node.tag} · {node.kind}</option>)}</select></label>
+            <label>To object<select value={edgeTarget} onChange={event=>setEdgeTarget(event.target.value)}><option value="">Select verified object</option>{graphNodes.filter(node=>verifiedNodeIds.has(node.id)).map(node=><option key={node.id} value={node.id}>{node.tag} · {node.kind}</option>)}</select></label>
+            <label>Connection type<select value={edgeKind} onChange={event=>setEdgeKind(event.target.value as ManualEdge["kind"])}><option value="process">Process</option><option value="signal">Signal</option><option value="mechanical">Mechanical</option></select></label>
+            <button type="button" className="secondary-button" disabled={!verifiedNodeIds.has(edgeSource)||!verifiedNodeIds.has(edgeTarget)||edgeSource===edgeTarget} onClick={()=>{
+              const id=[edgeSource,edgeTarget].sort().join("::")+":"+edgeKind;
+              if(manualEdges.some(edge=>edge.id===id)){setEdgeMessage("This connection is already recorded.");return;}
+              saveManualEdges([...manualEdges,{id,source:edgeSource,target:edgeTarget,kind:edgeKind,verified:true,review_method:"manual_engineer_review"}]);
+            }}>Confirm and save connection</button>
+            {edgeMessage&&<small role="status">{edgeMessage}</small>}
+            {manualEdges.map(edge=><div className="pid-manual-edge-row" key={edge.id}><span>{edge.source} → {edge.target} · {edge.kind}{!verifiedEdges.some(item=>item.id===edge.id)?" · inactive (endpoint unverified)":""}</span><button type="button" onClick={()=>saveManualEdges(manualEdges.filter(item=>item.id!==edge.id))}>Remove</button></div>)}
+          </div>
           <p className="pid-muted">This is a draft inventory, not a process-flow model. Manually reviewed categories and original OCR labels are retained in exported nodes. Only classified, confirmed labels count as engineer-verified; piping connectivity remains unverified.</p>
         </section>}
         </div></details>}
