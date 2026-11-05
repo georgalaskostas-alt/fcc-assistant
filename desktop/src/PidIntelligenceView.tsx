@@ -839,6 +839,7 @@ export function PidIntelligenceView() {
           </div>
           <small>Local review only. No drawing changes or automatic AI training.</small>
         </div>}
+        {ocr && <details className="pid-engineering-drawer"><summary><span><strong>Advanced engineering tools</strong><small>Symbols · raster geometry · topology · line standards · graph exports</small></span><span className="pid-drawer-chevron">Expand tools</span></summary><div className="pid-engineering-drawer-content"> 
         {ocr && <section className="pid-graph-panel">
           <div className="pid-table-head"><h3>Symbol annotation · engineer-assisted</h3>
             <button type="button" className="secondary-button" onClick={exportSymbolAnnotations}>Export symbols JSON</button>
@@ -998,6 +999,8 @@ export function PidIntelligenceView() {
           <p>Nodes: <strong>{graphNodes.length}</strong> · Engineer-verified: <strong>{graphNodes.filter(node => node.verified).length}</strong> · Connections: <strong>0</strong></p>
           <p className="pid-muted">This is a draft inventory, not a process-flow model. No piping or signal connections are inferred from OCR. Incorrect candidates are excluded; corrected labels are retained with their originals.</p>
         </section>}
+        </div></details>}
+        {ocr && <details className="pid-engineering-drawer pid-ocr-drawer"><summary><span><strong>OCR candidate inventory · {ocr.candidates.length} tags</strong><small>Inspect and review extracted equipment or instrument labels</small></span><span className="pid-drawer-chevron">Show candidates</span></summary><div className="pid-engineering-drawer-content">
         {ocr && <div className="pid-ocr-output"><h3>OCR candidates · page {ocr.page} ({ocr.candidates.length})</h3>
           <p className="pid-muted">{ocr.warning}</p>
           <p className="pid-muted">Review each candidate. Decisions remain in this session; they do not train the model or change drawings.</p>
@@ -1007,6 +1010,7 @@ export function PidIntelligenceView() {
               <small>Position {Math.round(item.box.x * 100)}% × {Math.round(item.box.y * 100)}%{reviews[index] ? ` · ${reviews[index]}` : ""}</small></button>
           )}</div> : <p className="pid-muted">No candidate tags detected. OCR may miss rotated or low-resolution text.</p>}
         </div>}
+        </div></details>}
       </section>}
       {result && <div className="pid-results">
         <div className="pid-summary">
