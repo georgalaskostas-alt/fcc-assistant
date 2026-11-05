@@ -401,8 +401,8 @@ export function PidIntelligenceView() {
         </div>
         {ocrError && <div role="alert" className="error-banner">{ocrError}</div>}
         {ocr?.preview_png_base64 && <div className="pid-annotated">
-          <div className="pid-table-head"><h3>OCR visual verification · page {ocr.page}</h3><span className="pid-muted">Boxes indicate unverified OCR candidates</span></div>
-          <div className="pid-zoom-toolbar">
+          <div className="pid-table-head pid-drawing-heading"><div><span className="pid-section-kicker">ENGINEERING CANVAS</span><h3>Drawing workspace <span className="pid-page-chip">Page {ocr.page}</span></h3></div><span className="pid-muted">Visual inspection · no automatic topology</span></div>
+          <div className="pid-zoom-toolbar" role="toolbar" aria-label="Drawing navigation">
             <button type="button" onClick={()=>changeDrawingZoom(drawingZoom-0.25)} disabled={drawingZoom<=0.75}>− Zoom out</button>
             <strong>{Math.round(drawingZoom*100)}%</strong>
             <button type="button" onClick={()=>changeDrawingZoom(drawingZoom+0.25)} disabled={drawingZoom>=6}>+ Zoom in</button>
@@ -581,10 +581,11 @@ export function PidIntelligenceView() {
             {autoTracePreview?.line===selectedLineLabel&&autoTracePreview.shadowPaths.length>0&&<div className="pid-trace-review">
               <h3>Review traced segments <span className="pid-review-count">{autoTracePreview.shadowPaths.filter((_,i)=>autoTracePreview.shadowReviews[i]==="approved").length}/{autoTracePreview.shadowPaths.length} reviewed</span></h3>
               <p>Blue dotted paths are raster-only hypotheses. Approve records a visual review, not equipment connectivity or flow direction.</p>
-              {autoTracePreview.shadowPaths.map((path,index)=><div className="pid-candidate-card" key={index}>
-                <span className="pid-candidate-label"><strong>Segment {index+1}</strong><small>{path.length} sampled points · {autoTracePreview.shadowReviews[index]??"pending"}</small></span>
-                <button type="button" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"approved"}}:previous)}>Approve visual candidate</button>
-                <button type="button" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"rejected"}}:previous)}>Reject</button>
+              {autoTracePreview.shadowPaths.map((path,index)=><div className={`pid-candidate-card pid-candidate-${autoTracePreview.shadowReviews[index]??"pending"}`} key={index}>
+                <span className="pid-candidate-label"><strong>Segment {index+1}</strong><small>{path.length} sampled points · {autoTracePreview.shadowReviews[index]==="approved"?"Visually approved":autoTracePreview.shadowReviews[index]==="rejected"?"Rejected":"Awaiting review"}</small></span>
+                {autoTracePreview.shadowReviews[index]!=="approved"&&<button type="button" className="pid-action-primary" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"approved"}}:previous)}>Approve segment</button>}
+                {autoTracePreview.shadowReviews[index]!=="rejected"&&<button type="button" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"rejected"}}:previous)}>{autoTracePreview.shadowReviews[index]==="approved"?"Revoke approval":"Reject"}</button>}
+                {autoTracePreview.shadowReviews[index]==="rejected"&&<button type="button" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"pending"}}:previous)}>Review again</button>}
               </div>)}
               <div className="pid-endpoint-section">
                 <h4>Equipment endpoint review · manual verification</h4>
