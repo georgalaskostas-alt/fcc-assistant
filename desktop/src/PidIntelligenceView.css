@@ -208,3 +208,22 @@
 .pid-engineering-drawer-content input::placeholder{color:#93aec3}
 .pid-engineering-drawer-content input[type="checkbox"]{accent-color:#38bdf8}
 @media(max-width:700px){.pid-engineering-drawer>summary{padding:13px;flex-wrap:wrap}.pid-engineering-drawer-content{padding:9px}}
+
+
+/* First real side-by-side engineering canvas + contextual inspector. */
+.pid-canvas-inspector-layout{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:12px;align-items:start;min-width:0}
+.pid-canvas-primary{min-width:0}
+.pid-canvas-primary>.pid-annotated-image{width:100%;min-width:0}
+.pid-context-inspector{position:sticky;top:62px;display:flex;flex-direction:column;gap:13px;min-width:0;padding:17px;background:linear-gradient(160deg,#112e45,#091c2e);border:1px solid #315874;border-radius:14px;color:#e8f4ff;box-shadow:0 12px 28px #020d193d}
+.pid-inspector-heading{display:flex;flex-direction:column;gap:6px;padding-bottom:13px;border-bottom:1px solid #31516a}
+.pid-inspector-heading h3{font-size:17px;line-height:1.25;margin:0;letter-spacing:-.02em}
+.pid-inspector-heading small,.pid-inspector-block small{font-size:12px;color:#a5bed1;line-height:1.5}
+.pid-inspector-block{display:flex;flex-direction:column;align-items:flex-start;gap:9px;padding-bottom:12px;border-bottom:1px solid #29485e;min-width:0}
+.pid-inspector-block strong{font-size:15px;overflow-wrap:anywhere}
+.pid-inspector-label{font-size:10px;letter-spacing:.13em;font-weight:800;color:#73c8e8;text-transform:uppercase}
+.pid-inspector-state{font-size:11px;color:#f2d49a;border:1px solid #7a663d;border-radius:20px;background:#322b1d;padding:5px 9px}
+.pid-inspector-block button{width:100%;min-height:34px;text-align:left;border:1px solid #3b6682;background:#153a53;color:#edf8ff;border-radius:9px;padding:8px 11px;font-size:12px;font-weight:650;cursor:pointer}
+.pid-inspector-block button:hover{background:#205370}
+.pid-inspector-footnote{font-size:11px;line-height:1.6;color:#90b0c6;margin:0}
+@media(max-width:1100px){.pid-canvas-inspector-layout{grid-template-columns:minmax(0,1fr)}.pid-context-inspector{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.pid-inspector-heading,.pid-inspector-footnote{grid-column:1/-1}}
+@media(max-width:650px){.pid-context-inspector{display:flex}}
