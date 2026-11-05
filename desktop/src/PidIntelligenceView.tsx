@@ -6,6 +6,7 @@ import { FileSearch, ShieldCheck, Upload } from "lucide-react";
 import { api, PidInspectionResult, PidOcrResult } from "./api";
 import "./PidIntelligenceView.css";
 import { reconstructVisualPaths } from "./pidVisualPaths";
+import { augmentPidOcrWithTiles } from "./pidTiledOcr";
 import { suggestPathTags } from "./pidSpatialSuggestions";
 import { traceVisualPipe } from "./pidPipeTrace";
 import { traceRasterFromSeed } from "./pidRasterAutoTrace";
@@ -93,6 +94,8 @@ export function PidIntelligenceView() {
   const [corrections, setCorrections] = useState<Record<number, string>>({});
   const [candidateKinds, setCandidateKinds] = useState<Record<number, "equipment" | "instrument" | "line" | "note" | "other">>({});
   const [reviewStorageMessage, setReviewStorageMessage] = useState("");
+  const [tiledOcrBusy,setTiledOcrBusy]=useState(false);
+  const [tiledOcrMessage,setTiledOcrMessage]=useState("");
   const reviewStorageKey = file && ocr ? `fcc-pid-reviews-v1:${file.name}:${file.size}:${file.lastModified}:page-${ocr.page}:${ocr.candidates.map(item=>`${item.tag}@${item.box.x.toFixed(4)},${item.box.y.toFixed(4)}`).join("|")}` : null;
   useEffect(() => {
     if (!reviewStorageKey) return;
@@ -246,6 +249,26 @@ export function PidIntelligenceView() {
     finally { setOcrBusy(false); }
   }
 
+
+  async function runTiledOcr(){
+    if(!file||!ocr||tiledOcrBusy)return;
+    setTiledOcrBusy(true);setTiledOcrMessage("Analyzing four overlapping image tiles...");
+    try{
+      const {result:enhanced,tiles,added,failures}=await augmentPidOcrWithTiles(file,ocr,tile=>api.ocrPidPage(tile,1));
+      // Keep current manual decisions when the candidate inventory grows.
+      const nextKey=`fcc-pid-reviews-v1:${file.name}:${file.size}:${file.lastModified}:page-${enhanced.page}:${enhanced.candidates.map(item=>`${item.tag}@${item.box.x.toFixed(4)},${item.box.y.toFixed(4)}`).join("|")}`;
+      try{
+        localStorage.setItem(nextKey,JSON.stringify({schema_version:1,reviews,corrections,candidateKinds}));
+        if(edgeStorageKey){
+          const previousEdges=localStorage.getItem(edgeStorageKey);
+          if(previousEdges)localStorage.setItem(nextKey.replace("fcc-pid-reviews-v1:","fcc-pid-edges-v1:"),previousEdges);
+        }
+      }catch{setTiledOcrMessage("Review migration could not be saved; export your graph as backup.");}
+      setOcr(enhanced);
+      setTiledOcrMessage(`Tiled OCR: ${tiles}/4 tiles completed, ${added} additional candidates, ${failures} failed. Review all new detections manually.`);
+    }catch(error){setTiledOcrMessage(error instanceof Error?error.message:"Tiled OCR failed.");}
+    finally{setTiledOcrBusy(false);}
+  }
 
   async function inspect() {
     if (!file || busy) return;
@@ -461,6 +484,8 @@ export function PidIntelligenceView() {
             onChange={(event) => { setPage(Number(event.target.value)); setOcr(null); }}/></label>
           <button type="button" className="secondary-button" disabled={!result || ocrBusy || page < 1 || page > result.pages.length}
             onClick={() => void runOcr()}>{ocrBusy ? "Running local OCR…" : "Run local OCR on page"}</button>
+          {ocr&&<button type="button" className="secondary-button" disabled={ocrBusy||tiledOcrBusy||!file||!/\.(png|jpe?g)$/i.test(file.name)} onClick={()=>void runTiledOcr()}>{tiledOcrBusy?"Scanning tiles…":"Enhance OCR · 4 image tiles"}</button>}
+          {tiledOcrMessage&&<small role="status">{tiledOcrMessage}</small>}
           {!ocr?.preview_png_base64&&<small>Next step: run OCR to enable the interactive engineering canvas. Local Tesseract · no cloud processing.</small>}
         </div>
         {ocrError && <div role="alert" className="error-banner">{ocrError}</div>}
