@@ -138,3 +138,14 @@
 .pid-trace-review .pid-action-primary:hover:not(:disabled){background:#147f88}
 .pid-review-note{border-radius:14px}
 @media(max-width:760px){.pid-intro{padding:15px}.pid-intro h2{font-size:23px}.pid-drawing-heading h3{flex-wrap:wrap}}
+
+
+/* One primary canvas: original image is optional, not a duplicate full-page view. */
+.pid-original-preview{border:1px solid #294b63;border-radius:12px;background:#0b2033;overflow:hidden}
+.pid-original-preview summary{padding:12px 15px;cursor:pointer;color:#c9e4f5;font-size:13px;font-weight:650}
+.pid-original-preview[open] summary{border-bottom:1px solid #294b63}
+.pid-original-preview .pid-photo-preview{max-height:360px;width:100%;object-fit:contain;background:#071725}
+.pid-original-preview .pid-pdf-frame{height:360px;min-height:240px}
+.pid-preview-panel>.pid-table-head h3{margin:5px 0 0}
+.pid-ocr-controls{border:1px solid #31566e;border-radius:12px;background:#102a40;padding:12px 14px}
+.pid-ocr-controls button{background:#155878;border-color:#3993b7;color:#f2fbff;font-weight:700}
