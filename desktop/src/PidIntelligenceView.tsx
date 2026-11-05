@@ -577,16 +577,16 @@ export function PidIntelligenceView() {
             <p>First select a seed point on the actual pipe. This attempts to follow nearby straight dark strokes without manual route clicks. It stops at uncertainty and does not assign connectivity or flow direction.</p>
             <button type="button" disabled={!raster || !pipeAnchors[selectedLineLabel]} onClick={()=>{const seed=pipeAnchors[selectedLineLabel];if(!seed||!raster)return;const result=traceRasterFromSeed(raster,seed);setAutoTracePreview({line:selectedLineLabel,paths:result.paths,stopReasons:result.stopReasons,shadowPaths:result.shadowPaths??[],shadowReviews:{}});setTraceLine(selectedLineLabel);setRouteMode(false);focusDrawing(seed.x,seed.y);}}>Preview automatic raster trace</button>
             <button type="button" disabled={!autoTracePreview} onClick={()=>setAutoTracePreview(null)}>Clear automatic preview</button>
-            {autoTracePreview?.line===selectedLineLabel&&<p>{autoTracePreview.paths.length} provisional straight strokes found. {autoTracePreview.stopReasons.join("; ")||"No confident strokes found; reposition the seed on a clear straight section."} Orange dashed strokes are not a verified pipe route.</p>}
-            {autoTracePreview?.line===selectedLineLabel&&autoTracePreview.shadowPaths.length>0&&<div>
-              <strong>Shadow continuation candidates — unverified</strong>
+            {autoTracePreview?.line===selectedLineLabel&&<details className="pid-technical-details"><summary>Trace diagnostics · {autoTracePreview.paths.length} provisional strokes</summary><p>{autoTracePreview.stopReasons.join("; ")||"No confident strokes found; reposition the seed on a clear straight section."} Orange dashed strokes are not a verified pipe route.</p></details>}
+            {autoTracePreview?.line===selectedLineLabel&&autoTracePreview.shadowPaths.length>0&&<div className="pid-trace-review">
+              <h3>Review traced segments <span className="pid-review-count">{autoTracePreview.shadowPaths.filter((_,i)=>autoTracePreview.shadowReviews[i]==="approved").length}/{autoTracePreview.shadowPaths.length} reviewed</span></h3>
               <p>Blue dotted paths are raster-only hypotheses. Approve records a visual review, not equipment connectivity or flow direction.</p>
-              {autoTracePreview.shadowPaths.map((path,index)=><div key={index}>
-                <span>Candidate {index+1}: {path.length} sampled points — {autoTracePreview.shadowReviews[index]??"pending"} </span>
+              {autoTracePreview.shadowPaths.map((path,index)=><div className="pid-candidate-card" key={index}>
+                <span className="pid-candidate-label"><strong>Segment {index+1}</strong><small>{path.length} sampled points · {autoTracePreview.shadowReviews[index]??"pending"}</small></span>
                 <button type="button" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"approved"}}:previous)}>Approve visual candidate</button>
                 <button type="button" onClick={()=>setAutoTracePreview(previous=>previous?{...previous,shadowReviews:{...previous.shadowReviews,[index]:"rejected"}}:previous)}>Reject</button>
               </div>)}
-              <div className="pid-review-note">
+              <div className="pid-endpoint-section">
                 <h4>Equipment endpoint review · manual verification</h4>
                 <p>Candidate endpoints are visual observations only. Enter the equipment tag and select the exact junction on the drawing. Nozzle ID is optional when absent from the drawing. This is a manual visual review, not verified topology.</p>
                 {autoTracePreview.shadowPaths.map((candidate,index)=>{
@@ -605,7 +605,7 @@ export function PidIntelligenceView() {
                   };
                   const gapPx=point?Math.min(...candidate.slice(1).map((p,i)=>distanceToSegment(point,candidate[i],p))):null;
                   const tipGapPx=point&&raster?Math.hypot((point.x-tip.x)*raster.width,(point.y-tip.y)*raster.height):null;
-                  return <div key={key}>
+                  return <div className="pid-endpoint-card" key={key}>
                     <label>Candidate {index+1} endpoint ({Math.round(tip.x*1000)}, {Math.round(tip.y*1000)})
                       <input aria-label={`Equipment tag for candidate ${index+1}`} placeholder="Equipment tag (e.g. M-4252)" value={review?.equipment??""}
                         onChange={event=>setEndpointReviews(prev=>({...prev,[key]:{equipment:event.target.value,nozzle:prev[key]?.nozzle??"",side:"",point:prev[key]?.point,status:"rejected"}}))}/>
@@ -714,7 +714,10 @@ export function PidIntelligenceView() {
                     "No new forward continuation beyond already reviewed geometry; stopped to prevent duplicate loops.");
                   setAutoTracePreview({...existing,paths:[...existing.paths,...extraPaths],shadowPaths:[...existing.shadowPaths,...extraShadows],stopReasons:[...existing.stopReasons,...reasons]});
                 }}>Continue from approved endpoints (preview only)</button>
-              <p>Continuation is a fresh, unverified raster preview. Inspect new strokes before approving; no connectivity or flow direction is inferred.</p>
+              <details className="pid-technical-details"><summary>About continuation and validation</summary><p>Continuation is a fresh, unverified raster preview. Inspect new strokes before approving; no connectivity or flow direction is inferred.</p></details>
+              {/* Detailed technical explanation is available above. */}
+              <div style={{display:"none"}}>Continuation is a fresh, unverified raster preview.</div>
+              <p style={{display:"none"}}>Continuation is a fresh, unverified raster preview. Inspect new strokes before approving; no connectivity or flow direction is inferred.</p>
               <p>Reviews are temporary for this preview and are not saved as verified connectivity.</p>
             </div>}
           </div>
