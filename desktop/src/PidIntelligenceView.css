@@ -252,3 +252,8 @@
 .pid-candidate-quality label{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px}
 .pid-candidate-quality select{background:#0b2232;color:#eaf7ff;border:1px solid #50748a;border-radius:7px;padding:7px}
 .pid-candidate-quality small{font-size:11px;opacity:.8}
+
+
+.pid-knowledge-reference{border:1px solid #45697f;border-radius:11px;padding:12px 14px;margin:12px 0;background:#102b3b}
+.pid-knowledge-reference summary{cursor:pointer;font-weight:700;font-size:13px}
+.pid-knowledge-reference p{font-size:12px;line-height:1.55;margin:9px 0}
