@@ -213,19 +213,24 @@ export function PidIntelligenceView() {
   const textPages = result?.pages.filter((entry) => entry.text_available).length ?? 0;
   const isPhoto = Boolean(file && /\\.(png|jpe?g)$/i.test(file.name));
   const candidateTotal = (result?.candidate_tags.length ?? 0) + (ocr?.candidates.length ?? 0);
-  const graphNodes = (ocr?.candidates ?? []).filter((_, index) => reviews[index] !== "incorrect").map((item, index) => {
-    const originalIndex = ocr!.candidates.indexOf(item);
-    return {
+  const graphNodes = (ocr?.candidates ?? []).flatMap((item, originalIndex) => {
+    if (reviews[originalIndex] === "incorrect") return [];
+    const category = candidateKinds[originalIndex] ?? "unknown";
+    const reviewedLabel = corrections[originalIndex] ?? item.tag;
+    const verified = reviews[originalIndex] === "correct" && category !== "unknown";
+    return [{
       id: `p${ocr!.page}-ocr-${originalIndex}`,
-      kind: "unknown" as const,
-      tag: corrections[originalIndex] ?? item.tag,
+      kind: category,
+      tag: reviewedLabel,
       original_tag: item.tag,
       page: ocr!.page,
       box: [item.box.x, item.box.y, item.box.width, item.box.height],
-      verified: reviews[originalIndex] === "correct",
+      verified,
+      review_status: reviews[originalIndex] ?? "unreviewed",
+      review_method: verified ? "manual_engineer_review" : null,
       source: "ocr" as const,
       confidence: item.confidence,
-    };
+    }];
   });
   const visualPaths = reconstructVisualPaths(ocr?.topology?.proposals ?? [], topologyReviews);
   function saveLineStandard() {
@@ -1046,7 +1051,7 @@ export function PidIntelligenceView() {
             <button type="button" className="secondary-button" onClick={exportGraphDraft}>Export graph JSON</button>
           </div>
           <p>Nodes: <strong>{graphNodes.length}</strong> · Engineer-verified: <strong>{graphNodes.filter(node => node.verified).length}</strong> · Connections: <strong>0</strong></p>
-          <p className="pid-muted">This is a draft inventory, not a process-flow model. No piping or signal connections are inferred from OCR. Incorrect candidates are excluded; corrected labels are retained with their originals.</p>
+          <p className="pid-muted">This is a draft inventory, not a process-flow model. Manually reviewed categories and original OCR labels are retained in exported nodes. Only classified, confirmed labels count as engineer-verified; piping connectivity remains unverified.</p>
         </section>}
         </div></details>}
         {ocr && <details className="pid-engineering-drawer pid-ocr-drawer"><summary><span><strong>OCR candidate inventory · {ocr.candidates.length} tags</strong><small>Inspect and review extracted equipment or instrument labels</small></span><span className="pid-drawer-chevron">Show candidates</span></summary><div className="pid-engineering-drawer-content">
