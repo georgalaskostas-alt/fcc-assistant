@@ -7,6 +7,7 @@ import { api, PidInspectionResult, PidOcrResult } from "./api";
 import "./PidIntelligenceView.css";
 import { reconstructVisualPaths } from "./pidVisualPaths";
 import { augmentPidOcrWithTiles } from "./pidTiledOcr";
+import { assessPidCandidate } from "./pidCandidateAssessment";
 import { suggestPathTags } from "./pidSpatialSuggestions";
 import { traceVisualPipe } from "./pidPipeTrace";
 import { traceRasterFromSeed } from "./pidRasterAutoTrace";
@@ -94,6 +95,7 @@ export function PidIntelligenceView() {
   const [corrections, setCorrections] = useState<Record<number, string>>({});
   const [candidateKinds, setCandidateKinds] = useState<Record<number, "equipment" | "instrument" | "line" | "note" | "other">>({});
   const [reviewStorageMessage, setReviewStorageMessage] = useState("");
+  const [candidateTierFilter,setCandidateTierFilter]=useState<"all"|"plausible"|"uncertain">("all");
   const [tiledOcrBusy,setTiledOcrBusy]=useState(false);
   const [tiledOcrMessage,setTiledOcrMessage]=useState("");
   const reviewStorageKey = file && ocr ? `fcc-pid-reviews-v1:${file.name}:${file.size}:${file.lastModified}:page-${ocr.page}:${ocr.candidates.map(item=>`${item.tag}@${item.box.x.toFixed(4)},${item.box.y.toFixed(4)}`).join("|")}` : null;
@@ -290,6 +292,12 @@ export function PidIntelligenceView() {
   const textPages = result?.pages.filter((entry) => entry.text_available).length ?? 0;
   const isPhoto = Boolean(file && /\\.(png|jpe?g)$/i.test(file.name));
   const candidateTotal = (result?.candidate_tags.length ?? 0) + (ocr?.candidates.length ?? 0);
+  const candidateAssessments=(ocr?.candidates??[]).map(assessPidCandidate);
+  const candidateCounts={plausible:candidateAssessments.filter(item=>item.tier==="plausible").length,uncertain:candidateAssessments.filter(item=>item.tier==="uncertain").length};
+  const reviewedCount=Object.values(reviews).filter(value=>value==="correct"||value==="incorrect").length;
+  const correctCount=Object.values(reviews).filter(value=>value==="correct").length;
+  const rejectedCount=Object.values(reviews).filter(value=>value==="incorrect").length;
+  const reviewedPrecision=reviewedCount>0?100*correctCount/reviewedCount:null;
   const graphNodes = (ocr?.candidates ?? []).flatMap((item, originalIndex) => {
     if (reviews[originalIndex] === "incorrect") return [];
     const category = candidateKinds[originalIndex] ?? "unknown";
@@ -637,6 +645,7 @@ export function PidIntelligenceView() {
               {selectedCandidate !== null && ocr.candidates[selectedCandidate] ? <>
                 <strong>{corrections[selectedCandidate] || ocr.candidates[selectedCandidate].tag}</strong>
                 <small>OCR candidate · {ocr.candidates[selectedCandidate].confidence.toFixed(0)}% confidence</small>
+                <small>Candidate triage: {candidateAssessments[selectedCandidate]?.tier} · {candidateAssessments[selectedCandidate]?.reasons.join("; ")}</small>
                 <span className="pid-inspector-state">{reviews[selectedCandidate] ?? "Unverified OCR"}</span>
                 <label className="pid-inspector-label" htmlFor="pid-inspector-kind">Object category</label>
                 <select id="pid-inspector-kind" value={candidateKinds[selectedCandidate] ?? ""} onChange={event=>{
@@ -1154,7 +1163,14 @@ export function PidIntelligenceView() {
         {ocr && <div className="pid-ocr-output"><h3>OCR candidates · page {ocr.page} ({ocr.candidates.length})</h3>
           <p className="pid-muted">{ocr.warning}</p>
           <p className="pid-muted">Review each candidate. Decisions remain in this session; they do not train the model or change drawings.</p>
-          {ocr.candidates.length ? <div className="pid-tag-list">{ocr.candidates.map((item,index) =>
+          <div className="pid-candidate-quality">
+            <strong>Candidate quality triage · heuristic, not verified</strong>
+            <p>Plausible: {candidateCounts.plausible} · Uncertain: {candidateCounts.uncertain} · Reviewed: {reviewedCount} ({correctCount} correct, {rejectedCount} rejected)</p>
+            <p>Reviewed candidate precision: {reviewedPrecision===null?"Not measurable yet":reviewedPrecision.toFixed(1)+"%"} · Recall requires a manually annotated ground-truth inventory.</p>
+            <label>Show candidates <select value={candidateTierFilter} onChange={event=>setCandidateTierFilter(event.target.value as "all"|"plausible"|"uncertain")}><option value="all">All detections</option><option value="plausible">Plausible technical labels</option><option value="uncertain">Uncertain detections</option></select></label>
+            <small>No detection is deleted or auto-confirmed. Classification uses OCR confidence, text shape and bounding-box geometry only.</small>
+          </div>
+          {ocr.candidates.length ? <div className="pid-tag-list">{ocr.candidates.map((item,index) => ({item,index})).filter(({index})=>candidateTierFilter==="all"||candidateAssessments[index]?.tier===candidateTierFilter).map(({item,index}) =>
             <button type="button" className="pid-tag-row pid-tag-button" key={index} onClick={() => {setSelectedCandidate(index); setDraftTag(corrections[index] ?? item.tag);}}><strong>{item.tag}</strong>
               <span>OCR confidence {item.confidence.toFixed(0)}%</span>
               <small>Position {Math.round(item.box.x * 100)}% × {Math.round(item.box.y * 100)}%{reviews[index] ? ` · ${reviews[index]}` : ""}</small></button>
