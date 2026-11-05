@@ -92,6 +92,17 @@ export function PidIntelligenceView() {
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
   const [corrections, setCorrections] = useState<Record<number, string>>({});
   const [candidateKinds, setCandidateKinds] = useState<Record<number, "equipment" | "instrument" | "line" | "note" | "other">>({});
+  const [reviewStorageMessage, setReviewStorageMessage] = useState("");
+  const reviewStorageKey = file && ocr ? `fcc-pid-reviews-v1:${file.name}:${file.size}:${file.lastModified}:page-${ocr.page}:${ocr.candidates.map(item=>`${item.tag}@${item.box.x.toFixed(4)},${item.box.y.toFixed(4)}`).join("|")}` : null;
+  useEffect(() => {
+    if (!reviewStorageKey) return;
+    try {
+      localStorage.setItem(reviewStorageKey, JSON.stringify({schema_version:1,reviews,corrections,candidateKinds}));
+      setReviewStorageMessage("Reviews saved locally for this drawing and page.");
+    } catch {
+      setReviewStorageMessage("Local review storage unavailable. Export the graph JSON as a backup.");
+    }
+  }, [reviewStorageKey, reviews, corrections, candidateKinds]);
   const [draftTag, setDraftTag] = useState("");
   const [showGeometry, setShowGeometry] = useState(false);
   const [includeTitleBlock, setIncludeTitleBlock] = useState(false);
@@ -187,7 +198,29 @@ export function PidIntelligenceView() {
   async function runOcr() {
     if (!file || ocrBusy) return;
     setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setPipeAnchors({}); setPipePickMode(false); setTraceLine(null); setPipeAnchors({}); setPipePickMode(false); setSelectedCandidate(null); setReviews({}); setCorrections({}); setCandidateKinds({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
-    try { setOcr(await api.ocrPidPage(file, page)); }
+    try {
+      const nextOcr = await api.ocrPidPage(file, page);
+      const key = `fcc-pid-reviews-v1:${file.name}:${file.size}:${file.lastModified}:page-${nextOcr.page}:${nextOcr.candidates.map(item=>`${item.tag}@${item.box.x.toFixed(4)},${item.box.y.toFixed(4)}`).join("|")}`;
+      try {
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          const parsed: unknown = JSON.parse(saved);
+          if (parsed && typeof parsed === "object" && "schema_version" in parsed && parsed.schema_version === 1) {
+            const data = parsed as {reviews?:Record<string,unknown>;corrections?:Record<string,unknown>;candidateKinds?:Record<string,unknown>};
+            const validIndex = (index:string) => /^\\d+$/.test(index) && Number(index)<nextOcr.candidates.length;
+            const restoredReviews:Record<number,"correct"|"incorrect"> = {};
+            const restoredCorrections:Record<number,string> = {};
+            const restoredKinds:Record<number,"equipment"|"instrument"|"line"|"note"|"other"> = {};
+            for(const [index,value] of Object.entries(data.reviews ?? {})) if(validIndex(index) && (value==="correct"||value==="incorrect")) restoredReviews[Number(index)]=value;
+            for(const [index,value] of Object.entries(data.corrections ?? {})) if(validIndex(index) && typeof value==="string" && /^[A-Z0-9][A-Z0-9 _/-]{0,39}$/.test(value)) restoredCorrections[Number(index)]=value;
+            for(const [index,value] of Object.entries(data.candidateKinds ?? {})) if(validIndex(index) && (value==="equipment"||value==="instrument"||value==="line"||value==="note"||value==="other")) restoredKinds[Number(index)]=value;
+            setReviews(restoredReviews);setCorrections(restoredCorrections);setCandidateKinds(restoredKinds);
+            setReviewStorageMessage("Previous reviews restored for this drawing and page.");
+          }
+        } else setReviewStorageMessage("New review session. Changes will be saved locally.");
+      } catch { setReviewStorageMessage("Could not restore local reviews; starting a fresh review."); }
+      setOcr(nextOcr);
+    }
     catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
     finally { setOcrBusy(false); }
   }
@@ -586,6 +619,7 @@ export function PidIntelligenceView() {
             <div className="pid-inspector-block"><span className="pid-inspector-label">Drawing evidence</span>
               <small>{ocr.candidates.length} OCR candidates · {ocr.geometry?.segments.length ?? 0} raster segments</small>
               <small>Geometry and OCR alone do not prove a piping connection.</small>
+              <small role="status">{reviewStorageMessage}</small>
             </div>
             <div className="pid-inspector-block">
               <span className="pid-inspector-label">Quick selection</span>
