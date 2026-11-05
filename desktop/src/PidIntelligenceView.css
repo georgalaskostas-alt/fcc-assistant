@@ -244,3 +244,11 @@
 .pid-manual-connections button:disabled{opacity:.45;cursor:not-allowed}
 .pid-manual-edge-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px;border:1px solid #355269;border-radius:8px;font-size:12px;overflow-wrap:anywhere}
 .pid-manual-edge-row button{flex-shrink:0}
+
+
+.pid-candidate-quality{display:grid;gap:8px;padding:14px;border:1px solid #406078;border-radius:11px;background:#102c3e;margin:12px 0}
+.pid-candidate-quality strong{font-size:13px}
+.pid-candidate-quality p{margin:0;font-size:12px;line-height:1.5}
+.pid-candidate-quality label{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px}
+.pid-candidate-quality select{background:#0b2232;color:#eaf7ff;border:1px solid #50748a;border-radius:7px;padding:7px}
+.pid-candidate-quality small{font-size:11px;opacity:.8}
