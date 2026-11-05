@@ -390,14 +390,16 @@ export function PidIntelligenceView() {
       {error && <div role="alert" className="error-banner">{error}</div>}
 
       {previewUrl && <section className="pid-preview-panel">
-        <div className="pid-table-head"><h3>Drawing preview</h3><span className="pid-muted">Local drawing viewer · original file unchanged</span></div>
-        {file?.type.startsWith("image/") ? <img src={previewUrl} alt="P&ID drawing photo" className="pid-photo-preview"/> : <iframe title="P&ID PDF preview" src={previewUrl} className="pid-pdf-frame"/>}
+        <div className="pid-table-head"><div><span className="pid-section-kicker">DRAWING WORKSPACE</span><h3>{ocr?.preview_png_base64 ? "Engineering drawing" : "Prepare drawing"}</h3></div><span className="pid-muted">Local processing · original file unchanged</span></div>
+        {!ocr?.preview_png_base64 && <details className="pid-original-preview"><summary>View original file (optional)</summary>
+          {file?.type.startsWith("image/") ? <img src={previewUrl} alt="Original P&ID drawing" className="pid-photo-preview"/> : <iframe title="Original P&ID PDF preview" src={previewUrl} className="pid-pdf-frame"/>}
+        </details>}
         <div className="pid-ocr-controls">
           <label>OCR page <input type="number" min={1} max={result?.pages.length ?? 100} value={page}
             onChange={(event) => { setPage(Number(event.target.value)); setOcr(null); }}/></label>
           <button type="button" className="secondary-button" disabled={!result || ocrBusy || page < 1 || page > result.pages.length}
             onClick={() => void runOcr()}>{ocrBusy ? "Running local OCR…" : "Run local OCR on page"}</button>
-          <small>Optional local Tesseract OCR. No cloud processing.</small>
+          <small>{ocr?.preview_png_base64 ? "OCR complete · use the interactive drawing below." : "Next step: run OCR to enable the interactive engineering canvas."} Local Tesseract · no cloud processing.</small>
         </div>
         {ocrError && <div role="alert" className="error-banner">{ocrError}</div>}
         {ocr?.preview_png_base64 && <div className="pid-annotated">
