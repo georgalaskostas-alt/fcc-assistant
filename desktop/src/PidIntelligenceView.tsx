@@ -91,6 +91,7 @@ export function PidIntelligenceView() {
 
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
   const [corrections, setCorrections] = useState<Record<number, string>>({});
+  const [candidateKinds, setCandidateKinds] = useState<Record<number, "equipment" | "instrument" | "line" | "note" | "other">>({});
   const [draftTag, setDraftTag] = useState("");
   const [showGeometry, setShowGeometry] = useState(false);
   const [includeTitleBlock, setIncludeTitleBlock] = useState(false);
@@ -185,7 +186,7 @@ export function PidIntelligenceView() {
   }
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setPipeAnchors({}); setPipePickMode(false); setTraceLine(null); setPipeAnchors({}); setPipePickMode(false); setSelectedCandidate(null); setReviews({}); setCorrections({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setPipeAnchors({}); setPipePickMode(false); setTraceLine(null); setPipeAnchors({}); setPipePickMode(false); setSelectedCandidate(null); setReviews({}); setCorrections({}); setCandidateKinds({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
     try { setOcr(await api.ocrPidPage(file, page)); }
     catch (err) { setOcrError(err instanceof Error ? err.message : "OCR failed"); }
     finally { setOcrBusy(false); }
@@ -551,6 +552,26 @@ export function PidIntelligenceView() {
                 <strong>{corrections[selectedCandidate] || ocr.candidates[selectedCandidate].tag}</strong>
                 <small>OCR candidate · {ocr.candidates[selectedCandidate].confidence.toFixed(0)}% confidence</small>
                 <span className="pid-inspector-state">{reviews[selectedCandidate] ?? "Unverified OCR"}</span>
+                <label className="pid-inspector-label" htmlFor="pid-inspector-kind">Object category</label>
+                <select id="pid-inspector-kind" value={candidateKinds[selectedCandidate] ?? ""} onChange={event=>{
+                  const kind=event.target.value as "equipment"|"instrument"|"line"|"note"|"other"|"";
+                  setCandidateKinds(previous=>{const next={...previous};if(kind)next[selectedCandidate]=kind;else delete next[selectedCandidate];return next;});
+                  setReviews(previous=>{const next={...previous};delete next[selectedCandidate];return next;});
+                }}>
+                  <option value="">Select category...</option>
+                  <option value="equipment">Equipment</option><option value="instrument">Instrument</option><option value="line">Line number</option><option value="note">Drawing note</option><option value="other">Other / unknown</option>
+                </select>
+                <label className="pid-inspector-label" htmlFor="pid-inspector-tag">Reviewed label</label>
+                <input id="pid-inspector-tag" aria-label="Reviewed OCR label" maxLength={40} value={draftTag} onChange={event=>setDraftTag(event.target.value.toUpperCase())}/>
+                <button type="button" disabled={!/^[A-Z0-9][A-Z0-9 _/-]{0,39}$/.test(draftTag.trim())} onClick={()=>{
+                  setCorrections(previous=>({...previous,[selectedCandidate]:draftTag.trim()}));
+                  setReviews(previous=>{const next={...previous};delete next[selectedCandidate];return next;});
+                }}>Save reviewed label</button>
+                <div className="pid-inspector-review-actions">
+                  <button type="button" disabled={!candidateKinds[selectedCandidate] || !/^[A-Z0-9][A-Z0-9 _/-]{0,39}$/.test((corrections[selectedCandidate]??ocr.candidates[selectedCandidate].tag).trim()) || draftTag.trim() !== (corrections[selectedCandidate]??ocr.candidates[selectedCandidate].tag).trim()} onClick={()=>setReviews(previous=>({...previous,[selectedCandidate]:"correct"}))}>Confirm label</button>
+                  <button type="button" onClick={()=>setReviews(previous=>({...previous,[selectedCandidate]:"incorrect"}))}>Reject</button>
+                </div>
+                <small>Category and label are reviewed independently. Confirmation applies only to the OCR label, not piping connectivity.</small>
               </> : selectedVisualPath !== null && visualPaths[selectedVisualPath] ? <>
                 <strong>Visual path {selectedVisualPath + 1}</strong>
                 <small>{visualPaths[selectedVisualPath].segmentIds.length} raster segments</small>
