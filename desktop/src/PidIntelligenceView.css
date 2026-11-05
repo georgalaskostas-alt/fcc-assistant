@@ -84,3 +84,30 @@
 .pid-annotated-image.pid-pipe-picking .pid-image-canvas {cursor:crosshair;}
 .pid-annotated-image.pid-pipe-picking .pid-line-box {pointer-events:none;}
 .pid-zoom-toolbar small {color:#b9d2e4;}
+
+
+/* Premium trace review: quiet hierarchy, clear actions, optional diagnostics. */
+.pid-trace-review{display:grid;gap:16px;margin-top:18px;padding:20px;border:1px solid #365674;border-radius:18px;background:linear-gradient(145deg,#112b42,#0a1c2e);box-shadow:0 16px 36px #020d1940}
+.pid-trace-review h3{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;color:#f4f9ff;font-size:18px;letter-spacing:-.02em}
+.pid-review-count{font-size:12px;font-weight:600;color:#a9d9f5;border:1px solid #365c78;background:#17364d;border-radius:30px;padding:6px 11px}
+.pid-trace-review>p{margin:0;color:#a9bfd3;font-size:13px;line-height:1.55}
+.pid-candidate-card{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:12px 14px;background:#10283d;border:1px solid #284761;border-radius:12px}
+.pid-candidate-label{display:flex;flex:1;min-width:180px;flex-direction:column;gap:4px}
+.pid-candidate-label strong{color:#eef7ff;font-size:14px}
+.pid-candidate-label small{color:#9cb7ce;font-size:12px}
+.pid-trace-review button,.pid-endpoint-section button{border:1px solid #40617e;border-radius:9px;background:#183650;color:#edf6ff;padding:9px 13px;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
+.pid-trace-review button:hover:not(:disabled),.pid-endpoint-section button:hover:not(:disabled){background:#245274;border-color:#68a7d4}
+.pid-trace-review button:disabled,.pid-endpoint-section button:disabled{opacity:.42;cursor:not-allowed}
+.pid-endpoint-section{display:grid;gap:13px;margin-top:10px;padding-top:18px;border-top:1px solid #35546c}
+.pid-endpoint-section h4{font-size:17px;color:#f0f7ff;margin:0}
+.pid-endpoint-section>p{font-size:13px;line-height:1.55;color:#a9bfd3;margin:0}
+.pid-endpoint-card{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:16px;border:1px solid #34556f;border-radius:14px;background:#0b2033}
+.pid-endpoint-card>label{display:flex;flex:1 1 240px;flex-direction:column;gap:6px;font-size:12px;font-weight:600;color:#afc8df;min-width:0}
+.pid-endpoint-card input{width:100%;box-sizing:border-box;min-height:39px;border-radius:8px;border:1px solid #36536b;background:#081a2a;color:#f0f8ff;padding:9px 11px;outline:none}
+.pid-endpoint-card input:focus{border-color:#58b8ed;box-shadow:0 0 0 3px #3aa9e62b}
+.pid-endpoint-card>div[role="status"]{flex-basis:100%;padding:12px;border:1px solid #6d603e;border-radius:10px;background:#302b1c;color:#f2d6a0;font-size:12px;line-height:1.6}
+.pid-endpoint-card>span{color:#bbd3e7;font-size:12px;line-height:1.5}
+.pid-technical-details{margin:10px 0;padding:11px 14px;border:1px solid #29475f;border-radius:10px;background:#0b2032;color:#a8c1d6;font-size:12px}
+.pid-technical-details summary{cursor:pointer;font-weight:600;color:#d6e9f8}
+.pid-technical-details p{max-height:180px;overflow:auto;overflow-wrap:anywhere;line-height:1.6}
+@media(max-width:680px){.pid-trace-review{padding:13px}.pid-candidate-card{align-items:stretch}.pid-endpoint-card>label{flex-basis:100%}.pid-trace-review h3{flex-wrap:wrap}}
