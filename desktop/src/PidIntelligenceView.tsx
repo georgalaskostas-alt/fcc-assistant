@@ -419,6 +419,7 @@ export function PidIntelligenceView() {
             </div>
             {(pipePickMode||routeMode||endpointPick!==null)&&<span className="pid-canvas-active-mode" role="status">{endpointPick?"Select equipment junction":pipePickMode?"Select pipe on drawing":"Select successive route points"}</span>}
           </div>
+          <div className="pid-canvas-inspector-layout"><div className="pid-canvas-primary">
           <div className={`pid-annotated-image ${(pipePickMode || routeMode || endpointPick!==null) ? "pid-pipe-picking" : ""}`} ref={drawingRef} onClick={event => {
             if (endpointPick) {
               if ((event.target as HTMLElement).closest("button, input, select, label")) return;
@@ -541,6 +542,33 @@ export function PidIntelligenceView() {
               style={{left:`${item.box.x*100}%`,top:`${item.box.y*100}%`,width:`${Math.max(item.box.width*100,0.5)}%`,height:`${Math.max(item.box.height*100,0.5)}%`}} />)}
             </div>
           </div>
+          </div>
+          <aside className="pid-context-inspector" aria-label="P&ID object inspector">
+            <div className="pid-inspector-heading"><span className="pid-section-kicker">OBJECT INSPECTOR</span><h3>Engineering review</h3><small>Manual verification · read-only drawing</small></div>
+            <div className="pid-inspector-block">
+              <span className="pid-inspector-label">Current selection</span>
+              {selectedCandidate !== null && ocr.candidates[selectedCandidate] ? <>
+                <strong>{corrections[selectedCandidate] || ocr.candidates[selectedCandidate].tag}</strong>
+                <small>OCR candidate · {ocr.candidates[selectedCandidate].confidence.toFixed(0)}% confidence</small>
+                <span className="pid-inspector-state">{reviews[selectedCandidate] ?? "Unverified OCR"}</span>
+              </> : selectedVisualPath !== null && visualPaths[selectedVisualPath] ? <>
+                <strong>Visual path {selectedVisualPath + 1}</strong>
+                <small>{visualPaths[selectedVisualPath].segmentIds.length} raster segments</small>
+                <span className="pid-inspector-state">Connectivity unverified</span>
+              </> : <><strong>No object selected</strong><small>Choose an OCR box or a visual path to inspect its evidence.</small></>}
+            </div>
+            <div className="pid-inspector-block"><span className="pid-inspector-label">Drawing evidence</span>
+              <small>{ocr.candidates.length} OCR candidates · {ocr.geometry?.segments.length ?? 0} raster segments</small>
+              <small>Geometry and OCR alone do not prove a piping connection.</small>
+            </div>
+            <div className="pid-inspector-block">
+              <span className="pid-inspector-label">Quick selection</span>
+              <button type="button" onClick={()=>setShowEquipmentBoxes(previous=>!previous)}>{showEquipmentBoxes?"Hide":"Show"} equipment boxes</button>
+              <button type="button" onClick={()=>setShowAllLineBoxes(previous=>!previous)}>{showAllLineBoxes?"Hide":"Show"} line boxes</button>
+              {selectedCandidate!==null&&<button type="button" onClick={()=>{setSelectedCandidate(null);setDraftTag("");}}>Clear OCR selection</button>}
+            </div>
+            <p className="pid-inspector-footnote">Advanced engineering tools below contain tracing, topology proposals and export controls. No connection is verified automatically.</p>
+          </aside></div>
           {selectedCandidate !== null && ocr.candidates[selectedCandidate] && <div className="pid-ocr-selection">
             Candidate: <strong>{ocr.candidates[selectedCandidate].tag}</strong> · OCR confidence {ocr.candidates[selectedCandidate].confidence.toFixed(0)}% · Requires engineer verification
           </div>}
