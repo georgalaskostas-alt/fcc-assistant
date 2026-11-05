@@ -404,14 +404,20 @@ export function PidIntelligenceView() {
         {ocrError && <div role="alert" className="error-banner">{ocrError}</div>}
         {ocr?.preview_png_base64 && <div className="pid-annotated">
           <div className="pid-table-head pid-drawing-heading"><div><span className="pid-section-kicker">ENGINEERING CANVAS</span><h3>Drawing workspace <span className="pid-page-chip">Page {ocr.page}</span></h3></div><span className="pid-muted">Visual inspection · no automatic topology</span></div>
-          <div className="pid-zoom-toolbar" role="toolbar" aria-label="Drawing navigation">
-            <button type="button" onClick={()=>changeDrawingZoom(drawingZoom-0.25)} disabled={drawingZoom<=0.75}>− Zoom out</button>
-            <strong>{Math.round(drawingZoom*100)}%</strong>
-            <button type="button" onClick={()=>changeDrawingZoom(drawingZoom+0.25)} disabled={drawingZoom>=6}>+ Zoom in</button>
-            <button type="button" onClick={()=>changeDrawingZoom(1)}>Fit width</button>
-            <small>Trackpad: pinch with two fingers to zoom; two-finger scroll to pan.</small>
-            {pipePickMode && <strong>Pipe selection active — click the pipe on the drawing</strong>}
-            {routeMode && <strong>Route guidance active — click successive points on the pipe</strong>}
+          <div className="pid-canvas-commandbar" role="toolbar" aria-label="Drawing navigation and layers">
+            <div className="pid-canvas-commandgroup">
+              <span className="pid-canvas-command-label">NAVIGATE</span>
+              <button type="button" aria-label="Zoom out" title="Zoom out" onClick={()=>changeDrawingZoom(drawingZoom-0.25)} disabled={drawingZoom<=0.75}>−</button>
+              <strong aria-label="Zoom level">{Math.round(drawingZoom*100)}%</strong>
+              <button type="button" aria-label="Zoom in" title="Zoom in" onClick={()=>changeDrawingZoom(drawingZoom+0.25)} disabled={drawingZoom>=6}>+</button>
+              <button type="button" onClick={()=>changeDrawingZoom(1)}>Fit</button>
+            </div>
+            <div className="pid-canvas-commandgroup">
+              <span className="pid-canvas-command-label">LAYERS</span>
+              <label className="pid-layer-toggle"><input type="checkbox" checked={showAllLineBoxes} onChange={event=>setShowAllLineBoxes(event.target.checked)}/> Lines</label>
+              <label className="pid-layer-toggle"><input type="checkbox" checked={showEquipmentBoxes} onChange={event=>setShowEquipmentBoxes(event.target.checked)}/> Equipment</label>
+            </div>
+            {(pipePickMode||routeMode||endpointPick!==null)&&<span className="pid-canvas-active-mode" role="status">{endpointPick?"Select equipment junction":pipePickMode?"Select pipe on drawing":"Select successive route points"}</span>}
           </div>
           <div className={`pid-annotated-image ${(pipePickMode || routeMode || endpointPick!==null) ? "pid-pipe-picking" : ""}`} ref={drawingRef} onClick={event => {
             if (endpointPick) {
@@ -458,10 +464,7 @@ export function PidIntelligenceView() {
             const y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
             setSymbolAnnotations(previous => [...previous, {x, y, kind: symbolMode, tag:""}]);
           }}>
-            <div className="pid-overlay-controls">
-              <label><input type="checkbox" checked={showAllLineBoxes} onChange={event => setShowAllLineBoxes(event.target.checked)}/> Show all unverified line OCR boxes</label>
-              <label><input type="checkbox" checked={showEquipmentBoxes} onChange={event => setShowEquipmentBoxes(event.target.checked)}/> Show equipment/instrument OCR boxes</label>
-            </div>
+
             <div className="pid-image-canvas" style={{width:`${drawingZoom*100}%`}}>
             <img alt={`Rendered P&ID page ${ocr.page} for visual OCR verification`} src={`data:image/png;base64,${ocr.preview_png_base64}`}/>
             {Object.entries(targetTraceProposals).filter(([,proposal])=>proposal.status!=="rejected").map(([key,proposal])=><svg key={`target-${key}`} className="pid-geometry-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" style={{pointerEvents:"none"}}>
