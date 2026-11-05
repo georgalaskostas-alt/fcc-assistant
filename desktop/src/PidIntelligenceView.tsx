@@ -207,7 +207,7 @@ export function PidIntelligenceView() {
           const parsed: unknown = JSON.parse(saved);
           if (parsed && typeof parsed === "object" && "schema_version" in parsed && parsed.schema_version === 1) {
             const data = parsed as {reviews?:Record<string,unknown>;corrections?:Record<string,unknown>;candidateKinds?:Record<string,unknown>};
-            const validIndex = (index:string) => /^\\d+$/.test(index) && Number(index)<nextOcr.candidates.length;
+            const validIndex = (index:string) => /^\d+$/.test(index) && Number(index)<nextOcr.candidates.length;
             const restoredReviews:Record<number,"correct"|"incorrect"> = {};
             const restoredCorrections:Record<number,string> = {};
             const restoredKinds:Record<number,"equipment"|"instrument"|"line"|"note"|"other"> = {};
