@@ -10,6 +10,7 @@ import { augmentPidOcrWithTiles } from "./pidTiledOcr";
 import { assessPidCandidate } from "./pidCandidateAssessment";
 import { matchPidKnowledge, pidKnowledgeReferences } from "./pidEngineeringKnowledge";
 import { detectInstrumentCircles, type SymbolProposal } from "./pidSymbolDetection";
+import { suggestBubbleBox } from "./pidSmartAnnotation";
 import { suggestPathTags } from "./pidSpatialSuggestions";
 import { traceVisualPipe } from "./pidPipeTrace";
 import { traceRasterFromSeed } from "./pidRasterAutoTrace";
@@ -152,6 +153,7 @@ export function PidIntelligenceView() {
   const [standardMessage, setStandardMessage] = useState("");
 
   const [pathLineNumbers, setPathLineNumbers] = useState<Record<string, string>>({});
+  const [smartAnnotation,setSmartAnnotation]=useState(true);
   const [symbolMode, setSymbolMode] = useState<"off" | "equipment" | "valve" | "instrument" | "connector">("off");
   const [symbolProposals,setSymbolProposals]=useState<SymbolProposal[]>([]);
   const [symbolDetectionMessage,setSymbolDetectionMessage]=useState("");
@@ -644,7 +646,9 @@ export function PidIntelligenceView() {
             if (!bounds.width || !bounds.height) return;
             const x = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
             const y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
-            setSymbolAnnotations(previous => [...previous, {x, y, kind: symbolMode, tag:""}]);
+            const suggestion=symbolMode==="instrument"&&smartAnnotation&&raster?suggestBubbleBox(raster,x,y):null;
+            setSymbolAnnotations(previous => [...previous, {x, y, kind: symbolMode, tag:"",width:suggestion?.width??.04,height:suggestion?.height??.04,reviewed:false}]);
+            setDatasetMessage(suggestion?`Smart annotation suggested a bubble box (geometry score ${Math.round(suggestion.score*100)}%). Review and resize before approval.`:"No reliable circle found at this location; created an editable default box.");
           }}>
 
             <div className="pid-image-canvas" style={{width:`${drawingZoom*100}%`}}>
@@ -1102,6 +1106,7 @@ export function PidIntelligenceView() {
               <option value="connector">Off-page connector</option>
             </select>
           </label>
+          <label className="pid-smart-annotation-toggle"><input type="checkbox" checked={smartAnnotation} onChange={event=>setSmartAnnotation(event.target.checked)}/> Smart Annotation · suggest instrument bounding box from clicked center</label>
           <div className="pid-symbol-detection-actions">
             <button type="button" disabled={!raster} onClick={()=>{
               if(!raster)return;
