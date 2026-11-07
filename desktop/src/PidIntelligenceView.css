@@ -275,3 +275,7 @@
 
 .pid-smart-annotation-toggle{display:flex;align-items:center;gap:9px;margin:12px 0;font-size:12px;font-weight:650}
 .pid-smart-annotation-toggle input{accent-color:#45c3ec}
+
+.pid-dataset-quality{border:1px solid #45697f;border-radius:10px;padding:12px 14px;margin:12px 0;background:#102b3b}
+.pid-dataset-quality summary{cursor:pointer;font-weight:700;font-size:13px}
+.pid-dataset-quality p{font-size:12px;line-height:1.5;margin:8px 0}
