@@ -109,7 +109,7 @@ export function PidIntelligenceView() {
     } catch {
       setReviewStorageMessage("Local review storage unavailable. Export the graph JSON as a backup.");
     }
-  }, [reviewStorageKey, reviews, corrections, candidateKinds]);
+  }, [reviewStorageKey, reviews, corrections, candidateKinds, symbolReviews]);
   type ManualEdge = {id:string;source:string;target:string;kind:"process"|"signal"|"mechanical";review_method:"manual_engineer_review";verified:true};
   const [manualEdges,setManualEdges] = useState<ManualEdge[]>([]);
   const [edgeSource,setEdgeSource] = useState("");
@@ -673,11 +673,12 @@ export function PidIntelligenceView() {
                 <input id="pid-inspector-tag" aria-label="Reviewed OCR label" maxLength={40} value={draftTag} onChange={event=>setDraftTag(event.target.value.toUpperCase())}/>
                 <button type="button" disabled={!/^[A-Z0-9][A-Z0-9 _/-]{0,39}$/.test(draftTag.trim())} onClick={()=>{
                   setCorrections(previous=>({...previous,[selectedCandidate]:draftTag.trim()}));
+                  setSymbolReviews(previous=>({...previous,[selectedCandidate]:false}));
                   setReviews(previous=>{const next={...previous};delete next[selectedCandidate];return next;});
                 }}>Save reviewed label</button>
                 <div className="pid-inspector-review-actions">
                   <button type="button" disabled={!candidateKinds[selectedCandidate] || !/^[A-Z0-9][A-Z0-9 _/-]{0,39}$/.test((corrections[selectedCandidate]??ocr.candidates[selectedCandidate].tag).trim()) || draftTag.trim() !== (corrections[selectedCandidate]??ocr.candidates[selectedCandidate].tag).trim()} onClick={()=>setReviews(previous=>({...previous,[selectedCandidate]:"correct"}))}>Confirm label</button>
-                  <button type="button" onClick={()=>setReviews(previous=>({...previous,[selectedCandidate]:"incorrect"}))}>Reject</button>
+                  <button type="button" onClick={()=>{setReviews(previous=>({...previous,[selectedCandidate]:"incorrect"}));setSymbolReviews(previous=>({...previous,[selectedCandidate]:false}));}}>Reject</button>
                 </div>
                 <label className="pid-inspector-symbol-review"><input type="checkbox" checked={symbolReviews[selectedCandidate]===true} disabled={reviews[selectedCandidate]!=="correct"||!candidateKinds[selectedCandidate]} onChange={event=>setSymbolReviews(previous=>({...previous,[selectedCandidate]:event.target.checked}))}/> Symbol verified against the original drawing and plant legend</label>
                 <small>Text verified: {reviews[selectedCandidate]==="correct"?"Yes":"No"} · Symbol verified: {reviews[selectedCandidate]==="correct"&&symbolReviews[selectedCandidate]?"Yes":"No"} · Connectivity verified: No (requires independent edge review).</small>
