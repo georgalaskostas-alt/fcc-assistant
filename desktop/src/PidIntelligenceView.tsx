@@ -12,6 +12,7 @@ import { matchPidKnowledge, pidKnowledgeReferences } from "./pidEngineeringKnowl
 import { detectInstrumentCircles, type SymbolProposal } from "./pidSymbolDetection";
 import { suggestBubbleBox } from "./pidSmartAnnotation";
 import { validateSymbolDataset, toYoloLabels, SYMBOL_CLASSES, type TrainingAnnotation } from "./pidDatasetQuality";
+import { zipTextFiles } from "./pidDatasetZip";
 import { suggestPathTags } from "./pidSpatialSuggestions";
 import { traceVisualPipe } from "./pidPipeTrace";
 import { traceRasterFromSeed } from "./pidRasterAutoTrace";
@@ -506,10 +507,6 @@ export function PidIntelligenceView() {
       bbox:{x:item.x-(item.width??.04)/2,y:item.y-(item.height??.04)/2,width:item.width??.04,height:item.height??.04},reviewed:true
     }));
   }
-  function downloadDatasetText(content:string,name:string,type:string){
-    const blob=new Blob([content],{type}),url=URL.createObjectURL(blob),link=document.createElement("a");
-    link.href=url;link.download=name;link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
-  }
   function exportYoloDataset(){
     if(!ocr||!file)return;
     const annotations=reviewedTrainingAnnotations(),issues=validateSymbolDataset(annotations);
@@ -517,9 +514,14 @@ export function PidIntelligenceView() {
     if(errors.length){setDatasetMessage(`YOLO export blocked: ${errors.length} validation errors. Review dataset quality report.`);return;}
     if(!annotations.length){setDatasetMessage("YOLO export requires at least one reviewed annotation.");return;}
     const base=`pid-page-${ocr.page}`;
-    downloadDatasetText(toYoloLabels(annotations),`${base}.txt`,"text/plain");
-    downloadDatasetText(SYMBOL_CLASSES.map((name,index)=>`${index}: ${name}`).join("\n")+"\n",`${base}-classes.txt`,"text/plain");
-    setDatasetMessage(`Exported YOLO labels for ${annotations.length} reviewed symbols. Keep the original image and both text files together; no image was exported.`);
+    const files=[
+      {name:`${base}.txt`,content:toYoloLabels(annotations)},
+      {name:`${base}-classes.txt`,content:SYMBOL_CLASSES.map((name,index)=>`${index}: ${name}`).join("\n")+"\n"}
+    ];
+    const zip=zipTextFiles(files),url=URL.createObjectURL(zip),link=document.createElement("a");
+    link.href=url;link.download=`${base}-yolo.zip`;link.click();
+    window.setTimeout(()=>URL.revokeObjectURL(url),3000);
+    setDatasetMessage(`Exported one ZIP containing YOLO labels and class mapping for ${annotations.length} reviewed symbols. Original image not included.`);
   }
   const datasetIssues=validateSymbolDataset(reviewedTrainingAnnotations());
   function exportTrainingDataset(){
