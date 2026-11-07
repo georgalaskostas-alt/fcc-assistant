@@ -11,6 +11,7 @@ import { assessPidCandidate } from "./pidCandidateAssessment";
 import { matchPidKnowledge, pidKnowledgeReferences } from "./pidEngineeringKnowledge";
 import { detectInstrumentCircles, type SymbolProposal } from "./pidSymbolDetection";
 import { suggestBubbleBox } from "./pidSmartAnnotation";
+import { validateSymbolDataset, toYoloLabels, SYMBOL_CLASSES, type TrainingAnnotation } from "./pidDatasetQuality";
 import { suggestPathTags } from "./pidSpatialSuggestions";
 import { traceVisualPipe } from "./pidPipeTrace";
 import { traceRasterFromSeed } from "./pidRasterAutoTrace";
@@ -499,6 +500,28 @@ export function PidIntelligenceView() {
     link.href = url; link.download = `pid-connectivity-annotations-page-${ocr.page}.json`;
     link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  function reviewedTrainingAnnotations():TrainingAnnotation[]{
+    return symbolAnnotations.filter(item=>item.reviewed===true).map((item,index)=>({
+      id:`p${ocr?.page??1}-training-${index}`,category:item.kind,tag:item.tag,
+      bbox:{x:item.x-(item.width??.04)/2,y:item.y-(item.height??.04)/2,width:item.width??.04,height:item.height??.04},reviewed:true
+    }));
+  }
+  function downloadDatasetText(content:string,name:string,type:string){
+    const blob=new Blob([content],{type}),url=URL.createObjectURL(blob),link=document.createElement("a");
+    link.href=url;link.download=name;link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  function exportYoloDataset(){
+    if(!ocr||!file)return;
+    const annotations=reviewedTrainingAnnotations(),issues=validateSymbolDataset(annotations);
+    const errors=issues.filter(issue=>issue.severity==="error");
+    if(errors.length){setDatasetMessage(`YOLO export blocked: ${errors.length} validation errors. Review dataset quality report.`);return;}
+    if(!annotations.length){setDatasetMessage("YOLO export requires at least one reviewed annotation.");return;}
+    const base=`pid-page-${ocr.page}`;
+    downloadDatasetText(toYoloLabels(annotations),`${base}.txt`,"text/plain");
+    downloadDatasetText(SYMBOL_CLASSES.map((name,index)=>`${index}: ${name}`).join("\n")+"\n",`${base}-classes.txt`,"text/plain");
+    setDatasetMessage(`Exported YOLO labels for ${annotations.length} reviewed symbols. Keep the original image and both text files together; no image was exported.`);
+  }
+  const datasetIssues=validateSymbolDataset(reviewedTrainingAnnotations());
   function exportTrainingDataset(){
     if(!ocr||!file)return;
     const annotations=symbolAnnotations.filter(item=>item.reviewed===true).map((item,index)=>({
@@ -1095,6 +1118,7 @@ export function PidIntelligenceView() {
           <div className="pid-table-head"><h3>Symbol annotation · engineer-assisted</h3>
             <button type="button" className="secondary-button" onClick={exportSymbolAnnotations}>Export symbols JSON</button>
             <button type="button" className="secondary-button" onClick={exportTrainingDataset}>Export training dataset JSON</button>
+            <button type="button" className="secondary-button" onClick={exportYoloDataset}>Export YOLO labels</button>
           </div>
           <p className="pid-muted">Choose a symbol category, then click its center on the drawing. These are manual labels, not automatic symbol recognition.</p>
           <label>Place symbol
@@ -1119,6 +1143,10 @@ export function PidIntelligenceView() {
           </div>
           <p>{symbolAnnotations.length} manually placed symbols · {symbolAnnotations.filter(item=>item.reviewed).length} engineer-reviewed</p>
           <small role="status">{datasetMessage}</small>
+          <details className="pid-dataset-quality"><summary>Dataset quality · {datasetIssues.filter(issue=>issue.severity==="error").length} errors · {datasetIssues.filter(issue=>issue.severity==="warning").length} warnings</summary>
+            <p>Reviewed labels: {symbolAnnotations.filter(item=>item.reviewed).length} / {symbolAnnotations.length}. YOLO class order: {SYMBOL_CLASSES.map((name,index)=>`${index}=${name}`).join(", ")}.</p>
+            {datasetIssues.length===0?<p>No structural issues detected. Visual accuracy is not automatically validated.</p>:datasetIssues.map((issue,index)=><p key={index}><strong>{issue.severity.toUpperCase()}</strong> · {issue.annotationIds.join(", ")} · {issue.message}</p>)}
+          </details>
           <p className="pid-muted">Drag a box on the drawing to move it; drag its bottom-right handle to resize. Any edit clears Reviewed for training. You can also set width and height as percentages of the drawing. Review each box on the original P&ID before marking it verified for training. The exported JSON does not contain the image pixels.</p>
           {symbolAnnotations.map((symbol,index) => <div key={index} className={`pid-review-actions ${activeAnnotation===index?"pid-annotation-row-active":""}`}>
             <span>#{index+1} · {symbol.kind} · ({symbol.x.toFixed(3)}, {symbol.y.toFixed(3)})</span>
