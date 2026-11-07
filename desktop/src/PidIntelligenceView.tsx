@@ -157,6 +157,39 @@ export function PidIntelligenceView() {
   const [symbolDetectionMessage,setSymbolDetectionMessage]=useState("");
   const [symbolAnnotations, setSymbolAnnotations] = useState<Array<{x:number;y:number;kind:"equipment" | "valve" | "instrument" | "connector";tag:string;width?:number;height?:number;reviewed?:boolean}>>([]);
   const [datasetMessage,setDatasetMessage]=useState("");
+  const [activeAnnotation,setActiveAnnotation]=useState<number|null>(null);
+  const annotationDragRef=useRef<{index:number;mode:"move"|"resize";startX:number;startY:number;originX:number;originY:number;originW:number;originH:number}|null>(null);
+  function beginAnnotationDrag(event:React.PointerEvent<HTMLElement>,index:number,mode:"move"|"resize"){
+    const symbol=symbolAnnotations[index];
+    if(!symbol)return;
+    event.stopPropagation();
+    event.preventDefault();
+    setActiveAnnotation(index);
+    annotationDragRef.current={index,mode,startX:event.clientX,startY:event.clientY,originX:symbol.x,originY:symbol.y,originW:symbol.width??.04,originH:symbol.height??.04};
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+  function moveAnnotationDrag(event:React.PointerEvent<HTMLElement>){
+    const drag=annotationDragRef.current;
+    if(!drag)return;
+    const bounds=drawingRef.current?.querySelector(".pid-image-canvas")?.getBoundingClientRect();
+    if(!bounds?.width||!bounds.height)return;
+    const dx=(event.clientX-drag.startX)/bounds.width,dy=(event.clientY-drag.startY)/bounds.height;
+    setSymbolAnnotations(previous=>previous.map((symbol,index)=>{
+      if(index!==drag.index)return symbol;
+      if(drag.mode==="move"){
+        const w=symbol.width??.04,h=symbol.height??.04;
+        return {...symbol,x:Math.max(w/2,Math.min(1-w/2,drag.originX+dx)),y:Math.max(h/2,Math.min(1-h/2,drag.originY+dy)),reviewed:false};
+      }
+      const width=Math.max(.005,Math.min(1,drag.originW+2*dx)),height=Math.max(.005,Math.min(1,drag.originH+2*dy));
+      return {...symbol,width:Math.min(width,2*Math.min(symbol.x,1-symbol.x)),height:Math.min(height,2*Math.min(symbol.y,1-symbol.y)),reviewed:false};
+    }));
+  }
+  function endAnnotationDrag(event:React.PointerEvent<HTMLElement>){
+    if(annotationDragRef.current){
+      annotationDragRef.current=null;
+      event.stopPropagation();
+    }
+  }
   const datasetLoadedKeyRef=useRef<string|null>(null);
   const skipDatasetSaveRef=useRef(false);
   const datasetStorageKey=file&&ocr?`fcc-pid-symbol-dataset-v1:${file.name}:${file.size}:${file.lastModified}:page-${ocr.page}`:null;
@@ -682,7 +715,16 @@ export function PidIntelligenceView() {
               style={{left:`${point.x*100}%`,top:`${point.y*100}%`}}
               title={`Engineer-selected pipe location for line OCR #${Number(index)+1}`}>+</span>)}
             {symbolProposals.map((proposal,index)=><button type="button" key={index} className="pid-symbol-proposal" style={{left:`${proposal.x*100}%`,top:`${proposal.y*100}%`}} title={`Unverified circular symbol proposal · ${Math.round(proposal.score*100)}% geometry score`} aria-label={`Review proposed instrument bubble ${index+1}`} onClick={()=>{setSymbolAnnotations(previous=>[...previous,{x:proposal.x,y:proposal.y,kind:"instrument",tag:""}]);setSymbolProposals(previous=>previous.filter((_,i)=>i!==index));}}>?</button>)}
-            {symbolAnnotations.map((symbol, index) => <span key={index} className="pid-manual-symbol" style={{left:`${symbol.x*100}%`,top:`${symbol.y*100}%`}} title={`Manual ${symbol.kind}: ${symbol.tag || "unlabeled"}`}>{symbol.kind === "valve" ? "V" : symbol.kind === "instrument" ? "I" : symbol.kind === "connector" ? "C" : "E"}</span>)}
+            {symbolAnnotations.map((symbol,index)=><div key={index} className={`pid-annotation-bbox ${activeAnnotation===index?"pid-annotation-bbox-active":""} ${symbol.reviewed?"pid-annotation-bbox-reviewed":""}`}
+              style={{left:`${(symbol.x-(symbol.width??.04)/2)*100}%`,top:`${(symbol.y-(symbol.height??.04)/2)*100}%`,width:`${(symbol.width??.04)*100}%`,height:`${(symbol.height??.04)*100}%`}}
+              title={`#${index+1} ${symbol.kind}: ${symbol.tag||"untagged"} · drag to move, bottom-right to resize`}
+              onClick={event=>{event.stopPropagation();setActiveAnnotation(index);}}
+              onPointerDown={event=>beginAnnotationDrag(event,index,"move")}
+              onPointerMove={moveAnnotationDrag} onPointerUp={endAnnotationDrag} onPointerCancel={endAnnotationDrag}>
+              <span className="pid-annotation-bbox-caption">{index+1} · {symbol.tag||symbol.kind}</span>
+              <span className="pid-annotation-resize-handle" role="button" aria-label={`Resize symbol ${index+1}`}
+                onPointerDown={event=>{event.stopPropagation();beginAnnotationDrag(event,index,"resize");}}/>
+            </div>)}
             {showEquipmentBoxes && ocr.candidates.map((item,index) => <button key={index} type="button"
               title={`${item.tag} · OCR ${item.confidence.toFixed(0)}% · not verified`}
               aria-label={`Inspect candidate ${item.tag}`}
@@ -1072,8 +1114,8 @@ export function PidIntelligenceView() {
           </div>
           <p>{symbolAnnotations.length} manually placed symbols · {symbolAnnotations.filter(item=>item.reviewed).length} engineer-reviewed</p>
           <small role="status">{datasetMessage}</small>
-          <p className="pid-muted">Set the approximate bounding-box width and height as percentages of the drawing. Review each box on the original P&ID before marking it verified for training. The exported JSON does not contain the image pixels.</p>
-          {symbolAnnotations.map((symbol,index) => <div key={index} className="pid-review-actions">
+          <p className="pid-muted">Drag a box on the drawing to move it; drag its bottom-right handle to resize. Any edit clears Reviewed for training. You can also set width and height as percentages of the drawing. Review each box on the original P&ID before marking it verified for training. The exported JSON does not contain the image pixels.</p>
+          {symbolAnnotations.map((symbol,index) => <div key={index} className={`pid-review-actions ${activeAnnotation===index?"pid-annotation-row-active":""}`}>
             <span>#{index+1} · {symbol.kind} · ({symbol.x.toFixed(3)}, {symbol.y.toFixed(3)})</span>
             <input aria-label={`Symbol ${index+1} tag`} placeholder="Optional tag" maxLength={40} value={symbol.tag}
               onChange={event => setSymbolAnnotations(previous => previous.map((item,i) => i === index ? {...item,tag:event.target.value.toUpperCase(),reviewed:false} : item))}/>
