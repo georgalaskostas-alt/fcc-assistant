@@ -1,7 +1,7 @@
 import { proposeBranchCrossings, proposeRasterBranches } from "./pidBranchProposals";
 import { auditGuidedRoute, auditRouteRaster, auditRasterLegAlignment } from "./pidRouteAudit";
 import { proposeCenterlineLegs } from "./pidCenterline";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { FileSearch, ShieldCheck, Upload } from "lucide-react";
 import { api, PidInspectionResult, PidOcrResult } from "./api";
 import "./PidIntelligenceView.css";
@@ -159,7 +159,7 @@ export function PidIntelligenceView() {
   const [datasetMessage,setDatasetMessage]=useState("");
   const [activeAnnotation,setActiveAnnotation]=useState<number|null>(null);
   const annotationDragRef=useRef<{index:number;mode:"move"|"resize";startX:number;startY:number;originX:number;originY:number;originW:number;originH:number}|null>(null);
-  function beginAnnotationDrag(event:React.PointerEvent<HTMLElement>,index:number,mode:"move"|"resize"){
+  function beginAnnotationDrag(event:ReactPointerEvent<HTMLElement>,index:number,mode:"move"|"resize"){
     const symbol=symbolAnnotations[index];
     if(!symbol)return;
     event.stopPropagation();
@@ -168,7 +168,7 @@ export function PidIntelligenceView() {
     annotationDragRef.current={index,mode,startX:event.clientX,startY:event.clientY,originX:symbol.x,originY:symbol.y,originW:symbol.width??.04,originH:symbol.height??.04};
     event.currentTarget.setPointerCapture(event.pointerId);
   }
-  function moveAnnotationDrag(event:React.PointerEvent<HTMLElement>){
+  function moveAnnotationDrag(event:ReactPointerEvent<HTMLElement>){
     const drag=annotationDragRef.current;
     if(!drag)return;
     const bounds=drawingRef.current?.querySelector(".pid-image-canvas")?.getBoundingClientRect();
@@ -184,7 +184,7 @@ export function PidIntelligenceView() {
       return {...symbol,width:Math.min(width,2*Math.min(symbol.x,1-symbol.x)),height:Math.min(height,2*Math.min(symbol.y,1-symbol.y)),reviewed:false};
     }));
   }
-  function endAnnotationDrag(event:React.PointerEvent<HTMLElement>){
+  function endAnnotationDrag(event:ReactPointerEvent<HTMLElement>){
     if(annotationDragRef.current){
       annotationDragRef.current=null;
       event.stopPropagation();
