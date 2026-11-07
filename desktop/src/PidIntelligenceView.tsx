@@ -9,6 +9,7 @@ import { reconstructVisualPaths } from "./pidVisualPaths";
 import { augmentPidOcrWithTiles } from "./pidTiledOcr";
 import { assessPidCandidate } from "./pidCandidateAssessment";
 import { matchPidKnowledge, pidKnowledgeReferences } from "./pidEngineeringKnowledge";
+import { detectInstrumentCircles, type SymbolProposal } from "./pidSymbolDetection";
 import { suggestPathTags } from "./pidSpatialSuggestions";
 import { traceVisualPipe } from "./pidPipeTrace";
 import { traceRasterFromSeed } from "./pidRasterAutoTrace";
@@ -25,6 +26,7 @@ export function PidIntelligenceView() {
   const [raster, setRaster] = useState<ImageData | null>(null);
   useEffect(()=>{
     setRaster(null);
+    setSymbolProposals([]);
     if(!ocr?.preview_png_base64)return;
     let cancelled=false;
     const image=new Image();
@@ -151,6 +153,8 @@ export function PidIntelligenceView() {
 
   const [pathLineNumbers, setPathLineNumbers] = useState<Record<string, string>>({});
   const [symbolMode, setSymbolMode] = useState<"off" | "equipment" | "valve" | "instrument" | "connector">("off");
+  const [symbolProposals,setSymbolProposals]=useState<SymbolProposal[]>([]);
+  const [symbolDetectionMessage,setSymbolDetectionMessage]=useState("");
   const [symbolAnnotations, setSymbolAnnotations] = useState<Array<{x:number;y:number;kind:"equipment" | "valve" | "instrument" | "connector";tag:string}>>([]);
   const [topologyReviews, setTopologyReviews] = useState<Record<number, "accepted" | "rejected">>({});
   const [ocrBusy, setOcrBusy] = useState(false);
@@ -638,6 +642,7 @@ export function PidIntelligenceView() {
             {Object.entries(pipeAnchors).map(([index,point]) => <span key={index} className="pid-pipe-anchor"
               style={{left:`${point.x*100}%`,top:`${point.y*100}%`}}
               title={`Engineer-selected pipe location for line OCR #${Number(index)+1}`}>+</span>)}
+            {symbolProposals.map((proposal,index)=><button type="button" key={index} className="pid-symbol-proposal" style={{left:`${proposal.x*100}%`,top:`${proposal.y*100}%`}} title={`Unverified circular symbol proposal · ${Math.round(proposal.score*100)}% geometry score`} aria-label={`Review proposed instrument bubble ${index+1}`} onClick={()=>{setSymbolAnnotations(previous=>[...previous,{x:proposal.x,y:proposal.y,kind:"instrument",tag:""}]);setSymbolProposals(previous=>previous.filter((_,i)=>i!==index));}}>?</button>)}
             {symbolAnnotations.map((symbol, index) => <span key={index} className="pid-manual-symbol" style={{left:`${symbol.x*100}%`,top:`${symbol.y*100}%`}} title={`Manual ${symbol.kind}: ${symbol.tag || "unlabeled"}`}>{symbol.kind === "valve" ? "V" : symbol.kind === "instrument" ? "I" : symbol.kind === "connector" ? "C" : "E"}</span>)}
             {showEquipmentBoxes && ocr.candidates.map((item,index) => <button key={index} type="button"
               title={`${item.tag} · OCR ${item.confidence.toFixed(0)}% · not verified`}
@@ -1015,6 +1020,16 @@ export function PidIntelligenceView() {
               <option value="connector">Off-page connector</option>
             </select>
           </label>
+          <div className="pid-symbol-detection-actions">
+            <button type="button" disabled={!raster} onClick={()=>{
+              if(!raster)return;
+              const proposals=detectInstrumentCircles(raster);
+              setSymbolProposals(proposals);
+              setSymbolDetectionMessage(`${proposals.length} unverified circular-outline proposals. Select ? markers on the drawing to accept as manual instrument annotations. False positives are expected.`);
+            }}>Detect instrument circles · experimental</button>
+            <button type="button" disabled={!symbolProposals.length} onClick={()=>setSymbolProposals([])}>Clear proposals</button>
+            <small role="status">{symbolDetectionMessage}</small>
+          </div>
           <p>{symbolAnnotations.length} manually placed symbols</p>
           {symbolAnnotations.map((symbol,index) => <div key={index} className="pid-review-actions">
             <span>#{index+1} · {symbol.kind} · ({symbol.x.toFixed(3)}, {symbol.y.toFixed(3)})</span>
