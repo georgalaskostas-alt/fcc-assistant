@@ -157,19 +157,22 @@ export function PidIntelligenceView() {
   const [symbolDetectionMessage,setSymbolDetectionMessage]=useState("");
   const [symbolAnnotations, setSymbolAnnotations] = useState<Array<{x:number;y:number;kind:"equipment" | "valve" | "instrument" | "connector";tag:string;width?:number;height?:number;reviewed?:boolean}>>([]);
   const [datasetMessage,setDatasetMessage]=useState("");
+  const datasetLoadedKeyRef=useRef<string|null>(null);
   const datasetStorageKey=file&&ocr?`fcc-pid-symbol-dataset-v1:${file.name}:${file.size}:${file.lastModified}:page-${ocr.page}`:null;
   useEffect(()=>{
     if(!datasetStorageKey)return;
+    datasetLoadedKeyRef.current=null;
     try{
       const parsed:unknown=JSON.parse(localStorage.getItem(datasetStorageKey)??"[]");
       if(!Array.isArray(parsed))return;
       const valid=parsed.filter(item=>item&&typeof item==="object"&&Number.isFinite(item.x)&&Number.isFinite(item.y)&&item.x>=0&&item.x<=1&&item.y>=0&&item.y<=1&&["equipment","valve","instrument","connector"].includes(item.kind)&&typeof item.tag==="string"&&item.tag.length<=40&&(!item.width||(Number.isFinite(item.width)&&item.width>0&&item.width<=1))&&(!item.height||(Number.isFinite(item.height)&&item.height>0&&item.height<=1)));
       setSymbolAnnotations(valid.map(item=>({x:item.x,y:item.y,kind:item.kind,tag:item.tag,width:item.width??0.04,height:item.height??0.04,reviewed:item.reviewed===true})));
       setDatasetMessage(`Restored ${valid.length} symbol annotations.`);
+      datasetLoadedKeyRef.current=datasetStorageKey;
     }catch{setDatasetMessage("Could not restore saved symbol annotations.");}
   },[datasetStorageKey]);
   useEffect(()=>{
-    if(!datasetStorageKey)return;
+    if(!datasetStorageKey||datasetLoadedKeyRef.current!==datasetStorageKey)return;
     try{localStorage.setItem(datasetStorageKey,JSON.stringify(symbolAnnotations));}
     catch{setDatasetMessage("Local symbol storage unavailable; export your dataset.");}
   },[datasetStorageKey,symbolAnnotations]);
