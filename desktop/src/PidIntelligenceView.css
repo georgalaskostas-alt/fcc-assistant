@@ -257,3 +257,10 @@
 .pid-knowledge-reference{border:1px solid #45697f;border-radius:11px;padding:12px 14px;margin:12px 0;background:#102b3b}
 .pid-knowledge-reference summary{cursor:pointer;font-weight:700;font-size:13px}
 .pid-knowledge-reference p{font-size:12px;line-height:1.55;margin:9px 0}
+
+
+.pid-symbol-proposal{position:absolute;z-index:7;transform:translate(-50%,-50%);width:23px;height:23px;border-radius:50%;border:2px solid #f3b34c;background:#34280f;color:#ffdc8b;font-weight:800;cursor:pointer;box-shadow:0 0 0 3px #f3b34c33}
+.pid-symbol-proposal:hover,.pid-symbol-proposal:focus-visible{background:#835415;outline:2px solid #ffe3a1;outline-offset:2px}
+.pid-symbol-detection-actions{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:12px 0}
+.pid-symbol-detection-actions small{flex-basis:100%;line-height:1.5}
+.pid-symbol-detection-actions button:disabled{opacity:.45;cursor:not-allowed}
