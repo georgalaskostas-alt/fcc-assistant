@@ -12,7 +12,7 @@ const rules:Rule[]=[
  {id:"valve-prv",category:"valve",label:"PRV-tagged valve candidate",pattern:/^PRV[-–]?\d{2,5}[A-Z]?$/i,reason:"PRV abbreviation is context-dependent; do not infer relief or pressure-regulating function from text alone.",reference:"Site valve legend, datasheet and P&ID required"},
 ];
 export function matchPidKnowledge(tag:string):PidKnowledgeMatch[]{
- const normalized=tag.trim().replace(/\s+/g," ");
+ const normalized=tag.normalize("NFKC").replace(/[‐‑‒–—−]/g,"-").replace(/[\u200B-\u200D\uFEFF]/g,"").replace(/\s+/g," ").trim();
  return rules.filter(rule=>rule.pattern.test(normalized)).map(({id,category,label,reason,reference})=>({id,category,label,reason,reference,confidence:"pattern_only" as const}));
 }
 export const pidKnowledgeReferences=[
