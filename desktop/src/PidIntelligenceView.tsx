@@ -94,7 +94,8 @@ export function PidIntelligenceView() {
 
   const [reviews, setReviews] = useState<Record<number, "correct" | "incorrect">>({});
   const [corrections, setCorrections] = useState<Record<number, string>>({});
-  const [candidateKinds, setCandidateKinds] = useState<Record<number, "equipment" | "instrument" | "line" | "note" | "other">>({});
+  const [candidateKinds, setCandidateKinds] = useState<Record<number, "equipment" | "instrument" | "line" | "valve" | "note" | "other">>({});
+  const [symbolReviews,setSymbolReviews] = useState<Record<number,boolean>>({});
   const [reviewStorageMessage, setReviewStorageMessage] = useState("");
   const [candidateTierFilter,setCandidateTierFilter]=useState<"all"|"plausible"|"uncertain">("all");
   const [tiledOcrBusy,setTiledOcrBusy]=useState(false);
@@ -103,7 +104,7 @@ export function PidIntelligenceView() {
   useEffect(() => {
     if (!reviewStorageKey) return;
     try {
-      localStorage.setItem(reviewStorageKey, JSON.stringify({schema_version:1,reviews,corrections,candidateKinds}));
+      localStorage.setItem(reviewStorageKey, JSON.stringify({schema_version:1,reviews,corrections,candidateKinds,symbolReviews}));
       setReviewStorageMessage("Reviews saved locally for this drawing and page.");
     } catch {
       setReviewStorageMessage("Local review storage unavailable. Export the graph JSON as a backup.");
@@ -224,7 +225,7 @@ export function PidIntelligenceView() {
   }
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setPipeAnchors({}); setPipePickMode(false); setTraceLine(null); setPipeAnchors({}); setPipePickMode(false); setSelectedCandidate(null); setReviews({}); setCorrections({}); setCandidateKinds({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setPipeAnchors({}); setPipePickMode(false); setTraceLine(null); setPipeAnchors({}); setPipePickMode(false); setSelectedCandidate(null); setReviews({}); setCorrections({}); setCandidateKinds({}); setSymbolReviews({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
     try {
       const nextOcr = await api.ocrPidPage(file, page);
       const key = `fcc-pid-reviews-v1:${file.name}:${file.size}:${file.lastModified}:page-${nextOcr.page}:${nextOcr.candidates.map(item=>`${item.tag}@${item.box.x.toFixed(4)},${item.box.y.toFixed(4)}`).join("|")}`;
@@ -233,15 +234,17 @@ export function PidIntelligenceView() {
         if (saved) {
           const parsed: unknown = JSON.parse(saved);
           if (parsed && typeof parsed === "object" && "schema_version" in parsed && parsed.schema_version === 1) {
-            const data = parsed as {reviews?:Record<string,unknown>;corrections?:Record<string,unknown>;candidateKinds?:Record<string,unknown>};
+            const data = parsed as {reviews?:Record<string,unknown>;corrections?:Record<string,unknown>;candidateKinds?:Record<string,unknown>;symbolReviews?:Record<string,unknown>};
             const validIndex = (index:string) => /^\d+$/.test(index) && Number(index)<nextOcr.candidates.length;
             const restoredReviews:Record<number,"correct"|"incorrect"> = {};
             const restoredCorrections:Record<number,string> = {};
-            const restoredKinds:Record<number,"equipment"|"instrument"|"line"|"note"|"other"> = {};
+            const restoredKinds:Record<number,"equipment"|"instrument"|"line"|"valve"|"note"|"other"> = {};
             for(const [index,value] of Object.entries(data.reviews ?? {})) if(validIndex(index) && (value==="correct"||value==="incorrect")) restoredReviews[Number(index)]=value;
             for(const [index,value] of Object.entries(data.corrections ?? {})) if(validIndex(index) && typeof value==="string" && /^[A-Z0-9][A-Z0-9 _/-]{0,39}$/.test(value)) restoredCorrections[Number(index)]=value;
-            for(const [index,value] of Object.entries(data.candidateKinds ?? {})) if(validIndex(index) && (value==="equipment"||value==="instrument"||value==="line"||value==="note"||value==="other")) restoredKinds[Number(index)]=value;
-            setReviews(restoredReviews);setCorrections(restoredCorrections);setCandidateKinds(restoredKinds);
+            for(const [index,value] of Object.entries(data.candidateKinds ?? {})) if(validIndex(index) && (value==="equipment"||value==="instrument"||value==="line"||value==="valve"||value==="note"||value==="other")) restoredKinds[Number(index)]=value;
+            const restoredSymbols:Record<number,boolean>={};
+            for(const [index,value] of Object.entries(data.symbolReviews??{}))if(validIndex(index)&&value===true)restoredSymbols[Number(index)]=true;
+            setReviews(restoredReviews);setCorrections(restoredCorrections);setCandidateKinds(restoredKinds);setSymbolReviews(restoredSymbols);
             setReviewStorageMessage("Previous reviews restored for this drawing and page.");
           }
         } else setReviewStorageMessage("New review session. Changes will be saved locally.");
@@ -294,7 +297,7 @@ export function PidIntelligenceView() {
   const isPhoto = Boolean(file && /\\.(png|jpe?g)$/i.test(file.name));
   const candidateTotal = (result?.candidate_tags.length ?? 0) + (ocr?.candidates.length ?? 0);
   const candidateAssessments=(ocr?.candidates??[]).map(assessPidCandidate);
-  const knowledgeMatches=(ocr?.candidates??[]).map(item=>matchPidKnowledge(item.tag));
+  const knowledgeMatches=(ocr?.candidates??[]).map((item,index)=>matchPidKnowledge(corrections[index]??item.tag));
   const candidateCounts={plausible:candidateAssessments.filter(item=>item.tier==="plausible").length,uncertain:candidateAssessments.filter(item=>item.tier==="uncertain").length};
   const reviewedCount=Object.values(reviews).filter(value=>value==="correct"||value==="incorrect").length;
   const correctCount=Object.values(reviews).filter(value=>value==="correct").length;
@@ -304,7 +307,9 @@ export function PidIntelligenceView() {
     if (reviews[originalIndex] === "incorrect") return [];
     const category = candidateKinds[originalIndex] ?? "unknown";
     const reviewedLabel = corrections[originalIndex] ?? item.tag;
-    const verified = reviews[originalIndex] === "correct" && category !== "unknown";
+    const textVerified = reviews[originalIndex] === "correct";
+    const symbolVerified = textVerified && symbolReviews[originalIndex]===true && category !== "unknown";
+    const verified = textVerified && category !== "unknown";
     return [{
       id: `p${ocr!.page}-ocr-${originalIndex}`,
       kind: category,
@@ -313,6 +318,9 @@ export function PidIntelligenceView() {
       page: ocr!.page,
       box: [item.box.x, item.box.y, item.box.width, item.box.height],
       verified,
+      text_verified: textVerified,
+      symbol_verified: symbolVerified,
+      connectivity_verified: false,
       review_status: reviews[originalIndex] ?? "unreviewed",
       review_method: verified ? "manual_engineer_review" : null,
       source: "ocr" as const,
@@ -653,12 +661,13 @@ export function PidIntelligenceView() {
                 <span className="pid-inspector-state">{reviews[selectedCandidate] ?? "Unverified OCR"}</span>
                 <label className="pid-inspector-label" htmlFor="pid-inspector-kind">Object category</label>
                 <select id="pid-inspector-kind" value={candidateKinds[selectedCandidate] ?? ""} onChange={event=>{
-                  const kind=event.target.value as "equipment"|"instrument"|"line"|"note"|"other"|"";
+                  const kind=event.target.value as "equipment"|"instrument"|"line"|"valve"|"note"|"other"|"";
                   setCandidateKinds(previous=>{const next={...previous};if(kind)next[selectedCandidate]=kind;else delete next[selectedCandidate];return next;});
                   setReviews(previous=>{const next={...previous};delete next[selectedCandidate];return next;});
+                  setSymbolReviews(previous=>{const next={...previous};delete next[selectedCandidate];return next;});
                 }}>
                   <option value="">Select category...</option>
-                  <option value="equipment">Equipment</option><option value="instrument">Instrument</option><option value="line">Line number</option><option value="note">Drawing note</option><option value="other">Other / unknown</option>
+                  <option value="equipment">Equipment</option><option value="instrument">Instrument</option><option value="line">Line number</option><option value="valve">Valve</option><option value="note">Drawing note</option><option value="other">Other / unknown</option>
                 </select>
                 <label className="pid-inspector-label" htmlFor="pid-inspector-tag">Reviewed label</label>
                 <input id="pid-inspector-tag" aria-label="Reviewed OCR label" maxLength={40} value={draftTag} onChange={event=>setDraftTag(event.target.value.toUpperCase())}/>
@@ -670,6 +679,8 @@ export function PidIntelligenceView() {
                   <button type="button" disabled={!candidateKinds[selectedCandidate] || !/^[A-Z0-9][A-Z0-9 _/-]{0,39}$/.test((corrections[selectedCandidate]??ocr.candidates[selectedCandidate].tag).trim()) || draftTag.trim() !== (corrections[selectedCandidate]??ocr.candidates[selectedCandidate].tag).trim()} onClick={()=>setReviews(previous=>({...previous,[selectedCandidate]:"correct"}))}>Confirm label</button>
                   <button type="button" onClick={()=>setReviews(previous=>({...previous,[selectedCandidate]:"incorrect"}))}>Reject</button>
                 </div>
+                <label className="pid-inspector-symbol-review"><input type="checkbox" checked={symbolReviews[selectedCandidate]===true} disabled={reviews[selectedCandidate]!=="correct"||!candidateKinds[selectedCandidate]} onChange={event=>setSymbolReviews(previous=>({...previous,[selectedCandidate]:event.target.checked}))}/> Symbol verified against the original drawing and plant legend</label>
+                <small>Text verified: {reviews[selectedCandidate]==="correct"?"Yes":"No"} · Symbol verified: {reviews[selectedCandidate]==="correct"&&symbolReviews[selectedCandidate]?"Yes":"No"} · Connectivity verified: No (requires independent edge review).</small>
                 <small>Category and label are reviewed independently. Confirmation applies only to the OCR label, not piping connectivity.</small>
               </> : selectedVisualPath !== null && visualPaths[selectedVisualPath] ? <>
                 <strong>Visual path {selectedVisualPath + 1}</strong>
