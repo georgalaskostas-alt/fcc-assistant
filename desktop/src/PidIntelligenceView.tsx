@@ -155,7 +155,24 @@ export function PidIntelligenceView() {
   const [symbolMode, setSymbolMode] = useState<"off" | "equipment" | "valve" | "instrument" | "connector">("off");
   const [symbolProposals,setSymbolProposals]=useState<SymbolProposal[]>([]);
   const [symbolDetectionMessage,setSymbolDetectionMessage]=useState("");
-  const [symbolAnnotations, setSymbolAnnotations] = useState<Array<{x:number;y:number;kind:"equipment" | "valve" | "instrument" | "connector";tag:string}>>([]);
+  const [symbolAnnotations, setSymbolAnnotations] = useState<Array<{x:number;y:number;kind:"equipment" | "valve" | "instrument" | "connector";tag:string;width?:number;height?:number;reviewed?:boolean}>>([]);
+  const [datasetMessage,setDatasetMessage]=useState("");
+  const datasetStorageKey=file&&ocr?`fcc-pid-symbol-dataset-v1:${file.name}:${file.size}:${file.lastModified}:page-${ocr.page}`:null;
+  useEffect(()=>{
+    if(!datasetStorageKey)return;
+    try{
+      const parsed:unknown=JSON.parse(localStorage.getItem(datasetStorageKey)??"[]");
+      if(!Array.isArray(parsed))return;
+      const valid=parsed.filter(item=>item&&typeof item==="object"&&Number.isFinite(item.x)&&Number.isFinite(item.y)&&item.x>=0&&item.x<=1&&item.y>=0&&item.y<=1&&["equipment","valve","instrument","connector"].includes(item.kind)&&typeof item.tag==="string"&&item.tag.length<=40&&(!item.width||(Number.isFinite(item.width)&&item.width>0&&item.width<=1))&&(!item.height||(Number.isFinite(item.height)&&item.height>0&&item.height<=1)));
+      setSymbolAnnotations(valid.map(item=>({x:item.x,y:item.y,kind:item.kind,tag:item.tag,width:item.width??0.04,height:item.height??0.04,reviewed:item.reviewed===true})));
+      setDatasetMessage(`Restored ${valid.length} symbol annotations.`);
+    }catch{setDatasetMessage("Could not restore saved symbol annotations.");}
+  },[datasetStorageKey]);
+  useEffect(()=>{
+    if(!datasetStorageKey)return;
+    try{localStorage.setItem(datasetStorageKey,JSON.stringify(symbolAnnotations));}
+    catch{setDatasetMessage("Local symbol storage unavailable; export your dataset.");}
+  },[datasetStorageKey,symbolAnnotations]);
   const [topologyReviews, setTopologyReviews] = useState<Record<number, "accepted" | "rejected">>({});
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
@@ -229,7 +246,7 @@ export function PidIntelligenceView() {
   }
   async function runOcr() {
     if (!file || ocrBusy) return;
-    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setPipeAnchors({}); setPipePickMode(false); setTraceLine(null); setPipeAnchors({}); setPipePickMode(false); setSelectedCandidate(null); setReviews({}); setCorrections({}); setCandidateKinds({}); setSymbolReviews({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolAnnotations([]); setSymbolMode("off"); setSelectedVisualPath(null);
+    setOcrBusy(true); setOcrError(null); setOcr(null); setSelectedLineLabel(null); setLineReviews({}); setLineCorrections({}); setPipeAnchors({}); setPipePickMode(false); setTraceLine(null); setPipeAnchors({}); setPipePickMode(false); setSelectedCandidate(null); setReviews({}); setCorrections({}); setCandidateKinds({}); setSymbolReviews({}); setTopologyReviews({}); setSelectedTopology(null); setPathEquipment({}); setPathLineNumbers({}); setSymbolMode("off"); setSelectedVisualPath(null);
     try {
       const nextOcr = await api.ocrPidPage(file, page);
       const key = `fcc-pid-reviews-v1:${file.name}:${file.size}:${file.lastModified}:page-${nextOcr.page}:${nextOcr.candidates.map(item=>`${item.tag}@${item.box.x.toFixed(4)},${item.box.y.toFixed(4)}`).join("|")}`;
@@ -440,6 +457,22 @@ export function PidIntelligenceView() {
     const link = document.createElement("a");
     link.href = url; link.download = `pid-connectivity-annotations-page-${ocr.page}.json`;
     link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function exportTrainingDataset(){
+    if(!ocr||!file)return;
+    const annotations=symbolAnnotations.filter(item=>item.reviewed===true).map((item,index)=>({
+      id:`p${ocr.page}-training-${index}`,category:item.kind,tag:item.tag,
+      bbox:{x:Math.max(0,item.x-(item.width??0.04)/2),y:Math.max(0,item.y-(item.height??0.04)/2),
+        width:Math.min(item.width??0.04,1-Math.max(0,item.x-(item.width??0.04)/2)),
+        height:Math.min(item.height??0.04,1-Math.max(0,item.y-(item.height??0.04)/2))},
+      source:"engineer_manual",reviewed:true,
+    }));
+    const payload={schema_version:1,format:"fcc_symbol_detection_dataset",image:{name:file.name,size:file.size,last_modified:file.lastModified,page:ocr.page},coordinate_system:"normalized_xywh",annotations,excluded_unreviewed:symbolAnnotations.length-annotations.length,warning:"Labels are engineer-reviewed annotations; training image must be provided separately. No topology inferred."};
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob),link=document.createElement("a");
+    link.href=url;link.download=`pid-training-dataset-page-${ocr.page}.json`;link.click();
+    window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+    setDatasetMessage(`Exported ${annotations.length} reviewed labels; ${payload.excluded_unreviewed} unreviewed excluded.`);
   }
   function exportSymbolAnnotations() {
     if (!ocr) return;
@@ -1009,6 +1042,7 @@ export function PidIntelligenceView() {
         {ocr && <section className="pid-graph-panel">
           <div className="pid-table-head"><h3>Symbol annotation · engineer-assisted</h3>
             <button type="button" className="secondary-button" onClick={exportSymbolAnnotations}>Export symbols JSON</button>
+            <button type="button" className="secondary-button" onClick={exportTrainingDataset}>Export training dataset JSON</button>
           </div>
           <p className="pid-muted">Choose a symbol category, then click its center on the drawing. These are manual labels, not automatic symbol recognition.</p>
           <label>Place symbol
@@ -1030,11 +1064,16 @@ export function PidIntelligenceView() {
             <button type="button" disabled={!symbolProposals.length} onClick={()=>setSymbolProposals([])}>Clear proposals</button>
             <small role="status">{symbolDetectionMessage}</small>
           </div>
-          <p>{symbolAnnotations.length} manually placed symbols</p>
+          <p>{symbolAnnotations.length} manually placed symbols · {symbolAnnotations.filter(item=>item.reviewed).length} engineer-reviewed</p>
+          <small role="status">{datasetMessage}</small>
+          <p className="pid-muted">Set the approximate bounding-box width and height as percentages of the drawing. Review each box on the original P&ID before marking it verified for training. The exported JSON does not contain the image pixels.</p>
           {symbolAnnotations.map((symbol,index) => <div key={index} className="pid-review-actions">
             <span>#{index+1} · {symbol.kind} · ({symbol.x.toFixed(3)}, {symbol.y.toFixed(3)})</span>
             <input aria-label={`Symbol ${index+1} tag`} placeholder="Optional tag" maxLength={40} value={symbol.tag}
-              onChange={event => setSymbolAnnotations(previous => previous.map((item,i) => i === index ? {...item,tag:event.target.value.toUpperCase()} : item))}/>
+              onChange={event => setSymbolAnnotations(previous => previous.map((item,i) => i === index ? {...item,tag:event.target.value.toUpperCase(),reviewed:false} : item))}/>
+            <label>Width %<input type="number" min="0.2" max="100" step="0.5" value={Math.round((symbol.width??0.04)*1000)/10} onChange={event=>setSymbolAnnotations(previous=>previous.map((item,i)=>i===index?{...item,width:Math.max(.002,Math.min(1,Number(event.target.value)/100||.002)),reviewed:false}:item))}/></label>
+            <label>Height %<input type="number" min="0.2" max="100" step="0.5" value={Math.round((symbol.height??0.04)*1000)/10} onChange={event=>setSymbolAnnotations(previous=>previous.map((item,i)=>i===index?{...item,height:Math.max(.002,Math.min(1,Number(event.target.value)/100||.002)),reviewed:false}:item))}/></label>
+            <label><input type="checkbox" checked={symbol.reviewed===true} onChange={event=>setSymbolAnnotations(previous=>previous.map((item,i)=>i===index?{...item,reviewed:event.target.checked}:item))}/> Reviewed for training</label>
             <button type="button" onClick={() => setSymbolAnnotations(previous => previous.filter((_,i) => i !== index))}>Remove</button>
           </div>)}
         </section>}
