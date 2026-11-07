@@ -1025,8 +1025,8 @@ export function PidIntelligenceView() {
               if(!raster)return;
               const proposals=detectInstrumentCircles(raster);
               setSymbolProposals(proposals);
-              setSymbolDetectionMessage(`${proposals.length} unverified circular-outline proposals. Select ? markers on the drawing to accept as manual instrument annotations. False positives are expected.`);
-            }}>Detect instrument circles · experimental</button>
+              setSymbolDetectionMessage(`${proposals.length} unverified v2 instrument-bubble proposals. Select ? markers on the drawing to accept as manual instrument annotations. False positives are expected.`);
+            }}>Detect instrument bubbles · v2</button>
             <button type="button" disabled={!symbolProposals.length} onClick={()=>setSymbolProposals([])}>Clear proposals</button>
             <small role="status">{symbolDetectionMessage}</small>
           </div>
