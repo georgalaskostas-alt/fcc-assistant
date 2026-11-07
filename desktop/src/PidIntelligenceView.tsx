@@ -158,10 +158,12 @@ export function PidIntelligenceView() {
   const [symbolAnnotations, setSymbolAnnotations] = useState<Array<{x:number;y:number;kind:"equipment" | "valve" | "instrument" | "connector";tag:string;width?:number;height?:number;reviewed?:boolean}>>([]);
   const [datasetMessage,setDatasetMessage]=useState("");
   const datasetLoadedKeyRef=useRef<string|null>(null);
+  const skipDatasetSaveRef=useRef(false);
   const datasetStorageKey=file&&ocr?`fcc-pid-symbol-dataset-v1:${file.name}:${file.size}:${file.lastModified}:page-${ocr.page}`:null;
   useEffect(()=>{
     if(!datasetStorageKey)return;
     datasetLoadedKeyRef.current=null;
+    skipDatasetSaveRef.current=true;
     try{
       const parsed:unknown=JSON.parse(localStorage.getItem(datasetStorageKey)??"[]");
       if(!Array.isArray(parsed))return;
@@ -173,6 +175,7 @@ export function PidIntelligenceView() {
   },[datasetStorageKey]);
   useEffect(()=>{
     if(!datasetStorageKey||datasetLoadedKeyRef.current!==datasetStorageKey)return;
+    if(skipDatasetSaveRef.current){skipDatasetSaveRef.current=false;return;}
     try{localStorage.setItem(datasetStorageKey,JSON.stringify(symbolAnnotations));}
     catch{setDatasetMessage("Local symbol storage unavailable; export your dataset.");}
   },[datasetStorageKey,symbolAnnotations]);
