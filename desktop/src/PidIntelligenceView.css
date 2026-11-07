@@ -264,3 +264,11 @@
 .pid-symbol-detection-actions{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:12px 0}
 .pid-symbol-detection-actions small{flex-basis:100%;line-height:1.5}
 .pid-symbol-detection-actions button:disabled{opacity:.45;cursor:not-allowed}
+
+
+.pid-annotation-bbox{position:absolute;z-index:8;box-sizing:border-box;border:2px solid #f7ad4a;background:#f7ad4a12;cursor:move;touch-action:none;min-width:5px;min-height:5px}
+.pid-annotation-bbox-active{border-color:#5cdbff;background:#5cdbff1b;box-shadow:0 0 0 2px #0c2033}
+.pid-annotation-bbox-reviewed{border-color:#42cfa0}
+.pid-annotation-bbox-caption{position:absolute;bottom:100%;left:-2px;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#102b3d;color:#fff;font-size:11px;font-weight:700;padding:3px 6px;border-radius:4px;pointer-events:none}
+.pid-annotation-resize-handle{position:absolute;right:-6px;bottom:-6px;width:13px;height:13px;border-radius:3px;background:#fff;border:2px solid #188ac0;cursor:nwse-resize;touch-action:none}
+.pid-annotation-row-active{outline:2px solid #54c8f0;outline-offset:2px;border-radius:8px}
