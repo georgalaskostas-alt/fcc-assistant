@@ -279,3 +279,12 @@
 .pid-dataset-quality{border:1px solid #45697f;border-radius:10px;padding:12px 14px;margin:12px 0;background:#102b3b}
 .pid-dataset-quality summary{cursor:pointer;font-weight:700;font-size:13px}
 .pid-dataset-quality p{font-size:12px;line-height:1.5;margin:8px 0}
+
+.pid-dataset-manager{margin:16px 0}
+.pid-dataset-inputs{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+.pid-dataset-inputs label{display:flex;flex-direction:column;gap:7px;min-width:210px;font-size:12px}
+.pid-dataset-inputs input{max-width:280px;font-size:12px}
+.pid-dataset-results{display:grid;gap:8px;margin:12px 0}
+.pid-dataset-result{padding:12px;border:1px solid #42617b;border-radius:9px;font-size:12px}
+.pid-dataset-result p{margin:6px 0}
+.pid-dataset-error{color:#ffb2a8}
