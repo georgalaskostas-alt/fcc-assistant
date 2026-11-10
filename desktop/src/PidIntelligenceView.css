@@ -288,3 +288,6 @@
 .pid-dataset-result{padding:12px;border:1px solid #42617b;border-radius:9px;font-size:12px}
 .pid-dataset-result p{margin:6px 0}
 .pid-dataset-error{color:#ffb2a8}
+
+.pid-dataset-group-label{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:9px 0;font-size:12px;font-weight:700}
+.pid-dataset-group-label input{min-width:180px;max-width:320px;border:1px solid #53758d;border-radius:7px;background:#0d273a;color:#eef7ff;padding:7px 10px}
