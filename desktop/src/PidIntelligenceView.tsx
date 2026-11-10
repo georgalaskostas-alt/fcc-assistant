@@ -13,6 +13,7 @@ import { detectInstrumentCircles, type SymbolProposal } from "./pidSymbolDetecti
 import { suggestBubbleBox } from "./pidSmartAnnotation";
 import { validateSymbolDataset, toYoloLabels, SYMBOL_CLASSES, type TrainingAnnotation } from "./pidDatasetQuality";
 import { zipTextFiles } from "./pidDatasetZip";
+import { PidTrainingDatasetManager } from "./PidTrainingDatasetManager";
 import { suggestPathTags } from "./pidSpatialSuggestions";
 import { traceVisualPipe } from "./pidPipeTrace";
 import { traceRasterFromSeed } from "./pidRasterAutoTrace";
@@ -1116,6 +1117,7 @@ export function PidIntelligenceView() {
           <small>Local review only. No drawing changes or automatic AI training.</small>
         </div>}
         {ocr && <details className="pid-engineering-drawer"><summary><span><strong>Advanced engineering tools</strong><small>Symbols · raster geometry · topology · line standards · graph exports</small></span><span className="pid-drawer-chevron">Expand tools</span></summary><div className="pid-engineering-drawer-content"> 
+        <PidTrainingDatasetManager />
         {ocr && <section className="pid-graph-panel">
           <div className="pid-table-head"><h3>Symbol annotation · engineer-assisted</h3>
             <button type="button" className="secondary-button" onClick={exportSymbolAnnotations}>Export symbols JSON</button>
