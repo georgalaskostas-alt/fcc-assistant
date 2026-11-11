@@ -30,6 +30,7 @@ async function loadDrawing(key:string):Promise<Stored|null>{
  });}finally{db.close();}
 }
 const drawingKey=(image:File)=>[image.name,image.size,image.lastModified].join(":");
+const normalizeTag=(value:string)=>value.trim().toUpperCase().replace(/\s*[-–—]\s*/g,"-").replace(/\s+/g,"-");
 export function PidRecognitionReview({image,label}: {image:File;label:File}){
  const [items,setItems]=useState<Item[]>([]);
  const [message,setMessage]=useState("");
@@ -51,11 +52,13 @@ export function PidRecognitionReview({image,label}: {image:File;label:File}){
  },[image,label]);
  const patch=(index:number,changes:Partial<Item>)=>{setItems(old=>old.map((item,i)=>i===index?{...item,...changes,status:changes.status??"pending"}:item));setSaved(false);};
  const approve=async()=>{
-  const approved=items.filter(item=>item.status==="approved");
+  const normalizedItems=items.map(item=>({...item,tag:normalizeTag(item.tag)}));
+  const approved=normalizedItems.filter(item=>item.status==="approved");
   if(!approved.length||items.some(item=>item.status==="pending")){setMessage("Review every candidate and approve at least one before saving.");return;}
   if(approved.some(item=>!/^([A-Z]{1,8})[- ]?\d+[A-Z0-9/-]*$/i.test(item.tag.trim()))){setMessage("Every approved instrument needs a valid tag, e.g. TI-544.");return;}
   try{
-   await saveDrawing(drawingKey(image),{version:1,imageName:image.name,imageSize:image.size,imageModified:image.lastModified,items,approvedAt:new Date().toISOString()},image);
+   await saveDrawing(drawingKey(image),{version:1,imageName:image.name,imageSize:image.size,imageModified:image.lastModified,items:normalizedItems,approvedAt:new Date().toISOString()},image);
+   setItems(normalizedItems);
    setSaved(true);setMessage("Engineer-approved drawing, original image, tags and rejected proposals saved locally in IndexedDB. No model training has occurred.");
   }catch(e){setMessage("Save failed: "+String(e));}
  };
