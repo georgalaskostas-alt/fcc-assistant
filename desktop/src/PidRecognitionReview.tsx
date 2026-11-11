@@ -30,7 +30,7 @@ async function loadDrawing(key:string):Promise<Stored|null>{
  });}finally{db.close();}
 }
 const drawingKey=(image:File)=>[image.name,image.size,image.lastModified].join(":");
-const normalizeTag=(value:string)=>value.trim().toUpperCase().replace(/\s*[-–—]\s*/g,"-").replace(/\s+/g,"-");
+const normalizeTag=(value:string)=>value.normalize("NFKC").trim().toUpperCase().replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g,"-").replace(/\s*-\s*/g,"-").replace(/\s+/g,"-");
 export function PidRecognitionReview({image,label}: {image:File;label:File}){
  const [items,setItems]=useState<Item[]>([]);
  const [message,setMessage]=useState("");
@@ -50,12 +50,13 @@ export function PidRecognitionReview({image,label}: {image:File;label:File}){
   }).catch(e=>setMessage("Unable to read local review: "+String(e)));
   return ()=>{active=false;URL.revokeObjectURL(objectUrl);};
  },[image,label]);
- const patch=(index:number,changes:Partial<Item>)=>{setItems(old=>old.map((item,i)=>i===index?{...item,...changes,status:changes.status??"pending"}:item));setSaved(false);};
+ const patch=(index:number,changes:Partial<Item>)=>{setItems(old=>old.map((item,i)=>i===index?{...item,...changes,status:changes.status??"pending"}:item));setSaved(false);setMessage("");};
  const approve=async()=>{
   const normalizedItems=items.map(item=>({...item,tag:normalizeTag(item.tag)}));
   const approved=normalizedItems.filter(item=>item.status==="approved");
   if(!approved.length||items.some(item=>item.status==="pending")){setMessage("Review every candidate and approve at least one before saving.");return;}
-  if(approved.some(item=>!/^([A-Z]{1,8})[- ]?\d+[A-Z0-9/-]*$/i.test(item.tag.trim()))){setMessage("Every approved instrument needs a valid tag, e.g. TI-544.");return;}
+  const invalid=approved.filter(item=>!/^([A-Z]{1,8})-?\d+[A-Z0-9/-]*$/i.test(item.tag));
+  if(invalid.length){setMessage(`Invalid tag(s): ${invalid.map(item=>JSON.stringify(item.tag)).join(", ")}. Use e.g. TI-544.`);return;}
   try{
    await saveDrawing(drawingKey(image),{version:1,imageName:image.name,imageSize:image.size,imageModified:image.lastModified,items:normalizedItems,approvedAt:new Date().toISOString()},image);
    setItems(normalizedItems);
