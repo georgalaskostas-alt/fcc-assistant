@@ -301,3 +301,25 @@
 .pid-inspector-fields label{display:flex;flex-direction:column;gap:5px;font-size:12px}
 .pid-inspector-fields input,.pid-inspector-fields select{max-width:130px;padding:8px;background:#16374d;color:#fff;border:1px solid #547995;border-radius:7px}
 .pid-inspector-reviewed{display:flex;gap:10px;align-items:center;margin:12px 0}
+
+/* Annotation boxes must never obscure instrument tags on the drawing. */
+.pid-visual-inspector .pid-inspector-box,
+.pid-visual-inspector .pid-inspector-box:hover,
+.pid-visual-inspector .pid-inspector-box:focus{
+ appearance:none!important;
+ background:transparent!important;
+ background-image:none!important;
+ box-shadow:inset 0 0 0 1px rgba(255,205,76,.9)!important;
+ border:1px solid #ffcf55!important;
+ color:transparent!important;
+ opacity:1!important;
+ padding:0!important;
+}
+.pid-visual-inspector .pid-inspector-box.selected,
+.pid-visual-inspector .pid-inspector-box.selected:hover,
+.pid-visual-inspector .pid-inspector-box.selected:focus{
+ background:transparent!important;
+ background-image:none!important;
+ border:2px solid #2fe0cf!important;
+ box-shadow:0 0 0 1px rgba(10,28,43,.85)!important;
+}
