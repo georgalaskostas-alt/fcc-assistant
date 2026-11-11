@@ -323,3 +323,11 @@
  border:2px solid #2fe0cf!important;
  box-shadow:0 0 0 1px rgba(10,28,43,.85)!important;
 }
+
+.pid-recognition-workspace{margin:18px 0;padding:16px;border:1px solid #4d8197;border-radius:12px;background:#10293d}
+.pid-learning-box{position:absolute;border:2px solid #f2bf58;background:transparent;pointer-events:none;box-sizing:border-box}
+.pid-learning-box.approved{border-color:#32d4aa}
+.pid-learning-list{display:grid;gap:8px;margin:14px 0}
+.pid-learning-row{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:9px 12px;border:1px solid #46677e;border-radius:8px}
+.pid-learning-row strong{min-width:140px}
+.pid-learning-row input,.pid-learning-row select{background:#17374b;border:1px solid #5a829b;border-radius:7px;color:#f2f8ff;padding:8px}
