@@ -204,3 +204,11 @@ At **every meaningful implementation milestone**:
 - Found actual Tauri **Content Security Policy** mismatch: `tauri.conf.json` allowed `8765` but not `18765` in `connect-src`. Fixed by explicitly permitting local 18765 while retaining legacy 8765 entries; commit **52a607c**. A real macOS Tauri run remains required to confirm behavior.
 - Tauri sidecar checks `/health` before reusing an existing process on 18765; the check validates service-like response but is **not authentication**. Desktop backend has CORS allowlist, also **not authentication**. Multi-user access and privileged data actions still require backend-enforced authorization review.
 - Next verification: GitHub CI, macOS Tauri runtime, CSP connectivity and end-to-end Ollama P&ID inference. Update CI status only after results are available.
+
+### 2026-11-12 — A-001 macOS desktop launch confirmation (user-observed)
+- **Local pull:** user fetched branch updates through `9215dec` on MacBook Air.
+- **Observed local command:** `./scripts/dev-desktop.sh` ran `npm install`, Vite v7.3.6 reported ready at `localhost:1420`, Rust/Cargo reported `Finished dev profile`, and launched `target/debug/fcc-assistant`. **User explicitly confirmed the application window opened normally.**
+- **Verified level:** macOS Tauri development build and desktop window startup. **Not verified:** backend identity/health endpoint 18765, UI API requests, Ollama model installation/inference, full P&ID semantics, production packaging.
+- **Security finding (new):** `npm install` reported **2 high severity vulnerabilities** affecting the local dependency graph, but exact package/advisory IDs remain unknown pending `npm audit --json` (sanitized report). Do not run indiscriminate `npm audit fix --force`.
+- **GitHub CI:** commits `52a607c`, `64a8858`, `9215dec` all have completed successful GitHub Actions runs; CI still does not execute macOS Tauri packaging.
+- **Next check:** while desktop is running, `curl -fsS http://127.0.0.1:18765/health` and `curl -fsS http://127.0.0.1:18765/api/v1/system/capabilities`. Capture `cd desktop && npm audit --omit=dev` and `npm audit` to identify advisories; differentiate production and development vulnerabilities.
