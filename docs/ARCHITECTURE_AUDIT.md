@@ -168,3 +168,9 @@ This section supplements the earlier architecture audit; the original strategic 
 4. Audit persistence, migrations, backup and data provenance.
 5. Produce endpoint-to-UI-to-test traceability matrix and maturity rating per product pillar.
 6. Validate one full, permissioned P&ID end-to-end.
+
+
+### Runtime and CSP follow-up — 2026-11-12
+- **Port architecture resolved:** development backend on `127.0.0.1:8000` is separate from Tauri-owned sidecar on `127.0.0.1:18765`; frontend API and P&ID vision review call 18765. Both are intentional, but users must not assume starting port 8000 alone serves the desktop UI.
+- **Confirmed configuration defect:** Tauri CSP `connect-src` listed only localhost/127.0.0.1:8765, not active 18765. Fixed in `52a607c` by allowing localhost/127.0.0.1:18765 and preserving existing legacy allowances. This is a code-level fix pending macOS runtime verification.
+- **Security distinction:** localhost restriction, CORS and HTTP `/health` identity checks are not substitutes for backend authentication/authorization. Review tool-layer authorization and endpoint-level protection separately.
