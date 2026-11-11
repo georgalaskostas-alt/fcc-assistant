@@ -250,3 +250,11 @@ At **every meaningful implementation milestone**:
 - User supplied `GET /api/v1/ai/runtime`: binary and GGUF model both present, `endpoint_ready=true`, `port_open=true`, `identity_verified=true`, state `running=true`, `ready=true`, process PID **9525**, endpoint `127.0.0.1:18081`, macOS arm64.
 - `ollama list` is still empty; the Ollama-based `/api/v1/pid/vision/analyze` multimodal path is not yet ready. These are **distinct runtimes**. No completed inference request yet; readiness does not prove answer quality or P&ID recognition.
 - Next gate: run safe text-only chat-completions inference against the local llama.cpp endpoint; then design a memory-budgeted VLM approach for Apple M2 8GB and engineer-reviewed P&ID benchmark. Avoid concurrently loading a large 7B VLM with the resident 4B model.
+
+### 2026-11-12 — A-002 first completed text-model request, quality gate FAILED
+- User called local `127.0.0.1:18081/v1/chat/completions` using `Qwen3-4B-Q4_K_M`, `max_tokens=250`, requesting a 3-sentence explanation of FCC catalyst regeneration.
+- HTTP returned a chat-completion JSON response, so **local text inference executed**. Usage: `prompt_tokens=43`, `completion_tokens=250`, `finish_reason=length`, `predicted_per_second≈30.87`, `predicted_ms≈8065.97`, `prompt_ms≈298.54`.
+- **Failed completeness:** response was truncated mid-sentence; reasoning tokens consumed most of the completion budget.
+- **Failed engineering factuality:** response wrongly described regeneration principally as removal of sulfur, nitrogen and metals. FCC regenerator principally burns coke deposited during cracking; metal contaminants are not normally removed by coke combustion. Heat from coke burn sustains reactor-regenerator thermal balance.
+- **A-002 outcome:** runtime and inference availability verified; **technical accuracy NOT verified** and first engineering benchmark failed. No authorization to use unvalidated model output for operating decisions.
+- **Next:** evaluate `/no_think` or model-specific thinking suppression, enforce output budget and response-completeness checks, test against a curated FCC engineering reference set with independent review, and use evidence retrieval/guardrails. Separate P&ID Vision Ollama pipeline still lacks an installed model.
