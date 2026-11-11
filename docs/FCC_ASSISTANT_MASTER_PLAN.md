@@ -198,3 +198,9 @@ At **every meaningful implementation milestone**:
 ### 2026-11-12 — CI verification after A-001 remediation
 - GitHub Actions run **43114495612**, commit **311b238**, completed with **success** (both required CI jobs according to workflow conclusion). This validates the backend test job and desktop web TypeScript/Vite build for that commit; **it does not validate macOS Tauri packaging, Ollama inference or industrial functionality**.
 - Subsequent documentation-only runs were still in progress when checked. Baseline source build is green at 311b238.
+
+### 2026-11-12 — A-001 runtime/CSP audit continuation
+- Confirmed **two intentional backend modes**: `scripts/dev-backend.sh` starts manual Uvicorn at **8000**; `desktop/src-tauri/src/main.rs` launches/reuses a Tauri `fcc-backend` sidecar at **18765**; `desktop/src/api.ts` and P&ID Vision UI target **18765**. Port mismatch is a mode distinction, **not by itself a bug**.
+- Found actual Tauri **Content Security Policy** mismatch: `tauri.conf.json` allowed `8765` but not `18765` in `connect-src`. Fixed by explicitly permitting local 18765 while retaining legacy 8765 entries; commit **52a607c**. A real macOS Tauri run remains required to confirm behavior.
+- Tauri sidecar checks `/health` before reusing an existing process on 18765; the check validates service-like response but is **not authentication**. Desktop backend has CORS allowlist, also **not authentication**. Multi-user access and privileged data actions still require backend-enforced authorization review.
+- Next verification: GitHub CI, macOS Tauri runtime, CSP connectivity and end-to-end Ollama P&ID inference. Update CI status only after results are available.
