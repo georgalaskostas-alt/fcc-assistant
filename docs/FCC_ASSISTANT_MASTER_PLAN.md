@@ -233,3 +233,8 @@ At **every meaningful implementation milestone**:
 - `ollama list` returned no model rows; `GET 127.0.0.1:11434/api/tags` returned `{"models":[]}`. **Ollama daemon is reachable but no models are installed.** P&ID Vision inference cannot currently work via Ollama.
 - **Action:** restart desktop in its own persistent terminal, verify `/health` and AI status from a second terminal, then install a tested multimodal Ollama model under explicit disk/RAM constraints. Do not mistake llama.cpp text model for the separate Ollama vision model.
 - **Status:** A-002 in progress; no vision inference test performed, no accuracy claim.
+
+### 2026-11-12 — A-002 hardware and backend availability
+- User-reported `system_profiler` identifies **MacBook Air Apple M2, 8 GB unified memory**. Favor memory-constrained vision-model evaluation, not a default 7B VLM alongside desktop and embedded text LLM; benchmark actual peak RAM and latency before selection.
+- User again received `curl: (7) Failed to connect` for `/health` and `/api/v1/ai/status` at `127.0.0.1:18765`. This shows **no listening desktop backend at the moment of the check**, not a demonstrated crash or backend regression. Need contemporaneous `./scripts/dev-desktop.sh` terminal output and process/port checks before diagnosing.
+- Next: restart desktop in a persistent terminal, then verify port 18765 in parallel from another terminal; collect sidecar diagnostics if port remains unavailable. Do not download a large vision model yet.
