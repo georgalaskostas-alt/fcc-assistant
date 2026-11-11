@@ -64,7 +64,7 @@ export function PidIntelligenceView() {
   const [traceLine, setTraceLine] = useState<number | null>(null);
   const [routeMode, setRouteMode] = useState(false);
   const [routeWarning, setRouteWarning] = useState("");
-  const [autoTracePreview, setAutoTracePreview] = useState<{line:number;paths:Array<Array<{x:number;y:number}>>;stopReasons:string[];shadowPaths:Array<Array<{x:number;y:number}>>;shadowReviews:Record<number,"approved"|"rejected">}|null>(null);
+  const [autoTracePreview, setAutoTracePreview] = useState<{line:number;paths:Array<Array<{x:number;y:number}>>;stopReasons:string[];shadowPaths:Array<Array<{x:number;y:number}>>;shadowReviews:Record<number,"approved"|"rejected"|"pending">}|null>(null);
   // Endpoint annotations are explicit engineer reviews, never inferred topology.
   const [endpointReviews,setEndpointReviews] = useState<Record<string,{equipment:string;nozzle:string;side:"left"|"right"|"top"|"bottom"|"";point?:{x:number;y:number};status:"confirmed"|"rejected"}>>({});
   const [targetTraceProposals,setTargetTraceProposals] = useState<Record<string,{points:Array<{x:number;y:number}>;support:number;status:"proposed"|"approved"|"rejected"}>>({});
@@ -370,11 +370,11 @@ export function PidIntelligenceView() {
   const reviewedPrecision=reviewedCount>0?100*correctCount/reviewedCount:null;
   const graphNodes = (ocr?.candidates ?? []).flatMap((item, originalIndex) => {
     if (reviews[originalIndex] === "incorrect") return [];
-    const category = candidateKinds[originalIndex] ?? "unknown";
+    const category = candidateKinds[originalIndex] ?? "other";
     const reviewedLabel = corrections[originalIndex] ?? item.tag;
     const textVerified = reviews[originalIndex] === "correct";
-    const symbolVerified = textVerified && symbolReviews[originalIndex]===true && category !== "unknown";
-    const verified = textVerified && category !== "unknown";
+    const symbolVerified = textVerified && symbolReviews[originalIndex]===true && category !== "other";
+    const verified = textVerified && category !== "other";
     return [{
       id: `p${ocr!.page}-ocr-${originalIndex}`,
       kind: category,
