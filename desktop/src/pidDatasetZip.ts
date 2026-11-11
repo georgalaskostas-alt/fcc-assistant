@@ -24,5 +24,5 @@ export function zipTextFiles(files:Array<{name:string;content:string}>):Blob{
  const end=new Uint8Array(22),view=new DataView(end.buffer);
  write32(view,0,0x06054b50);write16(view,8,files.length);write16(view,10,files.length);
  write32(view,12,centralSize);write32(view,16,offset);
- return new Blob([...chunks,...central,end],{type:"application/zip"});
+ return new Blob([...chunks,...central,end].map(part=>new Uint8Array(part).buffer),{type:"application/zip"});
 }
