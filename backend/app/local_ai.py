@@ -92,6 +92,9 @@ class LocalAIClient:
         except LocalAIError:raise
         except Exception as exc:raise LocalAIError(f"Embedded local AI request failed: {type(exc).__name__}: {exc}") from exc
         try:
+            finish_reason=p["choices"][0].get("finish_reason")
+            if finish_reason=="length":
+                raise LocalAIError("Embedded local AI response was truncated (finish_reason=length); increase output budget or shorten the request")
             message=p["choices"][0]["message"]
             text=message.get("content")
             # Qwen reasoning models can place the useful completion in
