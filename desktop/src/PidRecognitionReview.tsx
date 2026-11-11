@@ -49,6 +49,9 @@ export function PidRecognitionReview({image,label}: {image:File;label:File}){
  const [url,setUrl]=useState("");
  const [saved,setSaved]=useState(false);
  const [scanning,setScanning]=useState(false);
+ const [visionBusy,setVisionBusy]=useState(false);
+ const [visionSummary,setVisionSummary]=useState("");
+ const [visionConnections,setVisionConnections]=useState<Array<{from:string;to:string;evidence:string;confidence:number}>>([]);
  useEffect(()=>{
   let active=true;const objectUrl=URL.createObjectURL(image);setUrl(objectUrl);setSaved(false);
   Promise.all([label.text(),loadDrawing(drawingKey(image))]).then(([raw,stored])=>{
@@ -64,6 +67,38 @@ export function PidRecognitionReview({image,label}: {image:File;label:File}){
   return ()=>{active=false;URL.revokeObjectURL(objectUrl);};
  },[image,label]);
  const patch=(index:number,changes:Partial<Item>)=>{setItems(old=>old.map((item,i)=>i===index?{...item,...changes,status:changes.status??"pending"}:item));setSaved(false);setMessage("");};
+ const runVision=async()=>{
+  if(visionBusy)return;
+  setVisionBusy(true);setMessage("Analyzing image with local vision-language model...");
+  try{
+   const form=new FormData();form.append("file",image,image.name);form.append("model","qwen2.5vl:7b");
+   const response=await fetch("http://127.0.0.1:18765/api/v1/pid/vision/analyze",{method:"POST",body:form});
+   if(!response.ok)throw new Error((await response.text()).slice(0,500));
+   const result=await response.json() as {summary:string;symbols:Array<{tag:string;kind:string;bbox:number[]|null;confidence:number}>;connections:Array<{from:string;to:string;evidence:string;confidence:number}>;uncertainties:string[]};
+   setVisionSummary(result.summary+"\nUncertainties: "+result.uncertainties.join("; "));
+   setVisionConnections(result.connections);
+   let added=0;
+   setItems(previous=>{
+    const next=[...previous];
+    for(const candidate of result.symbols){
+     const box=candidate.bbox;
+     if(!box||box.length!==4||!box.every(n=>Number.isFinite(n)&&n>=0&&n<=1))continue;
+     const [x1,y1,x2,y2]=box,tag=normalizeTag(candidate.tag);
+     if(x2<=x1||y2<=y1)continue;
+     const cx=(x1+x2)/2,cy=(y1+y2)/2;
+     if(next.some(item=>(tag&&normalizeTag(item.tag)===tag)||(Math.abs(item.cx-cx)<0.02&&Math.abs(item.cy-cy)<0.02)))continue;
+     const kind=candidate.kind.toLowerCase();
+     const cls=kind.includes("valve")?1:kind.includes("equipment")||kind.includes("pump")||kind.includes("exchanger")||kind.includes("vessel")?2:0;
+     next.push({id:`vision-${Date.now()}-${added}`,cls,cx,cy,w:x2-x1,h:y2-y1,tag,status:"pending"});
+     added++;
+    }
+    return next;
+   });
+   if(added)setSaved(false);
+   setMessage(`Vision proposed ${result.symbols.length} symbols, added ${added} pending boxes, and ${result.connections.length} UNVERIFIED connection hypotheses. Review all before saving.`);
+  }catch(e){setMessage("Vision analysis unavailable: "+String(e)+". Install Ollama and pull qwen2.5vl:7b; start local backend.");}
+  finally{setVisionBusy(false);}
+ };
  const scanOcr=async()=>{
   if(scanning)return;
   setScanning(true);setMessage("Running local OCR for candidate instrument tags...");
@@ -103,6 +138,8 @@ export function PidRecognitionReview({image,label}: {image:File;label:File}){
  return <section className="pid-recognition-workspace">
   <h3>Recognition & Learning Workspace · {image.name}</h3>
   <p>Existing YOLO labels are imported as candidates. Local OCR can propose additional tag text regions, but does not establish the symbol boundary or connectivity. Every proposal requires engineer review.</p>
+  <button type="button" onClick={runVision} disabled={visionBusy}>{visionBusy?"Vision model analyzing...":"Analyze full P&ID with local Vision AI"}</button>
+  {visionSummary&&<div className="pid-dataset-result"><strong>Vision analysis · UNVERIFIED</strong><p style={{whiteSpace:"pre-wrap"}}>{visionSummary}</p>{visionConnections.map((edge,i)=><p key={i}>{edge.from} → {edge.to} · confidence {edge.confidence.toFixed(2)} · {edge.evidence}</p>)}</div>}
   <button type="button" onClick={scanOcr} disabled={scanning}>{scanning?"Scanning local OCR...":"Scan P&ID for instrument tags (local OCR)"}</button>
   <div className="pid-inspector-image">
    {url&&<img src={url} alt={image.name}/>}
