@@ -185,3 +185,12 @@ At **every meaningful implementation milestone**:
 - **Tests executed for this document:** none; **not** a completed technical audit.
 - **Current blockers:** unvalidated whole-drawing AI, unverified VLM runtime, no gold benchmark, incomplete durable knowledge governance.
 - **Next:** A-001 repository audit and A-002 local VLM end-to-end verification.
+
+### 2026-11-12 — A-001 technical audit, first evidence pass
+- **Scope inspected:** GitHub repository tree (264 paths), backend/desktop entrypoints, package/dependency scripts, existing `docs/ARCHITECTURE_AUDIT.md` and `docs/MASTER_VISION.md`, GitHub Actions run 43113635879 and desktop failure logs.
+- **Key discovery:** a pre-existing broader refinery vision and architecture audit already cover controlled engineering editing, personal workspace/memory, and agent/tool contracts. These remain first-class requirements; do not narrow scope to P&ID.
+- **CI evidence:** run 43113635879 on commit `bc9c04a` had backend **success**, desktop-web **failure**. Desktop errors were TS2367 (candidate category), TS2345 (shadow review state) and TS2322 (ZIP BlobPart typing).
+- **Remediation committed:** `66309fd` (review type unions) and `311b238` (ZIP BlobPart conversion). **New CI result not yet verified** at time of this entry.
+- **Important discrepancy:** frontend uses `http://127.0.0.1:18765`, while `scripts/dev-backend.sh` runs port **8000**. Determine whether Tauri's embedded sidecar bridges 18765 before treating this as a defect; document both runtime modes and test each.
+- **Additional audit tasks:** enumerate route contracts, examine identity/RBAC enforcement, inspect data provenance and persistent storage, verify build and sidecar packaging, evaluate model installation/runtime path, confirm PI integration mode.
+- **Next:** confirm fresh CI after fixes, audit desktop sidecar port wiring, then perform controlled VLM end-to-end benchmark.
