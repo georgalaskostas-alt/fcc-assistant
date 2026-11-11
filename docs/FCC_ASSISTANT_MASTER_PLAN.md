@@ -244,3 +244,9 @@ At **every meaningful implementation milestone**:
 - `curl -v http://127.0.0.1:18765/health` connected successfully, received **HTTP 200 OK**, `server: uvicorn`, and JSON `{"status":"ok","service":"fcc-assistant-backend","mode":"local"}`.
 - Process listing showed executable `desktop/src-tauri/target/debug/fcc-backend` (PIDs 9471 and 9472). Thus the desktop's own sidecar is confirmed running; earlier connection-refused observations were time-specific availability, not evidence of a permanent launch failure.
 - **Remaining A-002 gate:** request local AI status and runtime readiness while desktop remains open; distinguish llama.cpp text model from the empty Ollama Vision model inventory, then select a memory-appropriate multimodal model for Apple M2 8 GB and run controlled P&ID inference.
+
+### 2026-11-12 — A-002 embedded llama.cpp runtime confirmed live
+- User supplied successful `GET /api/v1/ai/status`: `configured=true`, `connected=true`, `runtime=llama.cpp`, `provider=embedded-local`, model `Qwen3-4B-Q4_K_M`, `local_only=true`, with loaded model path under `~/.fcc-assistant/models/`.
+- User supplied `GET /api/v1/ai/runtime`: binary and GGUF model both present, `endpoint_ready=true`, `port_open=true`, `identity_verified=true`, state `running=true`, `ready=true`, process PID **9525**, endpoint `127.0.0.1:18081`, macOS arm64.
+- `ollama list` is still empty; the Ollama-based `/api/v1/pid/vision/analyze` multimodal path is not yet ready. These are **distinct runtimes**. No completed inference request yet; readiness does not prove answer quality or P&ID recognition.
+- Next gate: run safe text-only chat-completions inference against the local llama.cpp endpoint; then design a memory-budgeted VLM approach for Apple M2 8GB and engineer-reviewed P&ID benchmark. Avoid concurrently loading a large 7B VLM with the resident 4B model.
