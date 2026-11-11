@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { SYMBOL_CLASSES, validateSymbolDataset, type TrainingAnnotation } from "./pidDatasetQuality";
 import { zipBinaryFiles } from "./pidDatasetBinaryZip";
+import { PidVisualDatasetInspector } from "./PidVisualDatasetInspector";
 
 type DatasetRow={image:File;label:File|null;sourceGroup:string;count:number;errors:string[];warnings:string[]};
 const stem=(name:string)=>name.replace(/\.[^.]+$/,"").toLowerCase();
@@ -42,6 +43,7 @@ export function PidTrainingDatasetManager(){
  const [rows,setRows]=useState<DatasetRow[]>([]);
  const [status,setStatus]=useState("");
  const [packaging,setPackaging]=useState(false);
+ const [inspected,setInspected]=useState<number|null>(null);
  const onInspect=async()=>{
   const next=await inspect(images,labels);setRows(next);
   const unmatched=labels.filter(label=>!images.some(image=>matchLabel(image,[label])));
@@ -101,10 +103,12 @@ export function PidTrainingDatasetManager(){
   </div>
   <p role="status">{status}</p>
   {rows.length>0&&<div className="pid-dataset-results">{rows.map((r,i)=><div key={i} className="pid-dataset-result"><strong>{r.image.name}</strong> · {r.label?.name??"No label"} · {r.count} annotations · {r.errors.length} errors · {r.warnings.length} warnings
+   {r.label&&<button type="button" className="secondary-button" onClick={()=>setInspected(i)}>Inspect boxes visually</button>}
    <label className="pid-dataset-group-label">Source drawing group <input type="text" value={r.sourceGroup} onChange={e=>setRows(previous=>previous.map((item,j)=>j===i?{...item,sourceGroup:e.target.value}:item))} aria-label={`Source drawing group for ${r.image.name}`}/></label>
    {r.errors.map((message,j)=><p key={j} className="pid-dataset-error">{message}</p>)}
    {r.warnings.map((message,j)=><p key={j}>{message}</p>)}
   </div>)}</div>}
+  {inspected!==null&&rows[inspected]?.label&&<PidVisualDatasetInspector key={`${rows[inspected].image.name}:${rows[inspected].label?.name}`} image={rows[inspected].image} label={rows[inspected].label!} onClose={()=>setInspected(null)}/>}
   <small>This manager validates YOLO structure and packages original images with labels. It does not visually verify annotations or train AI. Validation splitting uses the editable source drawing group. All pages of the same source drawing must share a group. Similar or duplicated drawings across groups can still cause data leakage.</small>
  </section>;
 }
