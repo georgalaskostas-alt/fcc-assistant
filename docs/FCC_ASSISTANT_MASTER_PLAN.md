@@ -265,3 +265,8 @@ At **every meaningful implementation milestone**:
 - Response correctly identified coke removal, catalyst activity restoration and heat from coke combustion supporting endothermic cracking; technically acceptable for this narrow benchmark, with nuance that irreversible catalyst deactivation is not undone by regeneration.
 - **Evidence boundary:** single passed prompt after a failed prompt is not a general accuracy benchmark. Prompt, token limit and thinking behavior all changed; improvement cannot be attributed solely to `/no_think`.
 - **Next:** regression test suite of independently reviewed FCC engineering questions; enforce `finish_reason` checks and uncertainty handling in AI response pathway; validate local Ollama VLM independently under Apple M2 8GB memory constraints.
+
+### 2026-11-12 — A-002 response completeness guard implemented (verification pending)
+- Commit `2623791`: `backend/app/local_ai.py` rejects `finish_reason=length` with `LocalAIError`, rather than returning truncated engineering text.
+- Commit `0d5ffe6`: new `backend/tests/test_local_ai_completion_guard.py` adds 3 mocked tests (truncated content, completed answer, truncated reasoning-only response).
+- **Status:** committed but not yet executed in user's local environment or independently verified in CI; ask user to pull and run backend unittest suite. Technical factuality benchmark remains outstanding. Existing fallback to `reasoning_content` for non-truncated empty content requires separate review.
