@@ -194,3 +194,7 @@ At **every meaningful implementation milestone**:
 - **Important discrepancy:** frontend uses `http://127.0.0.1:18765`, while `scripts/dev-backend.sh` runs port **8000**. Determine whether Tauri's embedded sidecar bridges 18765 before treating this as a defect; document both runtime modes and test each.
 - **Additional audit tasks:** enumerate route contracts, examine identity/RBAC enforcement, inspect data provenance and persistent storage, verify build and sidecar packaging, evaluate model installation/runtime path, confirm PI integration mode.
 - **Next:** confirm fresh CI after fixes, audit desktop sidecar port wiring, then perform controlled VLM end-to-end benchmark.
+
+### 2026-11-12 — CI verification after A-001 remediation
+- GitHub Actions run **43114495612**, commit **311b238**, completed with **success** (both required CI jobs according to workflow conclusion). This validates the backend test job and desktop web TypeScript/Vite build for that commit; **it does not validate macOS Tauri packaging, Ollama inference or industrial functionality**.
+- Subsequent documentation-only runs were still in progress when checked. Baseline source build is green at 311b238.
