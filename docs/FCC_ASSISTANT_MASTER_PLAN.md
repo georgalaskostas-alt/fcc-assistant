@@ -258,3 +258,10 @@ At **every meaningful implementation milestone**:
 - **Failed engineering factuality:** response wrongly described regeneration principally as removal of sulfur, nitrogen and metals. FCC regenerator principally burns coke deposited during cracking; metal contaminants are not normally removed by coke combustion. Heat from coke burn sustains reactor-regenerator thermal balance.
 - **A-002 outcome:** runtime and inference availability verified; **technical accuracy NOT verified** and first engineering benchmark failed. No authorization to use unvalidated model output for operating decisions.
 - **Next:** evaluate `/no_think` or model-specific thinking suppression, enforce output budget and response-completeness checks, test against a curated FCC engineering reference set with independent review, and use evidence retrieval/guardrails. Separate P&ID Vision Ollama pipeline still lacks an installed model.
+
+### 2026-11-12 — A-002 second live inference: controlled FCC prompt passed
+- User ran `Qwen3-4B-Q4_K_M` on local llama.cpp endpoint with `/no_think`, `temperature=0`, `max_tokens=400`, and explicit FCC coke-burn / heat-balance question.
+- Response completed with `finish_reason=stop`, `completion_tokens=87`, `prompt_tokens=76`, `predicted_ms=2927.303`, `predicted_per_second=29.3786`. Compared with prior 250-token truncated response (`predicted_ms=8065.973`).
+- Response correctly identified coke removal, catalyst activity restoration and heat from coke combustion supporting endothermic cracking; technically acceptable for this narrow benchmark, with nuance that irreversible catalyst deactivation is not undone by regeneration.
+- **Evidence boundary:** single passed prompt after a failed prompt is not a general accuracy benchmark. Prompt, token limit and thinking behavior all changed; improvement cannot be attributed solely to `/no_think`.
+- **Next:** regression test suite of independently reviewed FCC engineering questions; enforce `finish_reason` checks and uncertainty handling in AI response pathway; validate local Ollama VLM independently under Apple M2 8GB memory constraints.
