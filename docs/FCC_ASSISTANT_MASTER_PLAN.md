@@ -238,3 +238,9 @@ At **every meaningful implementation milestone**:
 - User-reported `system_profiler` identifies **MacBook Air Apple M2, 8 GB unified memory**. Favor memory-constrained vision-model evaluation, not a default 7B VLM alongside desktop and embedded text LLM; benchmark actual peak RAM and latency before selection.
 - User again received `curl: (7) Failed to connect` for `/health` and `/api/v1/ai/status` at `127.0.0.1:18765`. This shows **no listening desktop backend at the moment of the check**, not a demonstrated crash or backend regression. Need contemporaneous `./scripts/dev-desktop.sh` terminal output and process/port checks before diagnosing.
 - Next: restart desktop in a persistent terminal, then verify port 18765 in parallel from another terminal; collect sidecar diagnostics if port remains unavailable. Do not download a large vision model yet.
+
+### 2026-11-12 — A-002 desktop sidecar verified live
+- User restarted the desktop and checked in a second terminal. `lsof -nP -iTCP:18765 -sTCP:LISTEN` showed `fcc-backe` PID **9472** listening on `127.0.0.1:18765`.
+- `curl -v http://127.0.0.1:18765/health` connected successfully, received **HTTP 200 OK**, `server: uvicorn`, and JSON `{"status":"ok","service":"fcc-assistant-backend","mode":"local"}`.
+- Process listing showed executable `desktop/src-tauri/target/debug/fcc-backend` (PIDs 9471 and 9472). Thus the desktop's own sidecar is confirmed running; earlier connection-refused observations were time-specific availability, not evidence of a permanent launch failure.
+- **Remaining A-002 gate:** request local AI status and runtime readiness while desktop remains open; distinguish llama.cpp text model from the empty Ollama Vision model inventory, then select a memory-appropriate multimodal model for Apple M2 8 GB and run controlled P&ID inference.
