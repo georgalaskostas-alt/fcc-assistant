@@ -226,3 +226,10 @@ At **every meaningful implementation milestone**:
 - **A-001 dependency security issue CLOSED for observed dependency versions**. Continue to rescan future versions; npm audit measures known advisories, not total security assurance.
 - **A-002 architecture discovery:** current `local_ai=ready` in `/api/v1/system/capabilities` refers to embedded **llama.cpp** model/binary presence (text analysis). P&ID Vision endpoint `/api/v1/pid/vision/analyze` is a **separate Ollama-only multimodal pipeline** defaulting to `qwen2.5vl:7b` on loopback port 11434. **Embedded llama.cpp readiness does not mean Vision AI is installed or operational.**
 - **A-002 next checks:** read-only `GET /api/v1/ai/status`, `GET /api/v1/ai/runtime` and `GET http://127.0.0.1:11434/api/tags` to distinguish text-model runtime from Ollama Vision availability; verify inference against permissioned test image separately. The Vision prompt and model-output parsing are unbenchmarked proposals, not verified circuit reconstruction.
+
+### 2026-11-12 — A-002 AI runtime discovery on user's Mac
+- User re-confirmed desktop `npm audit` **0 vulnerabilities** and `tsc && vite build` **success** (Vite **7.3.8**, 1615 modules).
+- `curl 127.0.0.1:18765/api/v1/ai/status` and `/api/v1/ai/runtime` both returned **connection refused**. **Interpretation:** desktop backend was not listening at test time; do not infer a regression without restarting `./scripts/dev-desktop.sh` and repeating health checks.
+- `ollama list` returned no model rows; `GET 127.0.0.1:11434/api/tags` returned `{"models":[]}`. **Ollama daemon is reachable but no models are installed.** P&ID Vision inference cannot currently work via Ollama.
+- **Action:** restart desktop in its own persistent terminal, verify `/health` and AI status from a second terminal, then install a tested multimodal Ollama model under explicit disk/RAM constraints. Do not mistake llama.cpp text model for the separate Ollama vision model.
+- **Status:** A-002 in progress; no vision inference test performed, no accuracy claim.
