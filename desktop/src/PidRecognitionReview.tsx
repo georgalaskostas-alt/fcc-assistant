@@ -30,7 +30,18 @@ async function loadDrawing(key:string):Promise<Stored|null>{
  });}finally{db.close();}
 }
 const drawingKey=(image:File)=>[image.name,image.size,image.lastModified].join(":");
-const normalizeTag=(value:string)=>value.normalize("NFKC").trim().toUpperCase().replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g,"-").replace(/\s*-\s*/g,"-").replace(/\s+/g,"-");
+const normalizeTag=(value:string)=>{
+ const confusables:Record<string,string>={
+  "Α":"A","Β":"B","Ε":"E","Ζ":"Z","Η":"H","Ι":"I","Κ":"K","Μ":"M","Ν":"N","Ο":"O","Ρ":"P","Τ":"T","Υ":"Y","Χ":"X",
+  "а":"A","в":"B","е":"E","к":"K","м":"M","н":"H","о":"O","р":"P","с":"C","т":"T","у":"Y","х":"X",
+  "А":"A","В":"B","Е":"E","К":"K","М":"M","Н":"H","О":"O","Р":"P","С":"C","Т":"T","У":"Y","Х":"X"
+ };
+ return value.normalize("NFKC").toUpperCase().replace(/[\u200B-\u200D\u2060\uFEFF]/g,"")
+  .split("").map(char=>confusables[char]??char).join("")
+  .trim().replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g,"-")
+  .replace(/\s*-\s*/g,"-").replace(/\s+/g,"-");
+};
+const tagCodepoints=(value:string)=>Array.from(value).map(c=>c.codePointAt(0)?.toString(16).toUpperCase()).join(" ");
 export function PidRecognitionReview({image,label}: {image:File;label:File}){
  const [items,setItems]=useState<Item[]>([]);
  const [message,setMessage]=useState("");
@@ -56,7 +67,7 @@ export function PidRecognitionReview({image,label}: {image:File;label:File}){
   const approved=normalizedItems.filter(item=>item.status==="approved");
   if(!approved.length||items.some(item=>item.status==="pending")){setMessage("Review every candidate and approve at least one before saving.");return;}
   const invalid=approved.filter(item=>!/^([A-Z]{1,8})-?\d+[A-Z0-9/-]*$/i.test(item.tag));
-  if(invalid.length){setMessage(`Invalid tag(s): ${invalid.map(item=>JSON.stringify(item.tag)).join(", ")}. Use e.g. TI-544.`);return;}
+  if(invalid.length){setMessage(`Invalid tag(s): ${invalid.map(item=>`${JSON.stringify(item.tag)} [Unicode: ${tagCodepoints(item.tag)}]`).join(", ")}. Use e.g. TI-544.`);return;}
   try{
    await saveDrawing(drawingKey(image),{version:1,imageName:image.name,imageSize:image.size,imageModified:image.lastModified,items:normalizedItems,approvedAt:new Date().toISOString()},image);
    setItems(normalizedItems);
