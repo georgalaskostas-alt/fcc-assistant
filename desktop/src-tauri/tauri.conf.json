@@ -21,12 +21,14 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src http://127.0.0.1:8765 http://localhost:8765; img-src 'self' data: blob:; frame-src 'self' blob:; font-src 'self' data:"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:18765 http://localhost:18765 http://127.0.0.1:8765 http://localhost:8765; img-src 'self' data: blob:; frame-src 'self' blob:; font-src 'self' data:"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": ["binaries/fcc-backend"]
+    "externalBin": [
+      "binaries/fcc-backend"
+    ]
   }
 }
