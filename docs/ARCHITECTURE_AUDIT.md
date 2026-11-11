@@ -141,3 +141,30 @@ Before merging a major feature, answer:
 9. Will the design still make sense with many users, units, tags and documents?
 
 If several answers are no, redesign before extending the implementation.
+
+
+## Evidence-based audit continuation — 2026-11-12 (A-001)
+
+This section supplements the earlier architecture audit; the original strategic findings remain valid.
+
+### Inventory and existing product vision
+- Repository tree: **264 paths** at the inspected branch, including 78 backend test files, desktop React/Tauri, backend FastAPI, model/investigation/dashboard/knowledge/P&ID modules and CI.
+- Existing `docs/MASTER_VISION.md` explicitly includes **Controlled Engineering Editing** and **Personal Workspace & Memory** in addition to engineering, operations, knowledge, investigations and management. These must be mapped into the seven-pillar product architecture as cross-cutting capabilities.
+- Current source code is broad but presence does not prove end-to-end behavior or production maturity.
+
+### CI finding — confirmed failure and code remediation
+- GitHub Actions run **43113635879**, SHA `bc9c04a`: backend job **success**; desktop-web job **failure** at `npm run build`.
+- TypeScript diagnostics: `PidIntelligenceView.tsx` invalid `unknown` category comparisons and missing `pending` in shadow review type; `pidDatasetZip.ts` `Uint8Array<ArrayBufferLike>` rejected as `BlobPart`.
+- Fixes committed: `66309fd` and `311b238`. **Re-run status pending**; do not claim green build until GitHub CI confirms it.
+
+### Runtime integration risk requiring verification
+- `desktop/src/api.ts` points to port **18765**, whereas `scripts/dev-backend.sh` launches Uvicorn on **8000**. This may be intentional because Tauri uses an embedded backend on 18765. Inspect Tauri launch and sidecar implementation, then document supported developer modes; verify the VLM request uses the correct runtime route.
+- `backend/app/main.py` registers the new P&ID vision router and `desktop_server.py` includes the desktop APIs. Ollama inference is **not verified**.
+
+### Remaining A-001 work
+1. Confirm current CI and local Tauri build, including packaging.
+2. Trace startup paths, port/sidecar lifecycle and CORS.
+3. Inspect actual API authorization and read-only enforcement.
+4. Audit persistence, migrations, backup and data provenance.
+5. Produce endpoint-to-UI-to-test traceability matrix and maturity rating per product pillar.
+6. Validate one full, permissioned P&ID end-to-end.
