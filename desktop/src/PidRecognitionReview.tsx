@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { SYMBOL_CLASSES } from "./pidDatasetQuality";
+import { api } from "./api";
 
 type Item={id:string;cls:number;cx:number;cy:number;w:number;h:number;tag:string;status:"pending"|"approved"|"rejected"};
 type Stored={version:1;imageName:string;imageSize:number;imageModified:number;items:Item[];approvedAt:string};
@@ -47,6 +48,7 @@ export function PidRecognitionReview({image,label}: {image:File;label:File}){
  const [message,setMessage]=useState("");
  const [url,setUrl]=useState("");
  const [saved,setSaved]=useState(false);
+ const [scanning,setScanning]=useState(false);
  useEffect(()=>{
   let active=true;const objectUrl=URL.createObjectURL(image);setUrl(objectUrl);setSaved(false);
   Promise.all([label.text(),loadDrawing(drawingKey(image))]).then(([raw,stored])=>{
@@ -62,6 +64,30 @@ export function PidRecognitionReview({image,label}: {image:File;label:File}){
   return ()=>{active=false;URL.revokeObjectURL(objectUrl);};
  },[image,label]);
  const patch=(index:number,changes:Partial<Item>)=>{setItems(old=>old.map((item,i)=>i===index?{...item,...changes,status:changes.status??"pending"}:item));setSaved(false);setMessage("");};
+ const scanOcr=async()=>{
+  if(scanning)return;
+  setScanning(true);setMessage("Running local OCR for candidate instrument tags...");
+  try{
+   const result=await api.ocrPidPage(image,1);
+   const candidates=result.candidates.filter(c=>/^([A-Z]{1,8})[- ]?\d+[A-Z0-9/-]*$/i.test(normalizeTag(c.tag)) && c.box.width>0 && c.box.height>0);
+   let added=0;
+   setItems(previous=>{
+    const next=[...previous];
+    for(const c of candidates){
+     const tag=normalizeTag(c.tag),cx=c.box.x+c.box.width/2,cy=c.box.y+c.box.height/2;
+     if(![cx,cy,c.box.width,c.box.height].every(Number.isFinite))continue;
+     if(next.some(item=>normalizeTag(item.tag)===tag || (Math.abs(item.cx-cx)<0.025&&Math.abs(item.cy-cy)<0.025)))continue;
+     // OCR identifies a text region, not necessarily the full instrument bubble.
+     next.push({id:`ocr-${Date.now()}-${added}`,cls:0,cx,cy,w:c.box.width,h:c.box.height,tag,status:"pending"});
+     added++;
+    }
+    return next;
+   });
+   if(added)setSaved(false);
+   setMessage(`OCR returned ${result.candidates.length} text candidates; added ${added} unverified tag regions. Boxes may surround text rather than instrument symbols. Review and adjust before approval.`);
+  }catch(e){setMessage("Local OCR failed: "+String(e)+". Check that the FCC backend is running.");}
+  finally{setScanning(false);}
+ };
  const approve=async()=>{
   const normalizedItems=items.map(item=>({...item,tag:normalizeTag(item.tag)}));
   const approved=normalizedItems.filter(item=>item.status==="approved");
@@ -76,7 +102,8 @@ export function PidRecognitionReview({image,label}: {image:File;label:File}){
  };
  return <section className="pid-recognition-workspace">
   <h3>Recognition & Learning Workspace · {image.name}</h3>
-  <p>Existing YOLO labels are imported as candidates, not AI detections. Enter instrument tags and explicitly approve or reject every proposal. Only approval writes to local memory.</p>
+  <p>Existing YOLO labels are imported as candidates. Local OCR can propose additional tag text regions, but does not establish the symbol boundary or connectivity. Every proposal requires engineer review.</p>
+  <button type="button" onClick={scanOcr} disabled={scanning}>{scanning?"Scanning local OCR...":"Scan P&ID for instrument tags (local OCR)"}</button>
   <div className="pid-inspector-image">
    {url&&<img src={url} alt={image.name}/>}
    {items.filter(item=>item.status!=="rejected").map(item=><div key={item.id} className={item.status==="approved"?"pid-learning-box approved":"pid-learning-box"} style={{left:`${(item.cx-item.w/2)*100}%`,top:`${(item.cy-item.h/2)*100}%`,width:`${item.w*100}%`,height:`${item.h*100}%`}} title={item.tag||"Unverified instrument"}/>)}
@@ -91,6 +118,6 @@ export function PidRecognitionReview({image,label}: {image:File;label:File}){
   <p>{items.filter(i=>i.status==="approved").length} approved · {items.filter(i=>i.status==="pending").length} pending · {items.filter(i=>i.status==="rejected").length} rejected</p>
   <button type="button" onClick={approve} disabled={saved||!items.length}>Save engineer-approved P&ID to local memory</button>
   <p role="status">{message}</p>
-  <small>Local IndexedDB storage is device/browser-profile specific. Clearing application data can erase it; export a backup before relying on it for operational records. This is not yet automatic OCR or model learning.</small>
+  <small>Local IndexedDB storage is device/browser-profile specific. Clearing application data can erase it; export a backup before relying on it for operational records. OCR proposals are unverified text regions, not a trained instrument detector. No model learning occurs until a separate training and evaluation step.</small>
  </section>;
 }
