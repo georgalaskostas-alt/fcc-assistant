@@ -1,0 +1,187 @@
+# FCC Assistant — Master Vision, Product Strategy & Delivery Ledger
+
+**Document owner:** Product / Engineering leadership  
+**Version:** 1.0 | **Baseline date:** 2026-11-12  
+**Repository:** `georgalaskostas-alt/fcc-assistant` | **Tracking branch:** `agent/workspace-v2`  
+**Status:** Living product charter; **not** evidence of production readiness.
+
+> **Mission:** Build an evidence-grounded Industrial Intelligence Platform that understands the physical plant, observes operating behavior through authorized data sources, investigates problems, supports engineering analysis, preserves institutional knowledge, trains personnel and informs management. FCC is the first proving ground; the architecture must generalize to other refinery units and industrial sites.
+
+## 1. Product north star
+
+A process engineer can open an unfamiliar P&ID, obtain correctly located and tagged symbols, inspect a validated connectivity graph, link those assets to historian signals and documents, ask technically meaningful questions, launch bounded investigations, and obtain traceable answers with explicit uncertainty. No unsupported claim may masquerade as verified engineering fact.
+
+The system is an **engineering decision-support platform**, not an autonomous process controller. The ultimate market is industrial organizations, beginning with FCC/refining and extending to adjacent process industries after evidence-based validation.
+
+### Non-negotiable principles
+1. **Evidence before eloquence:** every engineering conclusion links to drawing region, revision, historian window, document citation, computation or human approval.
+2. **Human authority:** engineering verification, safety-critical conclusions and operating changes remain under authorized personnel.
+3. **OT boundary:** historian/DCS connectivity is initially read-only, explicitly authorized, segmented and audited. No automatic setpoint or actuator writes.
+4. **Data governance:** company drawings, PI data, procedures and operating history may be confidential; no cloud uploads or model training without contractual and IT/OT approval.
+5. **Measured quality:** test on held-out source drawings, distinct units and difficult cases; report precision, recall, exact-tag accuracy, graph edge accuracy, hallucination rate and human review time.
+6. **Reproducible knowledge:** versions, source IDs, approvals, model versions, provenance, backup/restore, audit trail and regression tests.
+7. **Model portability:** local VLM, hosted enterprise inference and specialized detectors behind replaceable interfaces; select by benchmarks and deployment constraints.
+8. **No false progress:** a committed file, visible button, passing unit test, end-to-end demonstration and industrial acceptance are different maturity states.
+
+## 2. Seven product pillars
+
+| ID | Pillar | Intended user value | Target capability | Current evidence and gap |
+|---|---|---|---|---|
+| P1 | Engineering Intelligence | Turn P&ID/PFD into structured plant knowledge | Symbol detection, tag reading, line topology, off-page connectors, drawing revisions, graph query | Viewer, annotation/review, OCR, geometry and graph modules exist; demonstrated two approved tags and local restoration. Whole-drawing accuracy and graph correctness **not established**. |
+| P2 | Live Process Intelligence | Understand present/historical behavior | Authorized PI/historian integration, tag-to-equipment mapping, trend/quality checks, process state | `pi_client.py`, `tag_registry.py`, `refinery_intelligence_api.py` exist. Production historian integration **not verified**. |
+| P3 | Autonomous Investigation | Reduce time to credible diagnoses | Bounded hypothesis generation, evidence gathering, competing explanations, traceable report, resume | Investigation modules and tests exist. Accuracy on live engineering incidents **not verified**. |
+| P4 | Process Engineering & Optimization | Quantify process behavior and opportunities | Balances, KPIs, soft sensors, constrained scenario evaluation, validated predictive models | Analytics/simulator/process modules exist. Real plant predictive performance **not verified**. |
+| P5 | Technical Knowledge & Memory | Preserve approved engineering know-how | Versioned document archive, semantic asset links, provenance, approval and knowledge lifecycle | Archive/document/knowledge modules and local approved P&ID IndexedDB exist. Durable enterprise knowledge store and backup **not verified**. |
+| P6 | Training & Operational Simulation | Teach operators and engineers using plant-specific context | Interactive circuits, grounded explanations, training scenarios, competency checks, validated simulation | Simulator and site-simulator modules exist. Training efficacy and simulation fidelity **not verified**. |
+| P7 | Management & Decision Intelligence | Convert plant evidence into operational priorities | Cross-unit KPIs, reliability/energy views, executive briefs, opportunity tracking | Dashboard/management modules exist. Business KPI accuracy and executive pilot **not verified**. |
+
+**Integration rule:** these are seven views of **one shared plant identity and evidence model**, not seven isolated chatbots.
+
+## 3. Shared industrial intelligence core
+
+**Canonical entities:** Site, Unit, Equipment, Nozzle/Port, Instrument, ControlLoop, Valve, PipeSegment, LineNumber, Junction, OffPageConnector, Document, DrawingRevision, HistorianTag, TimeSeriesWindow, OperatingEvent, Investigation, Hypothesis, Evidence, Calculation, Approval, ModelVersion.
+
+**Required relations:** `connected_to`, `located_on`, `measures`, `controls`, `belongs_to`, `documented_by`, `supersedes`, `observed_in`, `supports`, `contradicts`, `approved_by`.
+
+**Evidence contract:** every extracted entity or inferred edge carries source drawing/revision/page, bounding box or line geometry, extraction method/model version, confidence or uncertainty, review state, timestamp and provenance. **Confidence is not a substitute for verification.**
+
+**Engineering knowledge tiers:** (1) raw source; (2) machine proposal; (3) human-verified plant fact; (4) analytical hypothesis; (5) approved engineering conclusion. Never silently promote one tier to another.
+
+**Deployment:** existing Tauri/React desktop and FastAPI service retained initially; later add governed identity, durable database, searchable documents, graph store (PostgreSQL relational graph acceptable initially), object storage, model registry, monitoring and RBAC. IndexedDB is a local cache, not an enterprise system of record.
+
+## 4. P&ID Intelligence Engine — technical execution
+
+1. **Input & quality:** source PDF/vector extraction when available; raster images; image rectification, tiling, orientation and resolution metadata.
+2. **Vision proposals:** benchmark multiple vision-language models on held-out drawings. VLM output is an unverified semantic hypothesis.
+3. **Specialized symbol detection:** detect instruments, valves, equipment, line breaks, connectors, junctions and ports with a trained detector; return precise boxes/masks.
+4. **OCR and semantic parsing:** technical tag grammar, instrument/line number distinction, symbol-to-text assignment, multilingual/rotated text, confidence calibration.
+5. **Geometry and topology:** vector tracing where possible, raster line segmentation otherwise, distinguish crossings from connections, route through valves and equipment ports, resolve off-page continuation.
+6. **Graph reconstruction:** typed nodes/edges, topology validation, source evidence and revision awareness. No unverified isolation claim.
+7. **Review by exception:** visual overlay with transparent boxes, uncertainty queues, bulk inspection, human approval, change log.
+8. **Learning loop:** engineer-approved annotations → versioned dataset → training → held-out evaluation → controlled model release and rollback.
+9. **Engineering questions:** graph-grounded retrieval and LLM reasoning; always point back to diagram evidence.
+
+**Critical test cases:** dashed signal lines, process pipes, crossing without junction, branch junction, valve at elbow, overlapping text, PRV and instrument bubbles, tiny symbols, rotated tags, page seams, repeated tags, multiple drawings of one source.
+
+## 5. Product roadmap and acceptance gates
+
+| Phase | Scope | Exit gate | Status |
+|---|---|---|---|
+| G0 — Baseline & audit | Inventory repo, runnable build, tests, dependency/security review, current demo recordings | Signed-off feature inventory with evidence and known failures | **In progress / incomplete** |
+| G1 — Engineering benchmark | Representative permissioned P&IDs; gold-standard symbols, tags, edges; VLM/OCR/detector comparison | Reproducible benchmark with held-out drawings, failure taxonomy | **Not demonstrated** |
+| G2 — Symbol & tag engine | Detection, OCR, association, review, export | Targets: ≥95% instrument precision/recall and exact tag accuracy on defined pilot set; measured, not assumed | **Prototype components only** |
+| G3 — Connectivity graph | Typed edges, crossings, junctions, off-page links, versioning | Target ≥98% edge precision on defined test set; all safety-sensitive paths require review | **Prototype components only** |
+| G4 — Engineering Copilot | Graph/document-grounded Q&A, citations, abstention | No unsupported critical claims in pilot acceptance suite; audited answer provenance | **Not demonstrated** |
+| G5 — Live intelligence | Authorized read-only PI integration, asset-tag binding, quality checks | Secure integration and accurate, replayable trend analysis | **Not demonstrated** |
+| G6 — Investigations & analytics | Bounded investigations, process calculations, model validation | Reproducible real-case evaluations and engineer sign-off | **Prototype components only** |
+| G7 — Training and management | Training content, simulation validation, KPIs, dashboards | User studies, measured utility and data reconciliation | **Prototype components only** |
+| G8 — Industrial pilot | Security, RBAC, backups, monitoring, IP/data agreements, user training | Written acceptance by authorized customer stakeholders | **Not started** |
+
+Targets above are **aspirational acceptance criteria**, not current measurements. Sequence and durations must be estimated after G0/G1; a 20-week pilot is a planning scenario, not a commitment.
+
+## 6. Current verified baseline — 2026-11-12
+
+### Directly observed in collaboration
+- Dataset Manager paired `IMG_5397.JPG` and `IMG_5446.JPG` with YOLO label files: **2 valid pairs, 7 total annotations, 0 structural errors/warnings** in the displayed validation screen. This validates label structure only, **not** annotation correctness.
+- P&ID `IMG_5397.JPG`: `TI-544` and `TI-545` were engineer-approved. UI displayed **“Restored previously approved drawing from local engineer memory.”** Local persistence/restore demonstrated on user's installation.
+- Local OCR scan generated irrelevant candidate tags (`NOTE8`, `RV-505`, `A3`, `A8`, `M10`) and failed to produce comprehensive instrument recognition. **This is a known failed approach for whole-P&ID understanding.**
+- A local VLM integration (`backend/app/pid_vision.py` and desktop action) was committed. **No successful local build, model inference, accuracy benchmark or end-to-end validation has been provided.**
+
+### Repository presence (not runtime verification)
+- Backend contains `pid_intelligence.py`, `pid_geometry.py`, `pid_graph.py`, `pid_topology.py`, `pid_vision.py`, `pi_client.py`, `autonomous_investigation.py`, `process_analytics.py`, `simulator.py`, `technical_archive.py`, `unit_knowledge.py`, `management_brief.py` and numerous investigation/dashboard modules.
+- Tests exist in `backend/tests/`; presence alone does **not** establish they pass on the current branch.
+- CI workflow exists at `.github/workflows/ci.yml`; current run status **not checked**.
+- Current project maturity: **multi-module prototype / engineering workbench**. No defensible overall percentage complete until G0 inventory and a weighted, evidence-based scorecard.
+
+### Known immediate risks
+- P&ID OCR confuses text labels with instruments.
+- A generic VLM can hallucinate topology or tags; must not be trusted as a connectivity authority.
+- Existing knowledge is partly local IndexedDB, without confirmed enterprise backup/restore.
+- Drawing rights, customer IP, security boundaries and authorization for actual refinery data must be resolved.
+- End-to-end builds, runtime integration, benchmarks, OT security and industrial reliability are not yet demonstrated.
+- Prior code changes were sometimes committed without local build/test evidence; this must change.
+
+## 7. Immediate execution backlog — prioritized
+
+| ID | Priority | Work package | Deliverable | Evidence required |
+|---|---|---|---|---|
+| A-001 | P0 | Full repository technical audit | Modules/endpoints/UI/test matrix; dead code, duplicate paths, build blockers | File-level inventory and actual build/test logs |
+| A-002 | P0 | Verify current VLM integration | Working Mac local inference and safe API transport; error handling | End-to-end run on permitted sample image |
+| A-003 | P0 | Define gold benchmark | Permissioned images, independently reviewed symbol/tag/edge ground truth, source-drawing split | Dataset manifest, annotation quality review |
+| A-004 | P0 | Canonical engineering schema | Versioned entities, typed connections, evidence, revision, review state | Schema tests and migration design |
+| A-005 | P0 | Secure knowledge backup | Export/import of approved annotations and source provenance | Round-trip restore test |
+| A-006 | P1 | Benchmark VLM/OCR/detector | Error analysis and selected architecture | Precision/recall/latency/cost report |
+| A-007 | P1 | Specialized symbol detector | Multi-class instrument/valve/equipment/connector inference | Held-out evaluation |
+| A-008 | P1 | Circuit geometry engine | Junction/crossing/port/off-page detection | Edge-level validation suite |
+| A-009 | P1 | Graph-grounded copilot | Question → graph traversal → cited answer | No unsupported answer on acceptance set |
+| A-010 | P1 | PI historian read-only connector | Asset-tag mapping, timestamps, quality and security | Authorized integration replay |
+| A-011 | P1 | Investigation evaluation | Competing hypotheses, evidence trace, bounded execution | Engineer-reviewed case studies |
+| A-012 | P2 | Process models and simulator | Verified balances and constrained what-if | Validation against plant or approved reference |
+| A-013 | P2 | Training/management products | Role-specific workflows and KPIs | User study, reconciled metrics |
+| A-014 | P0 before external pilot | Security, IP and data governance | Agreements, threat model, audit, RBAC | Customer IT/OT/legal approval |
+
+**Next decision:** perform A-001, then execute A-002 and A-003 in parallel. Do not spend further cycles on cosmetic OCR heuristics as the main AI strategy.
+
+## 8. Progress scorecard — how to answer “where are we?”
+
+**Never fabricate an overall completion %.** Each pillar and gate receives:
+- **Maturity 0:** concept only.
+- **Maturity 1:** source implementation present.
+- **Maturity 2:** tests/build pass with reproducible logs.
+- **Maturity 3:** end-to-end user workflow demonstrated.
+- **Maturity 4:** measured against independent benchmark/acceptance criteria.
+- **Maturity 5:** authorized industrial pilot accepted.
+
+For every status report provide:
+1. Date, branch, commit and what was actually inspected.
+2. Executive summary: target vs current reality.
+3. Seven-pillar maturity table and gate status.
+4. Changes since previous report, with commits and test evidence.
+5. Quantified quality metrics **only when measured**; otherwise “unknown”.
+6. Bugs, technical debt, security/IP blockers, dependencies.
+7. Next 3–5 prioritized deliverables, owners, acceptance tests.
+8. Pilot readiness assessment and remaining risks.
+9. Updated change log entry.
+
+**Completion percentages** may be introduced only after a scoped work breakdown and explicit weighting; code presence is not business readiness.
+
+## 9. Operating cadence and update protocol
+
+At **every meaningful implementation milestone**:
+1. Read this file before making architectural/product decisions.
+2. Verify the latest repository state and any supplied test evidence.
+3. Update the relevant pillar, phase gate, backlog row and evidence.
+4. Append a dated entry to the change log with commit(s), outcome, tests, blockers and next step.
+5. Commit documentation changes alongside or immediately after code changes.
+6. On a user request for a status report, re-read this file **and** inspect current repo/CI evidence; report discrepancies explicitly.
+
+**Automation limitation:** this file will not update itself when development happens elsewhere. Updates occur when an agent/developer runs the protocol; continuous unattended tracking requires a separately configured workflow.
+
+## 10. Commercial and organizational plan
+
+**Initial customer hypothesis:** refinery engineering/operations teams; validate measurable reduction in drawing interpretation and investigation time before enterprise-wide claims.
+
+**Commercial stages:** Engineering Edition → Operations Edition → Enterprise Industrial Intelligence. Expand beyond FCC only after repeatable cross-unit validation.
+
+**Pilot requirements:** defined scope, access to permitted sample drawings and data, nominated process/instrument engineers, IT/OT oversight, acceptance metrics, procurement/commercial terms, IP and confidentiality agreements. The founder's existing employment relationship requires explicit conflict-of-interest/IP review.
+
+**Indicative staffing:** process/product lead; computer vision/ML; backend/graph/data; frontend/product engineering; security and domain reviewers as needed. Staffing and cost are hypotheses until resourced and quoted.
+
+## 11. Decision log
+
+| Date | Decision | Rationale |
+|---|---|---|
+| 2026-11-12 | Make Industrial Intelligence Platform the north star, not OCR-only P&ID software | Shared plant knowledge unlocks engineering, operations, investigations, training and management |
+| 2026-11-12 | Retain existing codebase, audit before large refactor | Preserve useful modules while separating prototypes from validated capability |
+| 2026-11-12 | Use hybrid vision + specialized detection + OCR + geometry + verified graph | Generic OCR/VLM alone is not reliable topology reconstruction |
+| 2026-11-12 | Keep AI read-only and engineering decisions human-authorized | Industrial safety, traceability and trust |
+| 2026-11-12 | Track progress by evidence-based maturity gates | Avoid misleading “done” labels and invented completion percentages |
+
+## 12. Change log
+
+### 2026-11-12 — v1.0 master baseline
+- **Change:** Established unified product vision, seven pillars, architecture, maturity gates, prioritized backlog, reporting standard, security principles and initial evidence-based status.
+- **Source of baseline:** user/assistant project planning discussions plus repository tree inspected on `agent/workspace-v2`; selected observed screenshots and previously reported commits.
+- **Tests executed for this document:** none; **not** a completed technical audit.
+- **Current blockers:** unvalidated whole-drawing AI, unverified VLM runtime, no gold benchmark, incomplete durable knowledge governance.
+- **Next:** A-001 repository audit and A-002 local VLM end-to-end verification.
