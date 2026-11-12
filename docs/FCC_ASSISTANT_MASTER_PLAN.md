@@ -275,3 +275,9 @@ At **every meaningful implementation milestone**:
 - User pulled commits through `8f225dc` and ran `python3 -m unittest discover -s tests -p 'test_local_ai_completion_guard.py' -v` from `backend/`. It selected Homebrew Python **3.14.7** and failed at import with `ModuleNotFoundError: No module named 'httpx'`; the suite did **not execute** (reported 1 failed import, 0 substantive guard tests).
 - Repository `backend/requirements.txt` already specifies `httpx>=0.28,<1.0`; `scripts/dev-backend.sh` uses repository-root `.venv` (created if absent). Recommended run with `source ~/Projects/fcc-assistant/.venv/bin/activate` from a separate terminal, then verify `import httpx` and execute the tests with `python` under the virtual environment. If `.venv` is missing or dependencies absent, create/update that virtual environment with the repo requirements rather than installing packages into system Python.
 - A-002 truncation guard remains **unverified on user's machine** until substantive tests run; active Tauri sidecar is unaffected by this error.
+
+### 2026-11-12 — A-002 response-completeness regression gate PASSED on user Mac
+- User activated repository-root `.venv`; `python -c 'import httpx; print(httpx.__version__)'` returned **0.28.1**.
+- From `backend/`, `python -m unittest discover -s tests -p 'test_local_ai_completion_guard.py' -v` completed **3 tests, all OK, 0.002 s**: accepted completed answer; rejected truncated answer with content; rejected truncated reasoning-only response.
+- Prior Homebrew Python 3.14 import error was an interpreter/environment mismatch, not an observed failure of the guard.
+- **Gate status:** mocked unit regression for truncated responses passed locally. Live inference accuracy remains unvalidated beyond the narrow coke/regenerator example. Next work: curated FCC technical benchmark and evidence provenance, then Vision AI readiness on M2 8GB.
