@@ -270,3 +270,8 @@ At **every meaningful implementation milestone**:
 - Commit `2623791`: `backend/app/local_ai.py` rejects `finish_reason=length` with `LocalAIError`, rather than returning truncated engineering text.
 - Commit `0d5ffe6`: new `backend/tests/test_local_ai_completion_guard.py` adds 3 mocked tests (truncated content, completed answer, truncated reasoning-only response).
 - **Status:** committed but not yet executed in user's local environment or independently verified in CI; ask user to pull and run backend unittest suite. Technical factuality benchmark remains outstanding. Existing fallback to `reasoning_content` for non-truncated empty content requires separate review.
+
+### 2026-11-12 — A-002 local regression-test environment mismatch
+- User pulled commits through `8f225dc` and ran `python3 -m unittest discover -s tests -p 'test_local_ai_completion_guard.py' -v` from `backend/`. It selected Homebrew Python **3.14.7** and failed at import with `ModuleNotFoundError: No module named 'httpx'`; the suite did **not execute** (reported 1 failed import, 0 substantive guard tests).
+- Repository `backend/requirements.txt` already specifies `httpx>=0.28,<1.0`; `scripts/dev-backend.sh` uses repository-root `.venv` (created if absent). Recommended run with `source ~/Projects/fcc-assistant/.venv/bin/activate` from a separate terminal, then verify `import httpx` and execute the tests with `python` under the virtual environment. If `.venv` is missing or dependencies absent, create/update that virtual environment with the repo requirements rather than installing packages into system Python.
+- A-002 truncation guard remains **unverified on user's machine** until substantive tests run; active Tauri sidecar is unaffected by this error.
