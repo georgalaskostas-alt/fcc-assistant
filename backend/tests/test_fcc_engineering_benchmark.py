@@ -31,6 +31,32 @@ class BenchmarkRunnerTests(unittest.TestCase):
         result = runner.screen_answer(case, "Coke burns; metals disappear", "stop")
         self.assertEqual(result["matched_forbidden_phrases"], ["metals disappear"])
 
+    def test_draft_knowledge_cards_cover_cases(self):
+        cards = runner.load_knowledge(RUNNER.with_name("fcc_knowledge_draft_v1.json"))
+        cases = runner.load_cases(RUNNER.with_name("fcc_engineering_v1.json"))
+        self.assertEqual(set(cards), {case["id"] for case in cases})
+        self.assertTrue(all(card["review_status"] == "unverified" for card in cards.values()))
+
+    def test_knowledge_prompt_is_optional(self):
+        from unittest.mock import patch
+        import json
+
+        captured = []
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): return None
+            def read(self): return b'{}'
+        def fake_open(request, timeout):
+            captured.append(json.loads(request.data))
+            return Response()
+
+        with patch.object(runner.urllib.request, "urlopen", side_effect=fake_open):
+            runner.query("http://127.0.0.1:18081", "test", "Question", 100, 1)
+            runner.query("http://127.0.0.1:18081", "test", "Question", 100, 1,
+                         {"id": "test-card", "content": "Trusted only for this experiment"})
+        self.assertNotIn("DRAFT REFERENCE CARD", captured[0]["messages"][1]["content"])
+        self.assertIn("test-card", captured[1]["messages"][1]["content"])
+
     def test_endpoint_restricts_to_loopback(self):
         self.assertEqual(runner.validate_local_endpoint("http://127.0.0.1:18081"),
                          "http://127.0.0.1:18081")
