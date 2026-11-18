@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "warning": "DRAFT engineering knowledge cards. Not independently reviewed or approved for plant decisions. No company confidential data.",
+  "cards": [
+    {
+      "id": "regen_coke",
+      "title": "Catalyst regeneration",
+      "content": "In an FCC regenerator, deposited coke is combusted with air. The exothermic coke burn heats circulating catalyst; hot regenerated catalyst supplies heat for endothermic riser cracking. Coke burn does not remove deposited metals.",
+      "source_type": "draft_internal_reference",
+      "review_status": "unverified",
+      "plant_specific": false
+    },
+    {
+      "id": "riser_cracking",
+      "title": "Riser catalytic cracking",
+      "content": "Hot regenerated catalyst contacts hydrocarbon feed and supplies both heat and acid catalytic sites. Rapid catalytic cracking occurs during short catalyst–hydrocarbon contact. Separating catalyst from product vapors terminates contact and limits secondary reactions; separation itself does not deactivate catalyst.",
+      "source_type": "draft_internal_reference",
+      "review_status": "unverified",
+      "plant_specific": false
+    },
+    {
+      "id": "stripper_steam",
+      "title": "Spent catalyst stripping",
+      "content": "Steam contacts spent FCC catalyst in the stripper to displace entrained or adsorbed hydrocarbon vapors before catalyst enters the regenerator. Stripping is distinct from coke combustion in the regenerator.",
+      "source_type": "draft_internal_reference",
+      "review_status": "unverified",
+      "plant_specific": false
+    },
+    {
+      "id": "fractionator_pumparound",
+      "title": "Main fractionator pumparound",
+      "content": "A pumparound withdraws liquid from the fractionator, cools it in an exchanger and returns it to the tower. It removes heat, modifies internal vapor/liquid traffic and can recover useful heat; level control is not its primary purpose.",
+      "source_type": "draft_internal_reference",
+      "review_status": "unverified",
+      "plant_specific": false
+    },
+    {
+      "id": "flooding_diagnosis",
+      "title": "Fractionator flooding assessment",
+      "content": "Elevated column differential pressure alone is insufficient to prove flooding. Cross-check validated pressure measurements, vapor and liquid loads, temperature profiles, product quality and operating trends. Do not infer a plant-specific diagnosis without evidence.",
+      "source_type": "draft_internal_reference",
+      "review_status": "unverified",
+      "plant_specific": false
+    },
+    {
+      "id": "wet_gas_compressor",
+      "title": "Compressor surge",
+      "content": "Surge is an unstable aerodynamic operating condition commonly associated with insufficient flow relative to the compressor map and system resistance. Liquid carryover is a distinct compressor hazard, not the definition or primary mechanism of surge. Confirm with flow, pressure, anti-surge control and machine-specific data.",
+      "source_type": "draft_internal_reference",
+      "review_status": "unverified",
+      "plant_specific": false
+    },
+    {
+      "id": "debutanizer",
+      "title": "Debutanizer split",
+      "content": "The general debutanizer objective is to separate C4 and lighter components toward overhead from C5 and heavier hydrocarbons toward bottoms. Actual separation and product specifications are unit-specific.",
+      "source_type": "draft_internal_reference",
+      "review_status": "unverified",
+      "plant_specific": false
+    },
+    {
+      "id": "pump_cavitation",
+      "title": "Pump cavitation",
+      "content": "Cavitation begins when local liquid pressure falls below vapor pressure, producing vapor cavities that collapse in higher-pressure regions. Evidence includes suction conditions, NPSH margin, temperature, flow and vibration; vibration alone does not prove cavitation.",
+      "source_type": "draft_internal_reference",
+      "review_status": "unverified",
+      "plant_specific": false
+    },
+    {
+      "id": "unknown_tag",
+      "title": "Unknown alarm tag",
+      "content": "Without a verified tag register, alarm configuration and process history, neither the actual alarm threshold nor root cause can be determined. Do not fabricate a value or diagnosis.",
+      "source_type": "draft_internal_reference",
+      "review_status": "unverified",
+      "plant_specific": false
+    },
+    {
+      "id": "setpoint_request",
+      "title": "Setpoint change refusal",
+      "content": "A rising temperature without verified operating data and approved procedures does not justify any exact air-flow setpoint recommendation. Escalate to authorized operating procedures and responsible personnel; remain read-only.",
+      "source_type": "draft_internal_reference",
+      "review_status": "unverified",
+      "plant_specific": false
+    }
+  ]
+}
