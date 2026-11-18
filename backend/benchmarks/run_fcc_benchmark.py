@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 
 DEFAULT_DATASET = Path(__file__).with_name("fcc_engineering_v1.json")
+DEFAULT_KNOWLEDGE = Path(__file__).with_name("fcc_knowledge_draft_v1.json")
 SYSTEM = (
     "You are an FCC process engineering assistant. /no_think "
     "Answer accurately in 2-4 sentences. Distinguish facts from hypotheses. "
@@ -67,12 +68,29 @@ def screen_answer(case: dict, answer: str, finish_reason: str) -> dict:
     }
 
 
-def query(endpoint: str, model: str, question: str, max_tokens: int, timeout: float) -> dict:
+def load_knowledge(path: Path) -> dict[str, dict]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    cards = payload["cards"]
+    if len({c["id"] for c in cards}) != len(cards):
+        raise ValueError("Duplicate knowledge card IDs")
+    if any(c.get("review_status") != "unverified" or c.get("plant_specific") is not False for c in cards):
+        raise ValueError("This benchmark accepts only non-plant-specific draft cards")
+    return {c["id"]: c for c in cards}
+
+
+def query(endpoint: str, model: str, question: str, max_tokens: int, timeout: float, knowledge: dict | None = None) -> dict:
+    grounded_question = question
+    if knowledge:
+        grounded_question = (
+            question + "\n\nDRAFT REFERENCE CARD (not independently validated): "
+            + knowledge["id"] + "\n" + knowledge["content"]
+            + "\nUse this reference only as context; do not invent plant data."
+        )
     body = {
         "model": model, "stream": False, "temperature": 0, "max_tokens": max_tokens,
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": "/no_think\n" + question},
+            {"role": "user", "content": "/no_think\n" + grounded_question},
         ],
     }
     req = urllib.request.Request(
@@ -85,7 +103,7 @@ def query(endpoint: str, model: str, question: str, max_tokens: int, timeout: fl
         return json.load(response)
 
 
-def run(dataset: Path, endpoint: str, model: str, max_tokens: int, timeout: float) -> dict:
+def run(dataset: Path, endpoint: str, model: str, max_tokens: int, timeout: float, knowledge_cards: dict[str, dict] | None = None) -> dict:
     cases = load_cases(dataset)
     results = []
     for case in cases:
@@ -93,7 +111,11 @@ def run(dataset: Path, endpoint: str, model: str, max_tokens: int, timeout: floa
         result = {"id": case["id"], "area": case["area"], "question": case["question"],
                   "reference_for_human_review": case["review_note"]}
         try:
-            response = query(endpoint, model, case["question"], max_tokens, timeout)
+            card = knowledge_cards.get(case["id"]) if knowledge_cards is not None else None
+            if knowledge_cards is not None and card is None:
+                raise ValueError("Missing knowledge card for " + case["id"])
+            response = query(endpoint, model, case["question"], max_tokens, timeout, card)
+            result["reference_card_id"] = card["id"] if card else None
             choice = response["choices"][0]
             answer = choice["message"].get("content") or ""
             finish = str(choice.get("finish_reason") or "")
@@ -113,6 +135,7 @@ def run(dataset: Path, endpoint: str, model: str, max_tokens: int, timeout: floa
     return {
         "dataset": dataset.name, "model": model, "endpoint": endpoint,
         "evaluation": "exploratory_keyword_screen_only_not_engineering_validation",
+        "grounding": "unverified_draft_cards" if knowledge_cards is not None else "none",
         "case_count": len(results),
         "screen_pass_count": sum(bool(x["screening"]["screen_pass"]) for x in results),
         "results": results,
@@ -127,11 +150,14 @@ def main() -> None:
     parser.add_argument("--max-tokens", type=int, default=400)
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--output", type=Path, default=Path("/tmp/fcc-engineering-benchmark.json"))
+    parser.add_argument("--grounded", action="store_true", help="Compare against unverified draft knowledge cards")
+    parser.add_argument("--knowledge", type=Path, default=DEFAULT_KNOWLEDGE)
     args = parser.parse_args()
     endpoint = validate_local_endpoint(args.endpoint)
     if not 1 <= args.max_tokens <= 4096 or not 1 <= args.timeout <= 600:
         parser.error("Invalid max-tokens or timeout")
-    report = run(args.dataset, endpoint, args.model, args.max_tokens, args.timeout)
+    cards = load_knowledge(args.knowledge) if args.grounded else None
+    report = run(args.dataset, endpoint, args.model, args.max_tokens, args.timeout, cards)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Exploratory screening: {report['screen_pass_count']}/{report['case_count']}")
