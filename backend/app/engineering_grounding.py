@@ -56,11 +56,11 @@ def validate_grounded_answer(answer: str, source_ids: list[str]) -> bool:
 
 
 async def generate_grounded(client: Any, question: str, topic: str,
-                            registry: Path = REGISTRY):
+                            registry: Path | None = None):
     """Separate opt-in API so existing dashboards and AI calls are unchanged."""
     if not question.strip() or not topic.strip():
         raise ValueError("Question and topic are required")
-    context = approved_grounding_context(topic, registry)
+    context = approved_grounding_context(topic, registry if registry is not None else REGISTRY)
     if not context["evidence"]:
         return {"answer": INSUFFICIENT_EVIDENCE, "sources": [],
                 "grounded": False, "model_invoked": False}
