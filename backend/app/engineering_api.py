@@ -6,7 +6,7 @@ benchmark cards into approved sources.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .engineering_grounding import generate_grounded
 from .engineering_knowledge import KnowledgeValidationError
@@ -18,6 +18,13 @@ router = APIRouter(prefix="/api/v1/ai/engineering", tags=["engineering"])
 class EngineeringAskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     topic: str = Field(min_length=1, max_length=128)
+
+    @field_validator("question", "topic")
+    @classmethod
+    def reject_whitespace_only(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Must not be blank")
+        return value.strip()
 
 
 @router.post("/ask")
