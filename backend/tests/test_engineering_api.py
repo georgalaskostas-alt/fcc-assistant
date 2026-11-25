@@ -50,6 +50,11 @@ def test_blank_topic_rejected():
     assert _request(topic="").status_code == 422
 
 
+def test_whitespace_only_fields_rejected():
+    assert _request(topic="   ").status_code == 422
+    assert _request(question="   ").status_code == 422
+
+
 def test_invalid_registry_returns_503_without_model_call():
     with TemporaryDirectory() as tmp:
         path = Path(tmp) / "knowledge.json"
