@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from .analytics import AnalyticsError, compare_summaries, summarize_pi_payload
 from .embedded_runtime import EmbeddedAIRuntime, EmbeddedRuntimeError
+from .engineering_api import router as engineering_router
 from .investigation_api import router as investigation_router
 from .pid_intelligence import router as pid_router
 from .pid_vision import router as pid_vision_router
@@ -22,6 +23,7 @@ app = FastAPI(title="FCC Assistant Local API", version="0.5.0", description="Loc
 app.include_router(investigation_router)
 app.include_router(pid_router)
 app.include_router(pid_vision_router)
+app.include_router(engineering_router)
 
 
 class AIAnalysisRequest(BaseModel):
@@ -80,7 +82,7 @@ def capabilities() -> dict[str, object]:
         "features": [
             "pi-read-only", "tag-registry", "named-tag-data", "engineering-analytics",
             "period-comparison", "shift-reports", "embedded-local-ai", "assistant-orchestrator",
-            "autonomous-investigations", "pid-pdf-text-inspection", "technical-archive", "governed-agent-tools", "fcc-simulator",
+            "autonomous-investigations", "pid-pdf-text-inspection", "technical-archive", "governed-agent-tools", "fcc-simulator", "approved-evidence-engineering-api",
         ],
     }
 
